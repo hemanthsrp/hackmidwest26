@@ -1,0 +1,7 @@
+[
+  {"symbol": "CORN", "name": "Corn futures 30-day price change", "value": 3.1, "unit": "percent", "window": "30d", "as_of": "2026-10-09T00:00:00Z", "source": "Yahoo Finance (yfinance) ZC=F"},
+  {"symbol": "CORN", "name": "Corn belt precipitation (last full month, station mean)", "value": 71.4, "unit": "mm", "window": "1mo", "as_of": "2026-09-30T00:00:00Z", "source": "NOAA CDO GSOM (sample)"},
+  {"symbol": "CORN", "name": "Corn belt area in moderate-or-worse drought (D1+, state mean)", "value": 1.2, "unit": "percent", "window": "weekly", "as_of": "2026-10-06T00:00:00Z", "source": "US Drought Monitor"},
+  {"symbol": "SOYB", "name": "Soybeans futures 30-day price change", "value": -1.8, "unit": "percent", "window": "30d", "as_of": "2026-10-09T00:00:00Z", "source": "Yahoo Finance (yfinance) ZS=F"},
+  {"symbol": "WEAT", "name": "Wheat futures 30-day price change", "value": 0.9, "unit": "percent", "window": "30d", "as_of": "2026-10-09T00:00:00Z", "source": "Yahoo Finance (yfinance) ZW=F"}
+]

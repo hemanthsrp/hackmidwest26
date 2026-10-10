@@ -14,7 +14,6 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
     "pgvector>=0.3",
-    "praw>=7.7",
     "yfinance>=0.2",
     "python-dateutil>=2.9",
 ]

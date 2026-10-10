@@ -44,14 +44,16 @@ class Settings(BaseSettings):
     akamai_chat_model: str | None = None
     akamai_image_model: str | None = None
 
-    reddit_client_id: str | None = None
-    reddit_client_secret: str | None = None
-    reddit_user_agent: str = "scraper-analysis/0.1"
+    reddit_user_agent: str = "scraper-analysis/0.1 (hackathon research demo)"
 
     news_api_key: str | None = None
+    noaa_cdo_token: str | None = None
     sec_edgar_user_agent: str = "hackmidwest-scraper-analysis <set-contact-email>"
 
     enable_x_scraper: bool = False
+    # Unofficial public .json scraping (no OAuth) -- off by default, see
+    # sources/reddit_unofficial.py docstring for the accepted risk tradeoff.
+    enable_reddit_scraper: bool = False
 
     @property
     def akamai_db_configured(self) -> bool:
