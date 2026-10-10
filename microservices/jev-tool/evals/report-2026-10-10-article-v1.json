@@ -1,0 +1,429 @@
+{
+  "engine": "jev",
+  "model": "jev-1.13.0",
+  "question_set_version": "article-v1",
+  "generated_at": "2026-10-10T20:44:25+00:00",
+  "note": "Sanity check on 19 hand-labelled samples. Not an accuracy claim.",
+  "summary": {
+    "items": 19,
+    "items_about_company": 15,
+    "relevance_accuracy": 1.0,
+    "direction_accuracy": 0.8,
+    "materiality_exact": 0.7333333333333333,
+    "materiality_within_one": 1.0,
+    "direction_confidence_when_right": 0.9541666666666667,
+    "direction_confidence_when_wrong": 0.75,
+    "direction_flip_rate_when_options_reversed": 0.0,
+    "direction_confusion": {
+      "positive -> positive": 4,
+      "negative -> negative": 4,
+      "neutral -> positive": 2,
+      "mixed -> mixed": 3,
+      "neutral -> neutral": 1,
+      "negative -> neutral": 1
+    },
+    "mean_input_tokens": 579.9473684210526,
+    "mean_latency_ms": 457.241368394247
+  },
+  "rows": [
+    {
+      "id": "sample-aapl-news-001",
+      "title": "Apple reports record quarterly revenue on strong iPhone demand",
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 2
+      },
+      "relevant_probability": 0.99,
+      "relevant_correct": true,
+      "direction": "positive",
+      "direction_confidence": 1.0,
+      "materiality_score": 1.91,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 583,
+      "latency_ms": 972.1277998760343,
+      "request_id": "req_01a1278f0eb97de792bb456b5312a9bd"
+    },
+    {
+      "id": "sample-aapl-news-002",
+      "title": "Apple recalls a batch of laptop chargers over overheating reports",
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 1
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "negative",
+      "direction_confidence": 0.56,
+      "materiality_score": 0.74,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 585,
+      "latency_ms": 285.91819992288947,
+      "request_id": "req_01a1278f11437a6fbf85b65bcf49ff0a"
+    },
+    {
+      "id": "sample-aapl-news-003",
+      "title": "Apple to open a new retail store in Austin next month",
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": 0
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "positive",
+      "direction_confidence": 0.92,
+      "materiality_score": 0.16,
+      "direction_correct": false,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 574,
+      "latency_ms": 395.2913999091834,
+      "request_id": "req_01a1278f13d67a0088fa52dea7db4962"
+    },
+    {
+      "id": "sample-aapl-news-004",
+      "title": "Regulators fine Apple over app store rules; company to appeal",
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "negative",
+      "direction_confidence": 0.99,
+      "materiality_score": 1.99,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 588,
+      "latency_ms": 752.1248999983072,
+      "request_id": "req_01a1278f19587582be0fce4688bfac70"
+    },
+    {
+      "id": "sample-aapl-news-005",
+      "title": "Ten gadgets we loved this year",
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      },
+      "relevant_probability": 0.06,
+      "relevant_correct": true,
+      "direction": "neutral",
+      "direction_confidence": 0.99,
+      "materiality_score": 0.0,
+      "direction_correct": null,
+      "materiality_exact": null,
+      "materiality_within_one": null,
+      "direction_flipped": false,
+      "input_tokens": 579,
+      "latency_ms": 503.5506999120116,
+      "request_id": "req_01a1278f1d097d9eb1ac3cdcde311770"
+    },
+    {
+      "id": "sample-aapl-news-006",
+      "title": "Apple posts higher services revenue but warns of weaker hardware sales",
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 2
+      },
+      "relevant_probability": 0.99,
+      "relevant_correct": true,
+      "direction": "mixed",
+      "direction_confidence": 1.0,
+      "materiality_score": 1.08,
+      "direction_correct": true,
+      "materiality_exact": false,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 578,
+      "latency_ms": 269.8139001149684,
+      "request_id": "req_01a1278f203874aa9569092e45007dc3"
+    },
+    {
+      "id": "sample-nvda-news-001",
+      "title": "Nvidia raises full-year forecast as data center orders surge",
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 2
+      },
+      "relevant_probability": 0.99,
+      "relevant_correct": true,
+      "direction": "positive",
+      "direction_confidence": 1.0,
+      "materiality_score": 1.87,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 580,
+      "latency_ms": 322.60299986228347,
+      "request_id": "req_01a1278f228872e09c69bfb25dbb9655"
+    },
+    {
+      "id": "sample-nvda-news-002",
+      "title": "Nvidia says new export limits will cut sales to a key market",
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "negative",
+      "direction_confidence": 1.0,
+      "materiality_score": 1.98,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 584,
+      "latency_ms": 334.5889998599887,
+      "request_id": "req_01a1278f283279338e7a4bb1bfe73461"
+    },
+    {
+      "id": "sample-nvda-news-003",
+      "title": "Nvidia names new head of investor relations",
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": 0
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "neutral",
+      "direction_confidence": 1.0,
+      "materiality_score": 0.02,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 573,
+      "latency_ms": 431.043199962005,
+      "request_id": "req_01a1278f2b5b79a98425f9765612a927"
+    },
+    {
+      "id": "sample-nvda-news-004",
+      "title": "Rival chipmaker unveils processor it says beats competitors",
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      },
+      "relevant_probability": 0.09,
+      "relevant_correct": true,
+      "direction": "negative",
+      "direction_confidence": 0.84,
+      "materiality_score": 1.0,
+      "direction_correct": null,
+      "materiality_exact": null,
+      "materiality_within_one": null,
+      "direction_flipped": false,
+      "input_tokens": 589,
+      "latency_ms": 407.9986000433564,
+      "request_id": "req_01a1278f2e9076c3853243a83ff19d21"
+    },
+    {
+      "id": "sample-nvda-news-005",
+      "title": "Nvidia signs deal to supply driver-assistance chips to an automaker",
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 1
+      },
+      "relevant_probability": 0.96,
+      "relevant_correct": true,
+      "direction": "positive",
+      "direction_confidence": 1.0,
+      "materiality_score": 0.98,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 584,
+      "latency_ms": 317.62470002286136,
+      "request_id": "req_01a1278f30f57a7381ca6167e56398e1"
+    },
+    {
+      "id": "sample-nvda-news-006",
+      "title": "Nvidia delays next-generation chip by a quarter but says demand remains strong",
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 1
+      },
+      "relevant_probability": 0.99,
+      "relevant_correct": true,
+      "direction": "mixed",
+      "direction_confidence": 0.91,
+      "materiality_score": 0.98,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 592,
+      "latency_ms": 351.81730007752776,
+      "request_id": "req_01a1278f33437c39a4166eb022ddf5d3"
+    },
+    {
+      "id": "sample-tsla-news-001",
+      "title": "Tesla quarterly deliveries fall well short of analyst expectations",
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2
+      },
+      "relevant_probability": 0.99,
+      "relevant_correct": true,
+      "direction": "negative",
+      "direction_confidence": 1.0,
+      "materiality_score": 1.89,
+      "direction_correct": true,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 574,
+      "latency_ms": 432.26859997957945,
+      "request_id": "req_01a1278f36fc7d13a3003471d5c9e1ac"
+    },
+    {
+      "id": "sample-tsla-news-002",
+      "title": "Tesla wins approval to build a new battery plant",
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 1
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "positive",
+      "direction_confidence": 1.0,
+      "materiality_score": 1.53,
+      "direction_correct": true,
+      "materiality_exact": false,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 571,
+      "latency_ms": 415.9082998521626,
+      "request_id": "req_01a1278f3a527e3ca6163ae9e3efb7c9"
+    },
+    {
+      "id": "sample-tsla-news-003",
+      "title": "Tesla recalls vehicles to fix a software issue with an over-the-air update",
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 1
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "neutral",
+      "direction_confidence": 0.68,
+      "materiality_score": 0.46,
+      "direction_correct": false,
+      "materiality_exact": false,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 585,
+      "latency_ms": 409.23190000467,
+      "request_id": "req_01a1278f3d6a787bb1d130b04515bc6d"
+    },
+    {
+      "id": "sample-tsla-news-004",
+      "title": "Tesla launches referral promotion offering free charging credits",
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": 0
+      },
+      "relevant_probability": 0.98,
+      "relevant_correct": true,
+      "direction": "positive",
+      "direction_confidence": 0.65,
+      "materiality_score": 0.0,
+      "direction_correct": false,
+      "materiality_exact": true,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 567,
+      "latency_ms": 484.1334999073297,
+      "request_id": "req_01a1278f40ac7773a5ec272d958e9cf0"
+    },
+    {
+      "id": "sample-tsla-news-005",
+      "title": "City council approves new downtown parking rules",
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      },
+      "relevant_probability": 0.04,
+      "relevant_correct": true,
+      "direction": "neutral",
+      "direction_confidence": 1.0,
+      "materiality_score": 0.01,
+      "direction_correct": null,
+      "materiality_exact": null,
+      "materiality_within_one": null,
+      "direction_flipped": false,
+      "input_tokens": 582,
+      "latency_ms": 587.3120001051575,
+      "request_id": "req_01a1278f448a748a992037a63ff0f658"
+    },
+    {
+      "id": "sample-tsla-news-006",
+      "title": "Tesla reports higher revenue while profit margin narrows",
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 2
+      },
+      "relevant_probability": 0.99,
+      "relevant_correct": true,
+      "direction": "mixed",
+      "direction_confidence": 0.99,
+      "materiality_score": 1.01,
+      "direction_correct": true,
+      "materiality_exact": false,
+      "materiality_within_one": true,
+      "direction_flipped": false,
+      "input_tokens": 576,
+      "latency_ms": 489.48030010797083,
+      "request_id": "req_01a1278f4883794dbc77a7603cd39fa8"
+    },
+    {
+      "id": "sample-tsla-news-007",
+      "title": "Electric vehicle registrations rise across Europe",
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      },
+      "relevant_probability": 0.08,
+      "relevant_correct": true,
+      "direction": "positive",
+      "direction_confidence": 0.87,
+      "materiality_score": 0.22,
+      "direction_correct": null,
+      "materiality_exact": null,
+      "materiality_within_one": null,
+      "direction_flipped": false,
+      "input_tokens": 575,
+      "latency_ms": 524.748699972406,
+      "request_id": "req_01a1278f4c7f7bf6908d8f248a41416c"
+    }
+  ]
+}

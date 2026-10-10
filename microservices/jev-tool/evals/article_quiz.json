@@ -1,5 +1,5 @@
 {
-  "note": "Synthetic test samples written for checking Jev question wording. Not real news. Never display these as evidence. The evidence objects follow the proposed shape in docs/api-contract-v0.md (branch jet/a1-api-contract). 'expected' is a hand-written first-pass answer key; direction and materiality are null when the item is not about the company. Materiality: 0 = routine or promotional, 1 = notable, 2 = major.",
+  "note": "Synthetic test samples written for checking Jev question wording. Not real news, posts or press releases. Never display these as evidence. The evidence objects follow the proposed shape in docs/api-contract-v0.md. 'expected' is a hand-written answer key; a list means any of those answers is accepted, because the call is a matter of judgment (for example routine good news may be read as neutral or positive). Direction and materiality are null when the item is not about the company. Materiality: 0 = routine or promotional, 1 = notable, 2 = major. Jev sees only the title and summary, not source_name.",
   "companies": {
     "AAPL": "Apple",
     "NVDA": "Nvidia",
@@ -22,7 +22,8 @@
       "expected": {
         "relevant": true,
         "direction": "positive",
-        "materiality": 2
+        "materiality": 2,
+        "content_type": "news_report"
       }
     },
     {
@@ -41,7 +42,8 @@
       "expected": {
         "relevant": true,
         "direction": "negative",
-        "materiality": 1
+        "materiality": 1,
+        "content_type": "news_report"
       }
     },
     {
@@ -59,8 +61,12 @@
       },
       "expected": {
         "relevant": true,
-        "direction": "neutral",
-        "materiality": 0
+        "direction": [
+          "neutral",
+          "positive"
+        ],
+        "materiality": 0,
+        "content_type": "news_report"
       }
     },
     {
@@ -79,7 +85,8 @@
       "expected": {
         "relevant": true,
         "direction": "negative",
-        "materiality": 2
+        "materiality": 2,
+        "content_type": "news_report"
       }
     },
     {
@@ -98,7 +105,11 @@
       "expected": {
         "relevant": false,
         "direction": null,
-        "materiality": null
+        "materiality": null,
+        "content_type": [
+          "opinion_or_analysis",
+          "other"
+        ]
       }
     },
     {
@@ -117,7 +128,8 @@
       "expected": {
         "relevant": true,
         "direction": "mixed",
-        "materiality": 2
+        "materiality": 2,
+        "content_type": "news_report"
       }
     },
     {
@@ -136,7 +148,8 @@
       "expected": {
         "relevant": true,
         "direction": "positive",
-        "materiality": 2
+        "materiality": 2,
+        "content_type": "news_report"
       }
     },
     {
@@ -155,7 +168,8 @@
       "expected": {
         "relevant": true,
         "direction": "negative",
-        "materiality": 2
+        "materiality": 2,
+        "content_type": "news_report"
       }
     },
     {
@@ -174,7 +188,8 @@
       "expected": {
         "relevant": true,
         "direction": "neutral",
-        "materiality": 0
+        "materiality": 0,
+        "content_type": "news_report"
       }
     },
     {
@@ -193,7 +208,8 @@
       "expected": {
         "relevant": false,
         "direction": null,
-        "materiality": null
+        "materiality": null,
+        "content_type": "news_report"
       }
     },
     {
@@ -212,7 +228,8 @@
       "expected": {
         "relevant": true,
         "direction": "positive",
-        "materiality": 1
+        "materiality": 1,
+        "content_type": "news_report"
       }
     },
     {
@@ -231,7 +248,8 @@
       "expected": {
         "relevant": true,
         "direction": "mixed",
-        "materiality": 1
+        "materiality": 1,
+        "content_type": "news_report"
       }
     },
     {
@@ -250,7 +268,8 @@
       "expected": {
         "relevant": true,
         "direction": "negative",
-        "materiality": 2
+        "materiality": 2,
+        "content_type": "news_report"
       }
     },
     {
@@ -269,7 +288,8 @@
       "expected": {
         "relevant": true,
         "direction": "positive",
-        "materiality": 1
+        "materiality": 1,
+        "content_type": "news_report"
       }
     },
     {
@@ -287,8 +307,12 @@
       },
       "expected": {
         "relevant": true,
-        "direction": "negative",
-        "materiality": 1
+        "direction": [
+          "negative",
+          "neutral"
+        ],
+        "materiality": 1,
+        "content_type": "news_report"
       }
     },
     {
@@ -306,8 +330,12 @@
       },
       "expected": {
         "relevant": true,
-        "direction": "neutral",
-        "materiality": 0
+        "direction": [
+          "neutral",
+          "positive"
+        ],
+        "materiality": 0,
+        "content_type": "news_report"
       }
     },
     {
@@ -326,7 +354,8 @@
       "expected": {
         "relevant": false,
         "direction": null,
-        "materiality": null
+        "materiality": null,
+        "content_type": "news_report"
       }
     },
     {
@@ -345,7 +374,8 @@
       "expected": {
         "relevant": true,
         "direction": "mixed",
-        "materiality": 2
+        "materiality": 2,
+        "content_type": "news_report"
       }
     },
     {
@@ -364,7 +394,186 @@
       "expected": {
         "relevant": false,
         "direction": null,
-        "materiality": null
+        "materiality": null,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-blog-001",
+        "symbol": "AAPL",
+        "title": "Why I'm holding my Apple shares for the next decade",
+        "summary": "In a personal finance blog post, the author explains why they believe Apple's services business will keep growing and says they plan to keep holding the stock.",
+        "source_name": "Fixture Blog",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-blog-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 0,
+        "content_type": "opinion_or_analysis"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-social-001",
+        "symbol": "AAPL",
+        "title": "Post: 'Hearing Apple is about to buy a big streaming company, huge if true'",
+        "summary": "A social media user posted an unverified claim that Apple is about to acquire a large streaming company. No source was given and the company has not commented.",
+        "source_name": "Fixture Social",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-social-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "positive",
+          "neutral"
+        ],
+        "materiality": [
+          1,
+          2
+        ],
+        "content_type": "social_media_post"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-release-001",
+        "symbol": "AAPL",
+        "title": "Apple Introduces New Trade-In Offer for Students",
+        "summary": "Apple today announced a limited-time trade-in offer for students. 'We're thrilled to help students get the tools they need,' the company said in the release.",
+        "source_name": "Fixture Press Release",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-release-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "positive",
+          "neutral"
+        ],
+        "materiality": 0,
+        "content_type": "company_announcement"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-blog-001",
+        "symbol": "NVDA",
+        "title": "Opinion: Nvidia's valuation has run too far ahead of its earnings",
+        "summary": "A market commentator argues in a column that Nvidia's share price already assumes years of growth and recommends that readers reduce their holdings.",
+        "source_name": "Fixture Blog",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-blog-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": [
+          0,
+          1
+        ],
+        "content_type": "opinion_or_analysis"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-social-001",
+        "symbol": "NVDA",
+        "title": "Post: 'my gaming rig finally works lol'",
+        "summary": "A social media user posted about fixing their home computer and listed its parts, including an Nvidia graphics card.",
+        "source_name": "Fixture Social",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-social-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "social_media_post"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-release-001",
+        "symbol": "NVDA",
+        "title": "Nvidia Announces Record Attendance at Its Developer Conference",
+        "summary": "Nvidia today announced that its annual developer conference drew record attendance. 'The energy this year was incredible,' the company said in a statement.",
+        "source_name": "Fixture Press Release",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-release-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "positive",
+          "neutral"
+        ],
+        "materiality": 0,
+        "content_type": "company_announcement"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-social-001",
+        "symbol": "TSLA",
+        "title": "Post: 'Third week waiting for a Tesla service appointment, never again'",
+        "summary": "A social media user complained that they have waited three weeks for a Tesla service appointment and said they would not buy from the company again.",
+        "source_name": "Fixture Social",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-social-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 0,
+        "content_type": "social_media_post"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-blog-001",
+        "symbol": "TSLA",
+        "title": "Review: a month with Tesla's updated sedan",
+        "summary": "A car blogger reviews Tesla's updated sedan after a month of driving, praising its range and software while criticising the build quality and ride comfort.",
+        "source_name": "Fixture Blog",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-blog-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "mixed",
+          "neutral"
+        ],
+        "materiality": 0,
+        "content_type": "opinion_or_analysis"
       }
     }
   ]

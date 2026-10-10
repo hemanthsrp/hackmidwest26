@@ -45,14 +45,25 @@ def load_quiz(path: Path | str = DEFAULT_QUIZ) -> dict[str, Any]:
             raise ValueError(f"{item_id}: title and summary are required")
         if not isinstance(expected["relevant"], bool):
             raise ValueError(f"{item_id}: expected.relevant must be true or false")
+        if not _accepted(expected["content_type"]) <= set(presets.CONTENT_TYPE_OPTIONS):
+            raise ValueError(f"{item_id}: bad expected.content_type {expected['content_type']!r}")
         if expected["relevant"]:
-            if expected["direction"] not in presets.DIRECTION_OPTIONS:
+            if not _accepted(expected["direction"]) <= set(presets.DIRECTION_OPTIONS):
                 raise ValueError(f"{item_id}: bad expected.direction {expected['direction']!r}")
-            if expected["materiality"] not in range(MATERIALITY_MAX + 1):
+            if not _accepted(expected["materiality"]) <= set(range(MATERIALITY_MAX + 1)):
                 raise ValueError(f"{item_id}: bad expected.materiality {expected['materiality']!r}")
         elif expected["direction"] is not None or expected["materiality"] is not None:
             raise ValueError(f"{item_id}: direction and materiality must be null when not relevant")
     return quiz
+
+
+def _accepted(value: Any) -> set:
+    """The answer key may list more than one acceptable answer for a judgment call."""
+    return set(value) if isinstance(value, list) else {value}
+
+
+def _label(value: Any) -> str:
+    return "/".join(map(str, value)) if isinstance(value, list) else str(value)
 
 
 def score_item(
@@ -68,6 +79,8 @@ def score_item(
         "relevant_correct": (relevant_probability >= RELEVANCE_THRESHOLD) == expected["relevant"],
         "direction": answers["direction"]["choice"],
         "direction_confidence": answers["direction"]["confidence"],
+        "content_type": answers["content_type"]["choice"],
+        "content_type_correct": answers["content_type"]["choice"] in _accepted(expected["content_type"]),
         "materiality_score": answers["materiality"]["score"],
         "direction_correct": None,
         "materiality_exact": None,
@@ -78,9 +91,10 @@ def score_item(
         row["direction_flipped"] = reversed_direction != row["direction"]
     if expected["relevant"]:
         level = round(row["materiality_score"])
-        row["direction_correct"] = row["direction"] == expected["direction"]
-        row["materiality_exact"] = level == expected["materiality"]
-        row["materiality_within_one"] = abs(level - expected["materiality"]) <= 1
+        row["direction_correct"] = row["direction"] in _accepted(expected["direction"])
+        accepted_levels = _accepted(expected["materiality"])
+        row["materiality_exact"] = level in accepted_levels
+        row["materiality_within_one"] = any(abs(level - a) <= 1 for a in accepted_levels)
     return row
 
 
@@ -101,6 +115,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "items_about_company": len(scored),
         "relevance_accuracy": _rate([r["relevant_correct"] for r in rows]),
         "direction_accuracy": _rate([r["direction_correct"] for r in rows]),
+        "content_type_accuracy": _rate([r["content_type_correct"] for r in rows]),
         "materiality_exact": _rate([r["materiality_exact"] for r in rows]),
         "materiality_within_one": _rate([r["materiality_within_one"] for r in rows]),
         "direction_confidence_when_right": _mean(
@@ -111,7 +126,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "direction_flip_rate_when_options_reversed": _rate([r["direction_flipped"] for r in rows]),
         "direction_confusion": dict(
-            Counter(f"{r['expected']['direction']} -> {r['direction']}" for r in scored if "expected" in r)
+            Counter(f"{_label(r['expected']['direction'])} -> {r['direction']}" for r in scored if "expected" in r)
         ),
         "mean_input_tokens": _mean([r.get("input_tokens") for r in rows]),
         "mean_latency_ms": _mean([r.get("latency_ms") for r in rows]),
@@ -174,13 +189,17 @@ def format_report(report: dict[str, Any]) -> str:
     misses = [
         r
         for r in report["rows"]
-        if not r["relevant_correct"] or r["direction_correct"] is False or r["materiality_exact"] is False
+        if not r["relevant_correct"]
+        or not r["content_type_correct"]
+        or r["direction_correct"] is False
+        or r["materiality_exact"] is False
     ]
     lines += ["", f"Misses ({len(misses)}):"]
     for r in misses:
         lines.append(
             f"  {r['id']}: expected {r['expected']} | got relevant={r['relevant_probability']:.2f} "
-            f"direction={r['direction']} materiality={r['materiality_score']:.2f}"
+            f"direction={r['direction']} content_type={r['content_type']} "
+            f"materiality={r['materiality_score']:.2f}"
         )
     return "\n".join(lines)
 

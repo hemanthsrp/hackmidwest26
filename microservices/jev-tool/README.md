@@ -7,7 +7,7 @@ Shared tool for quick, cheap decisions using Jev (TypeSafe AI's System One model
 
 Background, limits and the list of where Jev should and should not be used: [docs/jev-integration-research.md](../../docs/jev-integration-research.md).
 
-> **Status:** built and tested offline against a mock HTTP transport, and through a real stdio MCP round trip. **No call to the real TypeSafe API has been made yet** (no key). Question wording in `presets.py` is an untuned first draft.
+> **Status:** tested offline against a mock HTTP transport, and against the real TypeSafe API on 2026-10-10 (direct call, MCP round trip, and the wording quiz below). Question wording in `presets.py` has had one sanity pass on 27 samples; it is not tuned.
 
 ## Setup
 
@@ -56,7 +56,7 @@ jev.score("...", "How urgent is this?", ["can wait", "this week", "today"]).scor
 
 judgment = jev.judge_article("ACME", "Acme Corp", title="...", summary="...")
 if judgment.engine == "jev":
-    judgment.relevant, judgment.direction, judgment.materiality
+    judgment.relevant, judgment.direction, judgment.content_type, judgment.materiality
 
 jev.judge_articles([{"symbol": ..., "company": ..., "title": ..., "summary": ...}, ...])
 ```
@@ -107,13 +107,15 @@ Record the model, request id, latency and `input_tokens` from the log line; that
 
 ## Checking the question wording
 
-`evals/article_quiz.json` holds 19 hand-labelled **sample** headlines for AAPL, NVDA and TSLA (written for testing, not real news) in the evidence shape proposed in `docs/api-contract-v0.md`. The harness runs each through the `judge_article` questions, then again with the direction options reversed, and compares with the answer key:
+`evals/article_quiz.json` holds 27 hand-labelled **samples** for AAPL, NVDA and TSLA: news items, blog posts, social posts and press-release style items (written for testing, not real content) in the evidence shape proposed in `docs/api-contract-v0.md`. The harness runs each through the `judge_article` questions, then again with the direction options reversed, and compares with the answer key:
 
 ```sh
 .venv/Scripts/python -m jev_tool.evals --out report.json
 ```
 
-It reports relevance, direction and materiality agreement, confidence when right vs wrong, how often the answer flips when options are reordered, and tokens and latency per article. With Jev off it scores nothing and exits with code 2. It is a sanity check for the wording, not an accuracy measurement. The answer key is a first pass and worth a skim before trusting the numbers.
+Where a call is a matter of judgment, the answer key lists more than one accepted answer. It reports relevance, direction, content-type and materiality agreement, confidence when right vs wrong, how often the answer flips when options are reordered, and tokens and latency per article. With Jev off it scores nothing and exits with code 2. It is a sanity check for the wording, not an accuracy measurement. The answer key is hand-written and worth a skim before trusting the numbers.
+
+Results from 2026-10-10 are saved in `evals/report-2026-10-10-article-v1.json` and `-v2.json` and summarised in the research doc (§12). Short version: relevance and direction agreed on every sample in the second run, content type missed the two press-release style samples, and the only answers that changed when options were reordered were the two lowest-confidence ones.
 
 ## Don't use Jev for
 

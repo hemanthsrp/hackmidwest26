@@ -4,7 +4,7 @@
 >
 > **Research date:** 2026-10-10 · **Versions observed:** model `jev-1.13.0` (aliases `jev-latest`, `jev-preview`), Python SDK `typesafe-sdk` 0.7.3 (released 2026-10-09), HTTP API `v1`.
 >
-> **Implementation status (2026-10-10):** the shared Jev tool described in §7 now exists at [`microservices/jev-tool`](../microservices/jev-tool/README.md), built against `typesafe-sdk` 0.7.4, `mcp` 2.1.1 and `strands-agents` 1.59.0. It passes offline tests (real SDK client against a mock HTTP transport, plus a real stdio MCP round trip through Strands' `MCPClient`). **No call to the real TypeSafe API has been made yet.**
+> **Implementation status (2026-10-10):** the shared Jev tool described in §7 now exists at [`microservices/jev-tool`](../microservices/jev-tool/README.md), built against `typesafe-sdk` 0.7.4, `mcp` 2.1.1 and `strands-agents` 1.59.0. It passes offline tests (real SDK client against a mock HTTP transport, plus a real stdio MCP round trip through Strands' `MCPClient`). **Real calls have since been made** (direct and through MCP); see "Observed results" in §12.
 >
 > **Evidence labels used throughout**
 >
@@ -238,7 +238,7 @@ Priority: **MVP** = part of the first vertical slice; **Next** = worthwhile once
 | S4 | Which topic tags apply? (DUMP: "the agent may add additional tags") | one noul per candidate tag, or a choice for a single primary category | Title and summary; tag list with one-line descriptions | Stores tags for search and display | Next |
 | S5 | Is this usable content, or a paywall stub, error page, ad or empty scrape? | choice | Scraped text | Discards junk before anything else runs | Next |
 | S6 | Do these two items describe the same story? | noul or score per candidate pair | Two titles and summaries | De-duplicates. Generate candidate pairs in code first (same symbol, close in time) so the pair count stays small. | Next |
-| S7 | Is this reporting, opinion, or a press release? | choice | Title, summary, source name | Shown as a label; optional weighting input | Next |
+| S7 | What kind of content is this: company announcement, news report, opinion or analysis, social media post, other? | choice | Title and summary | Lets the combiner weigh a company's own promotion or a single social post less than independent reporting. **Built** into `judge_article` as `content_type` (question set `article-v2`). | MVP |
 | S8 | What kind of event is this: earnings, guidance, legal or regulatory, product, deal or M&A, management change, macro, other? | choice | Title and summary | Lets `decision-maker` connect news to what the options market is pricing (see the quant section below) | Next |
 | S9 | Does the article describe an upcoming scheduled event (for example an earnings date, a ruling, a launch)? | noul | Title and summary | Flags a known catalyst ahead; code widens the uncertainty statement. Jev only spots the mention; any date maths stays in code. | Next |
 
@@ -601,7 +601,6 @@ Working code now lives in the repository rather than in this document: the serve
 
 ### Still not verified
 
-- **Any real call to the TypeSafe API.**
 - **Handing the MCP tools to a Strands `Agent`**, which needs a text model.
 - **Gateway calls from Python.** No verified request shape.
 
@@ -679,7 +678,7 @@ Goal: close the Gate 0 question with recorded evidence, then stand up the shared
 |---|---|---|---|
 | 0 | **Get access.** Try the TypeSafe console; if signups are closed, ask the hackathon organisers and TypeSafe (waitlist), then evaluate a gateway. | Which route worked, account owner, any cost | No route works → record the blocker; build the tool against the fallback only and do not claim Jev |
 | 1 | **One observed call** from a throwaway script with the official SDK, using a fixture article and the draft S1–S3 questions | Timestamp, `response.model`, `request_id`, `usage`, wall-clock latency, the raw answers | 401/403 or schema mismatch → fix before going further |
-| 2 | **Sanity run**: `python -m jev_tool.evals` in `microservices/jev-tool` runs 19 hand-labelled sample headlines (AAPL, NVDA, TSLA) through the article questions, then again with the direction options reversed | Agreement with hand labels; confidence against correctness; token count per item (settles the billing question in §10) | Answers are unstable or plainly wrong → revise wording, or narrow the list in §6 |
+| 2 | **Sanity run**: `python -m jev_tool.evals` in `microservices/jev-tool` runs 27 hand-labelled samples (AAPL, NVDA, TSLA; news, blog posts, social posts, press-release style) through the article questions, then again with the direction options reversed | Agreement with hand labels; confidence against correctness; token count per item (settles the billing question in §10) | Answers are unstable or plainly wrong → revise wording, or narrow the list in §6 |
 | 3 | **Shared tool, function face:** `jev_check`, `jev_classify`, `jev_score`, `jev_evaluate`, `judge_article`, with flag, timeout, retry, pinned model and labelled fallback | Unit tests pass against fixtures with the flag off; one live call with it on | |
 | 4 | **Shared tool, MCP face:** expose the same functions as MCP tools; call one from a minimal Strands agent | A logged tool call through MCP; latency with and without the hop | The Strands MCP client API differs from what §9 describes → follow the official docs and update this document |
 | 5 | **First consumer:** the `decision-maker` combiner takes fixture evidence with `judge_article` results plus fixture quant buckets and returns a label | Example input and output payloads for the contract checkpoint | |
@@ -687,6 +686,30 @@ Goal: close the Gate 0 question with recorded evidence, then stand up the shared
 Steps 0–2 need no project code. Steps 3–4 can be built before any other service exists. Step 5 needs the input contract agreed, or at least drafted as fixtures.
 
 **Out of scope for the proof of concept:** every "Next" and "Deferred" row in §6, threshold tuning beyond a sanity check, any accuracy claim.
+
+### Observed results (2026-10-10)
+
+First real calls to Jev, made from a developer laptop with a direct TypeSafe key, model `jev-1.13.0`, SDK 0.7.4. Full reports with request ids are in `microservices/jev-tool/evals/report-2026-10-10-article-v1.json` and `...-article-v2.json`.
+
+| Check | Result |
+|---|---|
+| Direct SDK call (`jev_check`) | Answered; about 0.7 s for a single cold call |
+| Same call through the stdio MCP server and Strands `MCPClient` | Answered (`tests/test_mcp_server.py -m live`) |
+| Quiz, `article-v1` questions, 19 news samples | relevance 19/19, direction 12/15, materiality exact 11/15 and always within one level, no answer changed when options were reversed |
+| Quiz, `article-v2` questions (adds content type), 27 samples including blog posts, social posts and press-release style items | relevance 27/27, direction 22/22 against the widened key, content type 25/27, materiality exact 19/22 and always within one level, 2 of 27 direction answers changed when options were reversed |
+| Mean latency per article request | about 0.46 to 0.48 s |
+| Mean input tokens per article request | 580 with three questions, 773 with four |
+
+What this showed:
+
+- **Access works** with a direct key, both as a Python call and through MCP. This is the observed call the Gate 0 question asks for. Policy and rate-limit behaviour under load were not tested.
+- **The answer key was the main source of "misses" in the first run.** Jev read routine good news (a store opening, a promotion) as positive where the key said neutral. The key now accepts either for such judgment calls, and a new `content_type` question separates company announcements, news reports, opinion or analysis, and social media posts, so that a caller can weigh a promotional or single-voice item less.
+- **Low confidence predicted instability.** The only two answers that changed when the options were reordered were also the two lowest-confidence direction answers (0.36 and 0.44). A confidence floor before trusting a direction answer looks worthwhile; the value needs more samples.
+- **Content type missed both press-release style samples**, calling them news reports. Those samples are written in the third person, so this may be the samples rather than the question. Real press-release text should be tried before changing the wording.
+- **Materiality runs conservative**: Jev rated two "revenue up but warning" earnings items as notable where the key said major.
+- **One transient failure**: the very first call failed with connection errors and a 5 s timeout, then every later call succeeded. The tool returned `engine: unavailable` as designed. Cause unknown.
+
+Limits of this evidence: 27 samples written by the same author who wrote the key, with the key widened after seeing the first run. It shows the questions are workable. It does not support any accuracy figure.
 
 ## 13. Implementation roadmap and dependencies
 
@@ -731,13 +754,13 @@ Steps 0–2 need no project code. Steps 3–4 can be built before any other serv
 
 | # | Item | How to verify |
 |---|---|---|
-| 1 | Whether we can obtain a key at all; whether signups are paused | Try the console; ask organisers |
+| 1 | ~~Whether we can obtain a key at all~~ **Resolved 2026-10-10:** a direct key works. | n/a |
 | 2 | Any hackathon-provided Jev access or credit | Ask organisers. The Akamai starter kit README does not mention Jev; its `docs/inference.md` could not be fetched. |
 | 3 | Gateway request shape from Python; whether the SDK `base_url` can target a gateway | Gateway docs; one test call |
 | 4 | Whether `state` tokens are billed once or per question | `usage.input_tokens` on a real call |
 | 5 | Default `RetryPolicy` and timeout values | SDK source or API reference pages |
 | 6 | Correct answer accessor (`answers[...]` vs `nouls` / `choices` / `scores`) | Pinned SDK version |
-| 7 | Real latency from the Akamai region | Measure |
+| 7 | Real latency from the Akamai region (measured so far only from a laptop: about 0.5 s per article) | Measure from the deployed host |
 | 8 | Calibration and accuracy on financial news | Proof-of-concept step 2; no claim until evaluated |
 | 9 | Current Strands MCP client API (`MCPClient`, transports, direct tool invocation) | Official Strands docs |
 | 10 | Whether Akamai's hosted inference is OpenAI-compatible (matters for option F) | Kickoff materials |

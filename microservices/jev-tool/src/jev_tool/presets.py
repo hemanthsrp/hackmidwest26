@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from typesafe_sdk import Choice, Noul, Score
 
-ARTICLE_QUESTION_SET_VERSION = "article-v1"
+ARTICLE_QUESTION_SET_VERSION = "article-v2"
 
 MATERIALITY_LEVELS = ["routine or promotional", "notable", "major"]
 
@@ -25,6 +25,24 @@ DIRECTION_OPTIONS = {
     "neutral": "Reports nothing clearly good or bad for the company's business.",
     "positive": "Reports good news for the company's business.",
     "mixed": "Reports both clearly good and clearly bad news for the company's business.",
+}
+
+
+CONTENT_TYPE_OPTIONS = {
+    "company_announcement": (
+        "Issued by the company itself and written in its own voice: a press release, "
+        "promotional material or an official statement."
+    ),
+    "news_report": (
+        "Written by a news outlet reporting on events, including reporting on something "
+        "the company announced."
+    ),
+    "opinion_or_analysis": (
+        "A blog post, column, review or analyst commentary that mainly gives the author's "
+        "own view or recommendation."
+    ),
+    "social_media_post": "A short post by an individual on a social media platform or forum.",
+    "other": "None of the above, such as an advertisement, a list, or a notice unrelated to business news.",
 }
 
 
@@ -45,6 +63,10 @@ def article_questions(direction_order: Sequence[str] | None = None) -> dict:
                 "about its business outlook?"
             ),
             criteria=direction_criteria,
+        ),
+        "content_type": Choice(
+            instructions="What kind of content is the text in `article`?",
+            criteria=dict(CONTENT_TYPE_OPTIONS),
         ),
         "materiality": Score(
             instructions="How significant is the event reported in `article` for the company's business?",

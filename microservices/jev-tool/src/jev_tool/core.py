@@ -74,6 +74,9 @@ class ArticleJudgment(_Result):
     direction: str | None = None
     direction_probabilities: dict[str, float] = {}
     direction_confidence: float | None = None
+    content_type: str | None = None
+    content_type_probabilities: dict[str, float] = {}
+    content_type_confidence: float | None = None
     materiality: float | None = None
     materiality_levels: list[str] = presets.MATERIALITY_LEVELS
     materiality_confidence: float | None = None
@@ -194,19 +197,23 @@ class JevTool:
         )
 
     def judge_article(self, symbol: str, company: str, title: str, summary: str) -> ArticleJudgment:
-        """Relevance, direction and materiality of one news item for one company."""
+        """Relevance, direction, content type and materiality of one item for one company."""
         response, meta = self._call(
             presets.article_state(symbol, company, title, summary), presets.article_questions()
         )
         if response is None:
             return ArticleJudgment(**meta)
         direction = response.choices["direction"]
+        content_type = response.choices["content_type"]
         materiality = response.scores["materiality"]
         return ArticleJudgment(
             relevant=response.nouls["relevant"].noul,
             direction=direction.choice,
             direction_probabilities=direction.probabilities,
             direction_confidence=direction.confidence,
+            content_type=content_type.choice,
+            content_type_probabilities=content_type.probabilities,
+            content_type_confidence=content_type.confidence,
             materiality=materiality.score,
             materiality_confidence=materiality.confidence,
             **meta,

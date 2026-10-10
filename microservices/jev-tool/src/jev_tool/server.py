@@ -77,11 +77,14 @@ def jev_evaluate(state: Any, questions: dict[str, dict[str, Any]]) -> EvaluateRe
 
 @mcp.tool()
 def judge_article(symbol: str, company: str, title: str, summary: str) -> ArticleJudgment:
-    """Judge one news item for one company.
+    """Judge one piece of content (news, blog post, social post) for one company.
 
-    Returns `relevant` (probability the article is mainly about the company),
-    `direction` (negative / neutral / positive / mixed) with probabilities, and
-    `materiality` (0 = routine or promotional, 1 = notable, 2 = major).
+    Returns `relevant` (probability it is mainly about the company), `direction`
+    (negative / neutral / positive / mixed) with probabilities, `content_type`
+    (company_announcement / news_report / opinion_or_analysis / social_media_post /
+    other), and `materiality` (0 = routine or promotional, 1 = notable, 2 = major).
+    Weigh direction together with content_type and materiality: a company's own
+    promotion or a single social post is weaker evidence than independent reporting.
     """
     return default_tool().judge_article(symbol, company, title, summary)
 

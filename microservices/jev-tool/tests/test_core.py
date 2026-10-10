@@ -127,6 +127,7 @@ def test_judge_article():
     assert judgment.relevant == 0.9
     assert judgment.direction == "negative"
     assert set(judgment.direction_probabilities) == {"negative", "neutral", "positive", "mixed"}
+    assert judgment.content_type == "company_announcement"
     assert judgment.materiality == 2.0
     body = requests[0]
     assert body["state"]["company"] == {"name": "Acme Corp", "ticker": "ACME"}
