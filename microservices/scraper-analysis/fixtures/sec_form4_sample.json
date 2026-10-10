@@ -1,0 +1,22 @@
+[
+  {
+    "symbol": "AAPL",
+    "form_type": "4",
+    "items": "",
+    "accession_number": "0000320193-26-000042",
+    "company_name": "Apple Inc.",
+    "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000042/sample-form4.xml",
+    "published_at": "2026-09-30T00:00:00Z",
+    "observed_at": "2026-09-29T00:00:00Z"
+  },
+  {
+    "symbol": "AAPL",
+    "form_type": "8-K",
+    "items": "2.02,9.01",
+    "accession_number": "0000320193-26-000041",
+    "company_name": "Apple Inc.",
+    "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000041/sample-8k.htm",
+    "published_at": "2026-09-25T00:00:00Z",
+    "observed_at": "2026-09-25T00:00:00Z"
+  }
+]

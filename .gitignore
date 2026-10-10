@@ -1,15 +1,30 @@
-# Local credentials and deployment state. Keep the template tracked.
+# Secrets
 .env
 .env.*
 !.env.example
+microservices/image.png
 
-# Local Python/runtime state
-.venv/
+# Python
 __pycache__/
-.pytest_cache/
 *.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
 
-# Local deployment artifacts and credentials
-*.pem
-*.key
-kubeconfig*
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Editors / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

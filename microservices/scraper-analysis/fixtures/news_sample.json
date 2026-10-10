@@ -1,0 +1,20 @@
+[
+  {
+    "symbol": "AAPL",
+    "title": "Apple shares rise after strong iPhone demand signals",
+    "description": "Analysts note stronger-than-expected channel checks ahead of the holiday quarter.",
+    "source_name": "Sample Financial Wire",
+    "url": "https://example.com/sample-news/aapl-demand-signals",
+    "published_at": "2026-10-08T14:30:00Z",
+    "observed_at": "2026-10-08T14:30:00Z"
+  },
+  {
+    "symbol": "AAPL",
+    "title": "Apple supplier flags component constraints",
+    "description": "A key supplier cited tight capacity for advanced packaging into next quarter.",
+    "source_name": "Sample Financial Wire",
+    "url": "https://example.com/sample-news/aapl-supplier-constraints",
+    "published_at": "2026-10-05T09:00:00Z",
+    "observed_at": "2026-10-05T09:00:00Z"
+  }
+]
