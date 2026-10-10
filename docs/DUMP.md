@@ -50,6 +50,54 @@ Resources:
 [Getting started](https://strandsagents.com/docs/user-guide/sdk/quickstart/overview/)
 [Strands Agents Samples](https://github.com/strands-agents/samples)
 
+### DevRev (Computer challenge)
+Build a reusable skill or MCP connector in DevRev Computer that solves a real enterprise workflow using the provided Enterprise-Bench dataset, and demonstrate that another authorized teammate can use it to produce a useful, evidence-backed result.
+
+1. For resources and details, go [here](https://hack-midwest-computer-challenge.vercel.app/)
+
+2. Register for challenge [here](https://docs.google.com/forms/d/e/1FAIpQLScAbUnZ58Hw9GLkZxnLmtWCRE-aJHI52YoI4aWq7xa9Ux5jTg/viewform) (link taken from the challenge page)
+
+The details below were read from the challenge page on 2026-10-10 and are summarized, not quoted. Check the page for anything that matters.
+
+Build paths:
+
+1) Reusable skill: package a repeatable workflow with when to use it, required inputs, tools, and expected output.
+
+2) MCP connector: connect Computer to an external tool or sandbox service. The connection must enable a completed workflow, not just exist.
+
+3) Wildcard: an end-to-end automation using agents, workflows, MCP, and DevRev data objects, from intake to a recorded outcome.
+
+Data boundary:
+
+Use only the provided Enterprise-Bench synthetic dataset as business evidence. Connectors may serve that data or carry approved outputs into a sandbox tool. Do not add real customer data, custom company datasets, or live external enrichment.
+
+Starting-point problems suggested on the page:
+
+Sales data quality enhancer; customer trust signals; commitment-to-action connector; customer impact investigator.
+
+What judges look for (the page gives no weights):
+
+1) A useful business outcome beyond a generic chat prompt.
+
+2) Reuse: parameterized inputs, and a demo with another authorized colleague and different records.
+
+3) Evidence and honest limits: inspectable claims, handling of missing or ambiguous data.
+
+4) Safe execution: respect permissions, keep credentials out of code, preview and approve sandbox writes, handle errors and duplicates.
+
+Read-only builds are welcome; more integrations or write actions do not automatically score higher.
+
+Access:
+
+Registration is a request for access, not an instant login. DevRev sends playground setup and kickoff details separately. Do not put passwords or access tokens in the form. Use a personal playground access token and keep it out of chat, source code, and shared files.
+
+Not stated on the page: prizes, deadlines, submission steps, and judging weights.
+
+Resources:
+[Challenge page](https://hack-midwest-computer-challenge.vercel.app/) (also hosts the builder skill pack, builder guide, and MCP starter downloads)
+[Enterprise-Bench dataset](https://github.com/devrev/enterprise-bench)
+[DevRev API specs and plugin guides](https://developer.devrev.ai/about/for-developers)
+
 ## Idea: problem, target user, proposed solution, what makes it compelling
 We’re building a fintech app for Hack Midwest that gathers financial information from the web and combines it with historical trends and quantitative analysis to generate stock buy, sell, or hold predictions.
 
