@@ -14,7 +14,6 @@ anti-bot ToS) are deliberately not included here -- see the conversation
 record for why.
 """
 
-import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import ClassVar
@@ -22,23 +21,8 @@ from xml.etree import ElementTree
 
 import httpx
 
+from ..pipeline.symbol_match import matches_symbol
 from .base import RawRecord, SourceAdapter, SourceUnavailableError
-
-# Small curated ticker -> company-name hint table for filtering general
-# (non-per-symbol) feeds. Best-effort recall, not a full ticker database --
-# a documented limitation, not silently hidden.
-SYMBOL_NAME_HINTS: dict[str, str] = {
-    "AAPL": "Apple",
-    "MSFT": "Microsoft",
-    "TSLA": "Tesla",
-    "AMZN": "Amazon",
-    "GOOGL": "Alphabet",
-    "GOOG": "Alphabet",
-    "META": "Meta",
-    "NVDA": "Nvidia",
-    "NFLX": "Netflix",
-    "JPM": "JPMorgan",
-}
 
 
 def _parse_rss_items(xml_text: str) -> list[dict]:
@@ -62,11 +46,7 @@ def _parse_rss_items(xml_text: str) -> list[dict]:
 
 
 def _matches_symbol(item: dict, symbol: str) -> bool:
-    haystack = f"{item['title']} {item['description']}".lower()
-    if re.search(rf"\b{re.escape(symbol.lower())}\b", haystack):
-        return True
-    hint = SYMBOL_NAME_HINTS.get(symbol.upper())
-    return bool(hint and hint.lower() in haystack)
+    return matches_symbol(f"{item['title']} {item['description']}", symbol)
 
 
 def _fetch_rss(url: str) -> list[dict]:
