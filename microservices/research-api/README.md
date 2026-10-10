@@ -13,20 +13,28 @@ A fixture-first FastAPI skeleton for the Hack Midwest demo. It returns a **curre
 - `live`: returns `503 provider_unavailable` until a permitted live adapter has been configured. It does **not** fall back to fixtures.
 - `failure`: deterministic `503 simulated_provider_failure` for frontend/demo failure-state testing.
 
-## Akamai inference readiness (server-side plan)
+## Akamai inference seam (server-side only)
 
-Akamai preflight has verified three server-side operations: model discovery, one bounded chat completion, and one one-sentence embedding request. The configured chat and embedding aliases are available; the embedding result is **1024 dimensions**, matching the pgvector plan. This is preflight evidence, not a claim that the API currently calls Akamai.
+Akamai preflight has verified model discovery, one bounded chat completion, and one one-sentence embedding request. The configured aliases are available; embeddings are **1024 dimensions**, matching the pgvector plan. `research_api.inference` now supplies an injected-transport client seam for those OpenAI-compatible endpoints, but the assessment route does **not** call it yet.
 
-When the reviewed live adapter is added, it will read the configured `AKAMAI_INFERENCE_*` environment names only in the backend process (`AKAMAI_INFERENCE_ENABLED`, `AKAMAI_INFERENCE_BASE_URL`, `AKAMAI_INFERENCE_API_KEY`, `AKAMAI_INFERENCE_MODEL`, and `AKAMAI_INFERENCE_TIMEOUT_SECONDS`). No alias, base URL, API key, raw prompt, or provider response is sent to the browser or committed to the repository.
+The seam reads only the root `.env.example` contract from the backend process:
 
-The adapter must retain the existing safety boundary:
+```text
+OPENAI_BASE_URL
+OPENAI_API_KEY
+CHAT_MODEL
+EMBEDDING_MODEL
+```
 
-- `live` failures remain explicit `503 provider_unavailable` responses; they never switch to fixture output.
-- Retry only transient connection, timeout, `429`, and `5xx` failures, with **at most one retry** and the configured request timeout. Fail fast for missing configuration and other `4xx` responses.
-- Keep `sample` and `failure` modes deterministic for demo and frontend testing.
-- Record only safe operational metadata (request ID when supplied, selected alias, latency, and failure class). Do not log secrets, raw prompts, or raw provider responses.
+The browser never receives these values. Configuration errors name only missing variables, not values; the API key is omitted from settings representations and provider errors never include raw response bodies.
 
-Implementing this adapter still requires the shared source/schema review; this skeleton intentionally remains fixture-first until that decision is recorded.
+The client has a fixed 10-second request bound and at most one retry for connection, timeout, `408`, `429`, and `5xx` failures. It fails fast for missing configuration and other `4xx` responses. Tests inject an in-memory transport, so they make no live network calls.
+
+The safety boundary remains unchanged:
+
+- `live` route failures remain explicit `503 provider_unavailable` responses; they never switch to fixtures.
+- `sample` and `failure` remain deterministic demo/test modes.
+- Live inference is not wired to sources, embeddings storage, database tables, or the assessment route until Cai/Gate 0 defines the permitted source and evidence contract.
 
 ## Local checks
 
