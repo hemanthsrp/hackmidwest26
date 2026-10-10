@@ -21,7 +21,7 @@ The baseline `vol-surface-builder` described in `DUMP.md` is **not** a price pre
 
 ## Contract-first rule
 
-The lane owners agree on concrete JSON schemas and API paths **before** building both sides. Below is a minimal *proposed* contract for discussion, not a pre-existing endpoint. Record final choices in `DECISIONS.md` and update this document when implementation lands.
+The lane owners agree on concrete JSON schemas and API paths **before** building both sides. Below is a minimal *proposed* contract for discussion, not a pre-existing endpoint. The reviewable A1 request/response, four required failure examples, and server-side Akamai inference boundary are in [api-contract-v0.md](api-contract-v0.md). Record final choices in `DECISIONS.md` and update this document when implementation lands.
 
 - Request: `symbol` (normalized uppercase ticker) and optional non-sensitive demo preferences. Validate allowed symbols and inputs.
 - Evidence item: stable `id`, `symbol`, `title`/summary, `source_name`, `source_url` if permitted, `published_at` if known, `observed_at`, `retrieved_at`, and `data_mode` (`live`, `cached`, `sample`); do not fabricate timestamps.
@@ -31,6 +31,10 @@ The lane owners agree on concrete JSON schemas and API paths **before** building
 - Errors: predictable shape/status for invalid symbol, unavailable provider, stale data and incomplete decision flow. UI must surface failures without showing old data as current.
 
 **Contract checkpoint:** Jet/Cai/Hemanth/Allen review sample payloads, units, timestamp semantics, and failure cases. Freeze a small v0 schema before parallel UI/data/infrastructure implementations; changes require an explicit handoff in `TASKS.md` and `DECISIONS.md`.
+
+### Proposed inference boundary (A1; not implemented)
+
+The backend's text-generation client is proposed to use a project-owned `InferenceAdapter` with an `AkamaiOpenAICompatibleAdapter` behind it. Provider credentials and requests stay server-side. A `DeterministicFixtureAdapter` may be explicitly selected for offline/demo testing and labels output as `sample`; it must not silently replace a failed provider call. This is distinct from the existing shared `microservices/jev-tool`, which remains the project-owned TypeSafe SDK/MCP wrapper for narrow Jev judgments. See [api-contract-v0.md](api-contract-v0.md#project-owned-akamai-openai-compatible-inference-adapter) for the full boundary and unverified configuration names.
 
 ## Data and safety boundaries
 
