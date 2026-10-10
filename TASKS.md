@@ -1,0 +1,63 @@
+# Four-agent task board
+
+**Status:** Proposed, unclaimed. This is a scoped handoff board, not a record that work has started. Confirm human ownership and the MVP with the team. Each implementation task requires a branch/worktree, exact acceptance checks and an integration review under `AGENTS.md`.
+
+## Gates and dependency order
+
+- **Gate 0 — scope/contract (integration lead with all lanes):** choose the demo symbol(s), licensed sources, response fields, timestamps/units, error behavior, and demo fallback; record decisions in `DECISIONS.md`. Circulate one example response before A2/B2/C2/D2. No code-level assumption should be promoted to a public contract without this gate.
+- **Parallel discovery:** A1, B1, C1, D1 are independent; report findings rather than build broad systems.
+- **Parallel build after Gate 0:** A2, B2, C2, D2 work on separate trees and stable interfaces; adapt deployment and UI to an agreed schema.
+- **Integration:** A3 wires B2 and C2; D2 smoke-tests the integrated candidate. Integration lead owns review/merge and the final demo rehearsal.
+
+## Agent A — Strands/API/decision (Jet lane)
+
+**A1 — Feasibility and v0 API contract** (unclaimed; independent discovery)
+- Verify Strands SDK version/examples, JEV availability and actual MCP interface, inference auth/latency, and backend framework choice; record source, evidence, blockers. Draft a *proposed* JSON request/response and `insufficient_data` path for Gate 0.
+- **Done when:** an example payload and error cases are reviewable; unverified integrations are explicitly marked, not stubbed as completed.
+
+**A2 — Backend skeleton + orchestration** (unclaimed; after Gate 0)
+- Implement a testable Python HTTP API using the approved schema; orchestrate source/quant/decision adapters via Strands where supported. Keep external tools mockable; validate inputs and classify unavailable/stale data.
+- **Done when:** a real local request against fixtures returns contract-valid output; tests cover empty evidence, invalid symbol and provider failure; Strands use is demonstrated in executed code, or the blocker is documented.
+
+**A3 — Decision/integration** (unclaimed; after A2+B2, coordinate C2)
+- Wire source and quant outputs into an explainable assessment with horizon/uncertainty and evidence IDs; connect JEV/MCP only if verified, otherwise retain an explicitly labeled fallback and document unmet sponsor criteria.
+- **Done when:** full API demo uses real module boundaries, handles failures, and logged examples do not leak secrets; integration smoke passes locally.
+
+## Agent B — evidence and quant (Cai lane)
+
+**B1 — Source/data feasibility** (unclaimed; independent discovery)
+- Compare one permitted news source and one historical-market data source, including licensing/rate limits, fields and failure modes. Audit whether existing baseline code is useful for adapters (coordinate C1); propose normalization/dedup/timestamp rules.
+- **Done when:** selected sources and restrictions are documented for Gate 0; no paywall bypass or unauthorized scraping.
+
+**B2 — Normalized evidence + signals** (unclaimed; after Gate 0)
+- Implement adapters returning agreed evidence and quant records with provenance, units and observation/retrieval times. Add deterministic fixtures, deduplication and stale/missing handling. Avoid interpreting options IV diagnostics as price predictions.
+- **Done when:** unit tests cover normalization, duplication, missing dates and data modes; fixtures support at least the agreed demo symbol; no unstated live-data assumptions.
+
+## Agent C — frontend and baseline (Hemanth lane)
+
+**C1 — Existing baseline assessment + UX wireframe** (unclaimed; independent discovery)
+- Inspect the actual `vol-surface-builder` repo with authorization and identify code worth reusing versus options-only math. Propose one stock detail flow and labeled demo states (loading, stale, sample, error, insufficient data).
+- **Done when:** findings cite actual paths/tests, or lack of repo access is recorded; no claim that baseline predicts prices.
+
+**C2 — Next.js demo slice** (unclaimed; after Gate 0)
+- Build a Next.js/TypeScript view for symbol selection, dated evidence, chart/signals, assessment, uncertainty and source links. Consume the agreed API; fixture mode must be visually labeled. A preferences form is optional if time allows.
+- **Done when:** a local browser smoke test exercises a successful response and an error/insufficient-data state; build/test commands and results are reported.
+
+## Agent D — Akamai platform and verification (Allen lane)
+
+**D1 — Infra feasibility and safe deployment plan** (unclaimed; independent discovery)
+- Verify Akamai account/credits, hosted inference options, deploy target and time-to-setup with Allen. Decide whether vector storage is justified by the MVP; prefer a simpler persistence/retrieval path if not. Never assume accounts or credentials are available.
+- **Done when:** architecture, cost/resource assumptions, required env-var names and blockers are documented; no spend/provisioning without approval.
+
+**D2 — Deployment/observability/smoke** (unclaimed; after Gate 0 and runnable app for remote smoke)
+- Add minimal deployment configuration, health/logging, safe example environment names and a repeatable smoke test. Deploy only with approval; verify actual frontend/backend and Akamai use before claiming them. Local fallback remains runnable.
+- **Done when:** local smoke actually runs, and remote URL/health/log evidence is provided if deployed; failures and remaining manual steps are explicit.
+
+## Integration lead checklist
+
+- [ ] Confirm MVP and selected demo symbol(s) with teammates.
+- [ ] Freeze v0 fields, units, timestamps, error and fixture modes; update `ARCHITECTURE.md` + `DECISIONS.md`.
+- [ ] Assign task IDs and separate branches/worktrees; note owners without overwriting teammates' work.
+- [ ] Review each lane's handoff, tests, secrets/data exposure and schema changes before merge.
+- [ ] Run backend tests, frontend build, local end-to-end smoke and (if approved) Akamai remote smoke.
+- [ ] Rehearse the demo using both live and explicitly labeled fallback paths.
