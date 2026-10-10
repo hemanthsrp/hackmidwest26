@@ -1,3 +1,6 @@
+from urllib.parse import parse_qs, urlparse
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,11 +16,27 @@ class Settings(BaseSettings):
     # live invoke_model call against this account.
     bedrock_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
-    akamai_db_host: str | None = None
-    akamai_db_port: int = 5432
-    akamai_db_name: str | None = None
-    akamai_db_user: str | None = None
-    akamai_db_password: str | None = None
+    # Single server-only connection string per the DB configuration contract
+    # (accepted -- see conversation record): one DATABASE_URL, not split
+    # host/port/name/user/password fields, so there's no app-level default
+    # (e.g. a hardcoded port or a non-enforcing sslmode) to drift from the
+    # real provisioned instance. Never log, commit, or expose this value.
+    database_url: str | None = None
+
+    @field_validator("database_url")
+    @classmethod
+    def _require_tls_for_non_local_hosts(cls, v: str | None) -> str | None:
+        if not v:
+            return v
+        host = urlparse(v).hostname
+        if host in ("localhost", "127.0.0.1"):
+            return v  # local Docker stand-in has no TLS cert configured
+        sslmode = parse_qs(urlparse(v).query).get("sslmode", [None])[0]
+        if sslmode != "require":
+            raise ValueError(
+                f"DATABASE_URL must set sslmode=require for non-local hosts (got sslmode={sslmode!r})"
+            )
+        return v
 
     akamai_inference_base_url: str | None = None
     akamai_inference_api_key: str | None = None
@@ -36,7 +55,7 @@ class Settings(BaseSettings):
 
     @property
     def akamai_db_configured(self) -> bool:
-        return bool(self.akamai_db_host and self.akamai_db_name and self.akamai_db_user)
+        return bool(self.database_url)
 
     @property
     def akamai_inference_configured(self) -> bool:
