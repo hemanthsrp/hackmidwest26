@@ -21,14 +21,20 @@ mcp = MCPServer(
 
 
 @mcp.tool()
-def yahoo_finance_market_signal(symbol: str, mode: str = "sample") -> dict[str, Any]:
-    """Return a labeled 30-day realized price-change signal for one stock symbol.
+def yahoo_finance_market_signal(
+    symbol: str,
+    mode: str = "sample",
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """Return a labeled realized price-change signal for one stock symbol.
 
     ``sample`` is deterministic fixture data. ``live`` is an opt-in yfinance
     request and returns an explicit error when unavailable; it never falls back
-    to fixture data.
+    to fixture data. Live requests accept an optional inclusive-start,
+    exclusive-end ISO date range; omit both dates for the latest 30-day window.
     """
-    return get_market_signal(symbol, mode)
+    return get_market_signal(symbol, mode, start_date, end_date)
 
 
 def main() -> None:

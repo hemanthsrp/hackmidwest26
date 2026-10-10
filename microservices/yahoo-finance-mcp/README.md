@@ -17,6 +17,18 @@ Every successful response includes `source_name`, `as_of`, `retrieved_at`, and
 `data_mode`. It does not make forecasts, produce investment advice, or make the
 service an official Yahoo product.
 
+### Query parameters
+
+- `symbol` — required 1–5 letter ticker.
+- `mode` — `sample` (default) or opt-in `live`.
+- `start_date` and `end_date` — optional ISO `YYYY-MM-DD` range for `live`
+  requests; provide both. The start is inclusive and the end is exclusive.
+  Omitting both uses the latest 30-day window.
+
+The deterministic sample fixture deliberately rejects date-range filters rather
+than inventing historic values. Invalid symbols, invalid ranges, unavailable
+providers, and unsupported sample filters return explicit error envelopes.
+
 ## Run locally
 
 ```sh

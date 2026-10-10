@@ -8,7 +8,7 @@ when Yahoo Finance is unavailable.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import TypedDict
 
 import yfinance as yf
@@ -40,7 +40,12 @@ class ErrorResponse(TypedDict):
     error: ErrorEnvelope
 
 
-def get_market_signal(symbol: str, mode: str = "sample") -> MarketSignal | ErrorResponse:
+def get_market_signal(
+    symbol: str,
+    mode: str = "sample",
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> MarketSignal | ErrorResponse:
     """Return one labeled 30-day realized price-change signal.
 
     ``mode='live'`` calls yfinance; any upstream failure is returned as an
@@ -51,17 +56,27 @@ def get_market_signal(symbol: str, mode: str = "sample") -> MarketSignal | Error
         return _error("invalid_symbol", "symbol must contain 1 to 5 uppercase letters", False)
     if mode not in {"sample", "live"}:
         return _error("invalid_mode", "mode must be either sample or live", False)
+    date_range_error = _validate_date_range(start_date, end_date)
+    if date_range_error:
+        return date_range_error
     if mode == "sample":
+        if start_date or end_date:
+            return _error(
+                "unsupported_sample_time_range",
+                "sample mode supports only the deterministic 30-day fixture",
+                False,
+            )
         return _signal(
             symbol=normalized_symbol,
             value=2.4,
             as_of=_SAMPLE_AS_OF,
             retrieved_at=_SAMPLE_AS_OF,
             data_mode="sample",
+            window="30d",
         )
 
     try:
-        start_price, end_price, as_of = _fetch_live_prices(normalized_symbol)
+        start_price, end_price, as_of = _fetch_live_prices(normalized_symbol, start_date, end_date)
     except Exception:
         return _error(
             "provider_unavailable",
@@ -80,11 +95,18 @@ def get_market_signal(symbol: str, mode: str = "sample") -> MarketSignal | Error
         as_of=_to_utc_timestamp(as_of),
         retrieved_at=_now_timestamp(),
         data_mode="live",
+        window=f"{start_date}..{end_date}" if start_date else "30d",
     )
 
 
-def _fetch_live_prices(symbol: str) -> tuple[float, float, datetime]:
-    history = yf.Ticker(symbol).history(period=f"{_WINDOW_DAYS + 5}d")
+def _fetch_live_prices(
+    symbol: str, start_date: str | None, end_date: str | None
+) -> tuple[float, float, datetime]:
+    history = (
+        yf.Ticker(symbol).history(start=start_date, end=end_date)
+        if start_date
+        else yf.Ticker(symbol).history(period=f"{_WINDOW_DAYS + 5}d")
+    )
     closes = history["Close"].dropna()
     if len(closes) < 2:
         raise RuntimeError("no usable Yahoo Finance price history")
@@ -93,14 +115,14 @@ def _fetch_live_prices(symbol: str) -> tuple[float, float, datetime]:
 
 
 def _signal(
-    *, symbol: str, value: float, as_of: str, retrieved_at: str, data_mode: str
+    *, symbol: str, value: float, as_of: str, retrieved_at: str, data_mode: str, window: str
 ) -> MarketSignal:
     return {
         "symbol": symbol,
         "name": "30-day price change",
         "value": value,
         "unit": "percent",
-        "window": "30d",
+        "window": window,
         "as_of": as_of,
         "retrieved_at": retrieved_at,
         "source_name": "Yahoo Finance via yfinance",
@@ -110,6 +132,21 @@ def _signal(
 
 def _error(code: str, message: str, retryable: bool) -> ErrorResponse:
     return {"error": {"code": code, "message": message, "retryable": retryable}}
+
+
+def _validate_date_range(start_date: str | None, end_date: str | None) -> ErrorResponse | None:
+    if bool(start_date) != bool(end_date):
+        return _error("invalid_date_range", "start_date and end_date must be provided together", False)
+    if not start_date:
+        return None
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError:
+        return _error("invalid_date_range", "dates must use ISO YYYY-MM-DD format", False)
+    if start >= end:
+        return _error("invalid_date_range", "start_date must be earlier than end_date", False)
+    return None
 
 
 def _now_timestamp() -> str:

@@ -28,7 +28,7 @@ def test_invalid_symbol_returns_a_stable_error_envelope() -> None:
 
 
 def test_live_failure_is_explicit_and_never_falls_back_to_sample(monkeypatch) -> None:
-    def unavailable(_: str) -> tuple[float, float, datetime]:
+    def unavailable(_: str, start_date: str | None, end_date: str | None) -> tuple[float, float, datetime]:
         raise RuntimeError("upstream unavailable")
 
     monkeypatch.setattr("yahoo_finance_mcp.market_data._fetch_live_prices", unavailable)
@@ -40,5 +40,39 @@ def test_live_failure_is_explicit_and_never_falls_back_to_sample(monkeypatch) ->
             "code": "provider_unavailable",
             "message": "Yahoo Finance data is unavailable; no market signal was generated.",
             "retryable": True,
+        }
+    }
+
+
+def test_live_time_range_is_reported_and_passed_to_the_data_provider(monkeypatch) -> None:
+    observed: dict[str, str | None] = {}
+
+    def prices(symbol: str, start_date: str | None, end_date: str | None) -> tuple[float, float, datetime]:
+        observed.update({"symbol": symbol, "start_date": start_date, "end_date": end_date})
+        return 100.0, 110.0, datetime(2025, 2, 1, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("yahoo_finance_mcp.market_data._fetch_live_prices", prices)
+
+    result = get_market_signal(
+        "AAPL",
+        mode="live",
+        start_date="2025-01-01",
+        end_date="2025-02-01",
+    )
+
+    assert observed == {"symbol": "AAPL", "start_date": "2025-01-01", "end_date": "2025-02-01"}
+    assert result["value"] == 10.0
+    assert result["window"] == "2025-01-01..2025-02-01"
+    assert result["as_of"] == "2025-02-01T00:00:00Z"
+
+
+def test_reversed_time_range_is_rejected_before_fetching() -> None:
+    result = get_market_signal("AAPL", mode="live", start_date="2025-02-01", end_date="2025-01-01")
+
+    assert result == {
+        "error": {
+            "code": "invalid_date_range",
+            "message": "start_date must be earlier than end_date",
+            "retryable": False,
         }
     }
