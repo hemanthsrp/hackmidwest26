@@ -29,6 +29,11 @@
 - Hand-labelled sample headlines in the proposed v0 evidence shape, run through the `judge_article` questions and scored against an answer key, to check question wording once Jev access exists. Independent of Gate 0; not A2 work.
 - **Done when:** offline tests pass (done: 22 passed, 1 live test skipped); one real run is recorded with model, request IDs and report (done 2026-10-10: reports in `microservices/jev-tool/evals/`, summary in `jev-integration-research.md` §12). This also supplies the observed Jev call for the Gate 0 access question; `judge_article` now returns `content_type` as well (question set `article-v2`).
 
+**A-J2 — jev-tool connection surface** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-wording-check`; complete, ready for review)
+- Owns: `microservices/jev-tool/` only. Adds `.env` loading, `jev_tool.strands_mcp.mcp_client()`, and `judge_evidence` / `judge_evidence_items` for evidence items in the v0 contract shape. See "Calling Jev from the backend" in `microservices/jev-tool/README.md`.
+- **Not included, left to A2:** the backend's `DecisionAdapter` / `JevDecisionAdapter` and any fixture mode. That adapter should call this package's public interface and pass `engine: unavailable` through.
+- **Done when:** offline tests pass (done: 25 passed) and the live MCP check passes with the key read from `.env` (done).
+
 ## Agent B — evidence and quant (Cai lane)
 
 **B1 — Source/data feasibility** (unclaimed; independent discovery)

@@ -27,6 +27,7 @@ from typesafe_sdk import (
 )
 
 from . import presets
+from .env import load_env
 
 logger = logging.getLogger("jev_tool")
 
@@ -70,6 +71,7 @@ class EvaluateResult(_Result):
 
 class ArticleJudgment(_Result):
     question_set_version: str = presets.ARTICLE_QUESTION_SET_VERSION
+    evidence_id: str | None = None
     relevant: float | None = None
     direction: str | None = None
     direction_probabilities: dict[str, float] = {}
@@ -219,6 +221,29 @@ class JevTool:
             **meta,
         )
 
+    def judge_evidence(self, evidence: Mapping[str, Any], company: str) -> ArticleJudgment:
+        """Judge one evidence item in the v0 API contract shape (uses symbol, title, summary).
+
+        The contract's evidence item has no company name, so the caller supplies it.
+        """
+        judgment = self.judge_article(
+            evidence["symbol"], company, evidence["title"], evidence.get("summary") or ""
+        )
+        judgment.evidence_id = evidence.get("id")
+        return judgment
+
+    def judge_evidence_items(
+        self, items: Sequence[Mapping[str, Any]], companies: Mapping[str, str]
+    ) -> list[ArticleJudgment]:
+        """Judge many contract-shaped evidence items concurrently, in order.
+
+        `companies` maps symbol to company name.
+        """
+        with ThreadPoolExecutor(max_workers=self.max_concurrency) as pool:
+            return list(
+                pool.map(lambda e: self.judge_evidence(e, companies[e["symbol"]]), items)
+            )
+
     def judge_articles(self, articles: Sequence[Mapping[str, str]]) -> list[ArticleJudgment]:
         """Judge many articles concurrently. Each needs symbol, company, title and summary."""
         with ThreadPoolExecutor(max_workers=self.max_concurrency) as pool:
@@ -236,9 +261,10 @@ _default_lock = threading.Lock()
 
 
 def default_tool() -> JevTool:
-    """Process-wide tool configured from the environment."""
+    """Process-wide tool configured from the environment (and jev-tool's .env, if present)."""
     global _default
     with _default_lock:
         if _default is None:
+            load_env()
             _default = JevTool()
         return _default

@@ -23,7 +23,7 @@ Another service installs it with `pip install -e ../jev-tool`.
 
 ## Configuration
 
-Environment variables (see `.env.example`; this package does not load `.env` files itself):
+Copy `.env.example` to `.env` in this folder and fill it in (`.env` is gitignored). `default_tool()`, the MCP server and the quiz runner read it automatically; variables already set in the shell win. Set `JEV_ENV_FILE` to use a file somewhere else. A `JevTool(...)` you construct yourself reads only the process environment unless you call `load_env()` first.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -67,43 +67,45 @@ jev.judge_articles([{"symbol": ..., "company": ..., "title": ..., "summary": ...
 
 Tools: `jev_check`, `jev_classify`, `jev_score`, `jev_evaluate`, `judge_article`.
 
-The stdio client does **not** pass the parent's environment to the server, so pass what it needs explicitly:
-
 ```python
-import os, sys
-from mcp.client.stdio import StdioServerParameters, stdio_client
-from strands.tools.mcp import MCPClient
+from jev_tool.strands_mcp import mcp_client
 
-params = StdioServerParameters(
-    command=sys.executable,
-    args=["-m", "jev_tool.server"],
-    env={
-        "PATH": os.environ["PATH"],
-        "JEV_ENABLED": "true",
-        "TYPESAFE_API_KEY": os.environ["TYPESAFE_API_KEY"],
-    },
-)
-client = MCPClient(lambda: stdio_client(params))
-
-with client:
-    tools = client.list_tools_sync()                 # give these to Agent(tools=tools)
-    result = client.call_tool_sync("id-1", "jev_check", {"text": "...", "statement": "..."})
+with mcp_client() as jev:
+    tools = jev.list_tools_sync()                    # give these to Agent(tools=tools)
+    result = jev.call_tool_sync("id-1", "jev_check", {"text": "...", "statement": "..."})
     result["structuredContent"]["probability"]
 ```
 
+`mcp_client()` starts `python -m jev_tool.server` over stdio and passes the Jev settings through. It exists because the stdio client starts the server with a near-empty environment; building the client by hand without passing `TYPESAFE_API_KEY` and `JEV_ENABLED` gives `engine: unavailable`. Pass `mcp_client({"JEV_ENABLED": "false"})` to override a value. Needs `strands-agents` (`pip install -e "../jev-tool[strands]"`).
+
 Listing and calling tools this way is exercised by `tests/test_mcp_server.py`. Handing the tools to an `Agent` has not been run here, because that needs a text model.
 
-## First real call
+## Calling Jev from the backend
 
-Once you have a key:
+The backend should wrap this package in its own thin adapter and depend on that, not on `JevTool` directly. What the adapter can rely on:
+
+| Need | Call | Notes |
+|---|---|---|
+| Judge one evidence item in the v0 contract shape | `default_tool().judge_evidence(evidence, company)` | Reads `symbol`, `title`, `summary`; echoes `id` back as `evidence_id`. The contract has no company name, so pass it. |
+| Judge a list of them | `default_tool().judge_evidence_items(items, {"ACME": "Acme Corp"})` | Concurrent, order kept |
+| One-off yes/no, pick-one, or rating | `check`, `classify`, `score` | |
+| Same things from an agent | `mcp_client()` | Results under `structuredContent` |
+
+Rules of the interface:
+
+- **Check `engine` on every result.** `"jev"` means a real answer. `"unavailable"` means no answer was produced: answer fields are `None` and `error` says why. The tool never raises for an API failure and never substitutes an answer, so the adapter can pass `unavailable` straight through as a stated limitation.
+- **Fixtures are the caller's business.** This package has no fixture mode. A deliberately selected fixture path belongs in the adapter and must carry its own label.
+- **`model`, `request_id` and `question_set_version`** are on every Jev-backed result; log them. A change to question wording bumps `question_set_version`.
+- **Result objects are pydantic models**; `.model_dump()` gives a plain dict.
+- To test an adapter without the network, construct `JevTool(enabled=True, client=...)` with a TypeSafe client on a mock transport, as `tests/test_core.py` does, or `JevTool(enabled=False)` for the unavailable path.
+
+## Live check
 
 ```sh
-export TYPESAFE_API_KEY=...   # do not commit
-export JEV_ENABLED=true
 .venv/Scripts/python -m pytest -m live -q
 ```
 
-Record the model, request id, latency and `input_tokens` from the log line; that is the observed call the project docs ask for.
+Makes one real call through the MCP server, using the key from `.env`. The default test run leaves it out.
 
 ## Checking the question wording
 
