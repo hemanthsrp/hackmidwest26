@@ -9,7 +9,7 @@ from ..agents.tagging_agent import tag_evidence
 from ..config import get_settings
 from ..models.evidence import Evidence
 from ..models.signal import Signal
-from ..sources import market_signals
+from ..sources import commodities, market_signals
 from ..sources.base import SourceAdapter
 from ..sources.congressional import SenateEfdAdapter
 from ..sources.news_marketaux import MarketauxNewsAdapter
@@ -77,5 +77,8 @@ def run_ingestion(symbol: str, allow_live: bool = True, tag: bool = True) -> lis
 def run_signal_ingestion(symbol: str, allow_live: bool = True) -> list[Signal]:
     symbol = validate_symbol(symbol)
     signals, _data_mode = market_signals.fetch(symbol, allow_live=allow_live)
+    if commodities.is_commodity(symbol):
+        commodity_signals, _mode = commodities.fetch(symbol, allow_live=allow_live)
+        signals = signals + commodity_signals
     get_store().save_signals(signals)
     return signals
