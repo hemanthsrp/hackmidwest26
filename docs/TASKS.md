@@ -56,9 +56,10 @@
 
 ## Agent D — Akamai platform and verification (Allen lane)
 
-**D1 — Infra feasibility and safe deployment plan** (unclaimed; independent discovery)
+**D1 — Infra feasibility and safe deployment plan** (claimed by Allen/D on `allen/d1-infra-feasibility`; integration owner: Jet; 2026-10-10)
 - Verify Akamai account/credits, hosted inference options, deploy target and time-to-setup with Allen. Decide whether vector storage is justified by the MVP; prefer a simpler persistence/retrieval path if not. Never assume accounts or credentials are available.
 - **Done when:** architecture, cost/resource assumptions, required env-var names and blockers are documented; no spend/provisioning without approval.
+- **Claim scope:** `docs/AKAMAI_FEASIBILITY.md`, `docs/JET_A1_HANDOFF.md`, root `.env.example`, root `.gitignore`, and this D1 task record only. Discord claim cannot be posted because `COMMUNICATIONS.md` still has the placeholder channel ID `REPLACE_CHANNEL_ID`; the team/human must relay the claim or configure the channel before cross-agent messaging is used.
 
 **D2 — Deployment/observability/smoke** (unclaimed; after Gate 0 and runnable app for remote smoke)
 - Add minimal deployment configuration, health/logging, safe example environment names and a repeatable smoke test. Deploy only with approval; verify actual frontend/backend and Akamai use before claiming them. Local fallback remains runnable.
