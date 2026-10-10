@@ -1,0 +1,580 @@
+{
+  "note": "Synthetic test samples written for checking Jev question wording. Not real news, posts or press releases. Never display these as evidence. The evidence objects follow the proposed shape in docs/api-contract-v0.md. 'expected' is a hand-written answer key; a list means any of those answers is accepted, because the call is a matter of judgment (for example routine good news may be read as neutral or positive). Direction and materiality are null when the item is not about the company. Materiality: 0 = routine or promotional, 1 = notable, 2 = major. Jev sees only the title and summary, not source_name.",
+  "companies": {
+    "AAPL": "Apple",
+    "NVDA": "Nvidia",
+    "TSLA": "Tesla"
+  },
+  "items": [
+    {
+      "evidence": {
+        "id": "sample-aapl-news-001",
+        "symbol": "AAPL",
+        "title": "Apple reports record quarterly revenue on strong iPhone demand",
+        "summary": "Apple said quarterly revenue rose to a record, helped by stronger than expected iPhone sales, and raised its outlook for the next quarter.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 2,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-002",
+        "symbol": "AAPL",
+        "title": "Apple recalls a batch of laptop chargers over overheating reports",
+        "summary": "Apple is recalling a limited batch of chargers sold in two countries after a small number of overheating reports. No injuries were reported.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-002",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 1,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-003",
+        "symbol": "AAPL",
+        "title": "Apple to open a new retail store in Austin next month",
+        "summary": "Apple will open one new retail store next month, bringing its total in the state to nineteen.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-003",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "neutral",
+          "positive"
+        ],
+        "materiality": 0,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-004",
+        "symbol": "AAPL",
+        "title": "Regulators fine Apple over app store rules; company to appeal",
+        "summary": "A regulator imposed a multibillion-dollar fine on Apple over its app store payment rules and ordered changes to the business. Apple said it will appeal.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-004",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-005",
+        "symbol": "AAPL",
+        "title": "Ten gadgets we loved this year",
+        "summary": "A roundup of consumer gadgets including a smart speaker, a camera drone and a pair of headphones. An Apple watch band is mentioned among the accessories.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-005",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": [
+          "opinion_or_analysis",
+          "other"
+        ]
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-006",
+        "symbol": "AAPL",
+        "title": "Apple posts higher services revenue but warns of weaker hardware sales",
+        "summary": "Apple reported strong growth in services revenue for the quarter, while warning that hardware sales are expected to decline next quarter.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-006",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 2,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-001",
+        "symbol": "NVDA",
+        "title": "Nvidia raises full-year forecast as data center orders surge",
+        "summary": "Nvidia raised its full-year revenue forecast, citing a sharp increase in orders for its data center chips.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 2,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-002",
+        "symbol": "NVDA",
+        "title": "Nvidia says new export limits will cut sales to a key market",
+        "summary": "Nvidia said newly announced export restrictions will significantly reduce its sales to one of its largest markets in the coming quarters.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-002",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-003",
+        "symbol": "NVDA",
+        "title": "Nvidia names new head of investor relations",
+        "summary": "Nvidia appointed a new head of investor relations, replacing an executive who is retiring.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-003",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": 0,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-004",
+        "symbol": "NVDA",
+        "title": "Rival chipmaker unveils processor it says beats competitors",
+        "summary": "A competing chipmaker announced a new processor and described its design and launch schedule in detail. It claimed the chip outperforms products from Nvidia and others.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-004",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-005",
+        "symbol": "NVDA",
+        "title": "Nvidia signs deal to supply driver-assistance chips to an automaker",
+        "summary": "Nvidia announced a multi-year agreement to supply driver-assistance chips to a mid-sized automaker.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-005",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 1,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-006",
+        "symbol": "NVDA",
+        "title": "Nvidia delays next-generation chip by a quarter but says demand remains strong",
+        "summary": "Nvidia said its next-generation chip will ship one quarter later than planned because of a packaging issue, and added that customer orders remain ahead of supply.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-006",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 1,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-001",
+        "symbol": "TSLA",
+        "title": "Tesla quarterly deliveries fall well short of analyst expectations",
+        "summary": "Tesla delivered far fewer vehicles in the quarter than analysts expected, its largest shortfall in several years.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-002",
+        "symbol": "TSLA",
+        "title": "Tesla wins approval to build a new battery plant",
+        "summary": "Tesla received regulatory approval to build a battery plant that it says will expand its production capacity.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-002",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 1,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-003",
+        "symbol": "TSLA",
+        "title": "Tesla recalls vehicles to fix a software issue with an over-the-air update",
+        "summary": "Tesla is recalling a group of vehicles to correct a warning-light software issue. The fix will be delivered by an over-the-air update.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-003",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "negative",
+          "neutral"
+        ],
+        "materiality": 1,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-004",
+        "symbol": "TSLA",
+        "title": "Tesla launches referral promotion offering free charging credits",
+        "summary": "Tesla started a limited-time referral promotion that gives new buyers free charging credits.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-004",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "neutral",
+          "positive"
+        ],
+        "materiality": 0,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-005",
+        "symbol": "TSLA",
+        "title": "City council approves new downtown parking rules",
+        "summary": "A city council approved new parking rules for its downtown area. A council member noted that electric vehicles such as Teslas will be subject to the same rules.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-005",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-006",
+        "symbol": "TSLA",
+        "title": "Tesla reports higher revenue while profit margin narrows",
+        "summary": "Tesla reported higher quarterly revenue than a year earlier, while its profit margin fell to its lowest level in three years.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-006",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 2,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-007",
+        "symbol": "TSLA",
+        "title": "Electric vehicle registrations rise across Europe",
+        "summary": "Industry data showed electric vehicle registrations rose across Europe last month. Several manufacturers, including Tesla, were listed among those with gains.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-007",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "news_report"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-blog-001",
+        "symbol": "AAPL",
+        "title": "Why I'm holding my Apple shares for the next decade",
+        "summary": "In a personal finance blog post, the author explains why they believe Apple's services business will keep growing and says they plan to keep holding the stock.",
+        "source_name": "Fixture Blog",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-blog-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 0,
+        "content_type": "opinion_or_analysis"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-social-001",
+        "symbol": "AAPL",
+        "title": "Post: 'Hearing Apple is about to buy a big streaming company, huge if true'",
+        "summary": "A social media user posted an unverified claim that Apple is about to acquire a large streaming company. No source was given and the company has not commented.",
+        "source_name": "Fixture Social",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-social-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "positive",
+          "neutral"
+        ],
+        "materiality": [
+          1,
+          2
+        ],
+        "content_type": "social_media_post"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-release-001",
+        "symbol": "AAPL",
+        "title": "Apple Introduces New Trade-In Offer for Students",
+        "summary": "Apple today announced a limited-time trade-in offer for students. 'We're thrilled to help students get the tools they need,' the company said in the release.",
+        "source_name": "Fixture Press Release",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-release-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "positive",
+          "neutral"
+        ],
+        "materiality": 0,
+        "content_type": "company_announcement"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-blog-001",
+        "symbol": "NVDA",
+        "title": "Opinion: Nvidia's valuation has run too far ahead of its earnings",
+        "summary": "A market commentator argues in a column that Nvidia's share price already assumes years of growth and recommends that readers reduce their holdings.",
+        "source_name": "Fixture Blog",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-blog-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": [
+          0,
+          1
+        ],
+        "content_type": "opinion_or_analysis"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-social-001",
+        "symbol": "NVDA",
+        "title": "Post: 'my gaming rig finally works lol'",
+        "summary": "A social media user posted about fixing their home computer and listed its parts, including an Nvidia graphics card.",
+        "source_name": "Fixture Social",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-social-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "social_media_post"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-release-001",
+        "symbol": "NVDA",
+        "title": "Nvidia Announces Record Attendance at Its Developer Conference",
+        "summary": "Nvidia today announced that its annual developer conference drew record attendance. 'The energy this year was incredible,' the company said in a statement.",
+        "source_name": "Fixture Press Release",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-release-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "positive",
+          "neutral"
+        ],
+        "materiality": 0,
+        "content_type": "company_announcement"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-social-001",
+        "symbol": "TSLA",
+        "title": "Post: 'Third week waiting for a Tesla service appointment, never again'",
+        "summary": "A social media user complained that they have waited three weeks for a Tesla service appointment and said they would not buy from the company again.",
+        "source_name": "Fixture Social",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-social-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 0,
+        "content_type": "social_media_post"
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-blog-001",
+        "symbol": "TSLA",
+        "title": "Review: a month with Tesla's updated sedan",
+        "summary": "A car blogger reviews Tesla's updated sedan after a month of driving, praising its range and software while criticising the build quality and ride comfort.",
+        "source_name": "Fixture Blog",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-blog-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "mixed",
+          "neutral"
+        ],
+        "materiality": 0,
+        "content_type": "opinion_or_analysis"
+      }
+    }
+  ]
+}

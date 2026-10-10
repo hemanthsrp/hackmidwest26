@@ -9,6 +9,7 @@ from .core import (
     ScoreResult,
     default_tool,
 )
+from .env import load_env
 from .presets import ARTICLE_QUESTION_SET_VERSION
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "JevTool",
     "ScoreResult",
     "default_tool",
+    "load_env",
 ]

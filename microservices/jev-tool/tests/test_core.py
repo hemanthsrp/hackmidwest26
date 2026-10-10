@@ -127,11 +127,61 @@ def test_judge_article():
     assert judgment.relevant == 0.9
     assert judgment.direction == "negative"
     assert set(judgment.direction_probabilities) == {"negative", "neutral", "positive", "mixed"}
+    assert judgment.content_type == "company_announcement"
     assert judgment.materiality == 2.0
     body = requests[0]
     assert body["state"]["company"] == {"name": "Acme Corp", "ticker": "ACME"}
     assert {q["type"] for q in body["questions"].values()} == {"noul", "choice", "score"}
     assert len(requests) == 1
+
+
+def test_judge_evidence_takes_contract_shape():
+    tool, requests = make_tool()
+    evidence = {
+        "id": "sample-acme-news-001",
+        "symbol": "ACME",
+        "title": "Sample ACME earnings update",
+        "summary": "Fixture-only summary for the demo.",
+        "source_name": "Fixture News",
+        "data_mode": "sample",
+    }
+    judgment = tool.judge_evidence(evidence, "Acme Corp")
+    assert judgment.evidence_id == "sample-acme-news-001"
+    assert judgment.engine == "jev"
+    assert requests[0]["state"]["article"] == {
+        "title": "Sample ACME earnings update",
+        "summary": "Fixture-only summary for the demo.",
+    }
+
+    judgments = tool.judge_evidence_items([evidence, evidence], {"ACME": "Acme Corp"})
+    assert [j.evidence_id for j in judgments] == ["sample-acme-news-001"] * 2
+
+
+def test_judge_evidence_keeps_id_when_jev_is_off():
+    judgment = JevTool(enabled=False).judge_evidence(
+        {"id": "e1", "symbol": "ACME", "title": "t", "summary": "s"}, "Acme Corp"
+    )
+    assert (judgment.evidence_id, judgment.engine) == ("e1", "unavailable")
+
+
+def test_load_env_does_not_override_existing(tmp_path, monkeypatch):
+    from jev_tool import load_env
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# comment\r\nJEV_TEST_NEW='from-file'\r\nJEV_TEST_SET=from-file\r\nJEV_TEST_EMPTY=\r\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JEV_TEST_SET", "from-shell")
+    monkeypatch.delenv("JEV_TEST_NEW", raising=False)
+    assert load_env(env_file) == env_file
+    import os
+
+    assert os.environ["JEV_TEST_NEW"] == "from-file"
+    assert os.environ["JEV_TEST_SET"] == "from-shell"
+    assert "JEV_TEST_EMPTY" not in os.environ
+    monkeypatch.delenv("JEV_TEST_NEW")
+    assert load_env(tmp_path / "missing.env") is None
 
 
 def test_judge_articles_keeps_order():
