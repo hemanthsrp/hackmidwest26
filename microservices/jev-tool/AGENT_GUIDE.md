@@ -88,9 +88,12 @@ Fields on the result (an `ArticleJudgment`):
 | `direction_probabilities`, `direction_confidence` | Spread across the four options, and how peaked it is (0 to 1) |
 | `content_type` | `company_announcement`, `news_report`, `opinion_or_analysis`, `social_media_post` or `other` |
 | `content_type_probabilities`, `content_type_confidence` | As above |
+| `event_type` | `earnings_or_guidance`, `legal_or_regulatory`, `product_or_service`, `deal_or_partnership`, `management_or_workforce`, `operations_or_supply`, `market_or_macro`, `stock_or_valuation_view` or `other` |
+| `event_type_probabilities`, `event_type_confidence` | As above |
+| `upcoming_event` | 0 to 1: how likely the item names a scheduled event still to come (an earnings date, a launch, a vote, a ruling). Jev only spots the mention; work out dates in code. |
 | `materiality` | 0 to 2: 0 routine or promotional, 1 notable, 2 major. A weighted average, so it can be 1.4. |
 | `materiality_confidence` | 0 to 1 |
-| `model`, `request_id`, `question_set_version` | For logs and cache keys |
+| `model`, `request_id`, `question_set_version`, `input_tokens` | For logs and cache keys |
 
 A complete caller:
 
@@ -116,7 +119,33 @@ How to read a judgment:
 - Weigh `direction` together with `content_type` and `materiality`. A company's own promotion or one social post is weaker evidence than independent reporting.
 - Low `direction_confidence` means the answer is shaky. In testing, the only answers that changed when the options were reordered had confidence below 0.45. Treat low-confidence directions as unknown.
 - Use `materiality` for ranking and thresholds, not as an exact quantity.
+- `event_type` and `upcoming_event` are for explaining and for widening uncertainty ("there is an earnings report ahead"). They say nothing about direction.
 - None of these numbers is a chance that the stock moves. Never display them as one.
+
+### Check a written explanation
+
+Run this on LLM-written text before it reaches a user:
+
+```python
+check = jev.check_explanation(explanation_text, evidence_items)   # items need id, title, summary
+
+if check.engine == "jev":
+    unsupported = [c.text for c in check.claims if c.supported < 0.5]
+    reads_as_advice = check.personal_advice >= 0.5
+    promises_result = check.promises_outcome >= 0.5
+```
+
+| Field | Meaning |
+|---|---|
+| `claims` | One entry per sentence: `text` and `supported` (0 to 1: does the evidence back it) |
+| `claims_truncated` | True if there were more than 12 sentences; the rest were not checked |
+| `personal_advice` | 0 to 1: the text tells the reader what to do with their money |
+| `promises_outcome` | 0 to 1: the text presents a future price move or result as certain |
+
+- These are probabilities. The 0.5 cut-offs above are the ones used in the wording check and are not tuned; choose yours and decide what to do on a hit (drop the sentence, regenerate, or block).
+- A sentence that is not a factual claim scores low on `supported`. In testing, "Assessment: hold." scored 0.19 and "This is a research heuristic and not investment advice." scored 0.05. Check only the sentences that state facts, or ignore low scores on labels and disclaimers.
+- An assessment label such as "Assessment: hold" is not treated as advice (0.20 in testing); "You should buy the stock now" is (0.98).
+- Only `id`, `title` and `summary` of each evidence item are sent to Jev.
 
 ### One-off questions
 
@@ -153,7 +182,7 @@ with mcp_client() as jev:
     ...
 ```
 
-Tools exposed: `jev_check`, `jev_classify`, `jev_score`, `jev_evaluate`, `judge_article`. They take the same arguments as the functions above and return the same fields.
+Tools exposed: `jev_check`, `jev_classify`, `jev_score`, `jev_evaluate`, `judge_article`, `check_explanation`. They take the same arguments as the functions above and return the same fields.
 
 To call a tool yourself without the agent choosing:
 
@@ -194,7 +223,7 @@ Add to this package only when several callers need the same wording. Then:
 2. **Method and result** in `src/jev_tool/core.py`: a result model extending `_Result`, and a method on `JevTool` that calls `self._call(state, questions)` and returns the model. Follow `judge_article`.
 3. **Agent tool** in `src/jev_tool/server.py`, if agents need it: an `@mcp.tool()` function with a docstring an LLM can follow. Add its name to `EXPECTED_TOOLS` in `tests/test_mcp_server.py`.
 4. **Tests** in `tests/test_core.py` against the mock transport.
-5. **A wording check before anyone relies on it.** Hand-label 15 or more samples and compare Jev's answers with them. `src/jev_tool/evals.py` and `evals/article_quiz.json` do this for the article questions and are the pattern to copy; that runner is specific to articles, so a new question family needs its own sample file and scoring.
+5. **A wording check before anyone relies on it.** Hand-label 15 or more samples and compare Jev's answers with them. `src/jev_tool/evals.py` with `evals/article_quiz.json` does this for the article questions, and `src/jev_tool/evals_explanation.py` with `evals/explanation_quiz.json` for explanations. Each runner is specific to its question family, so a new family needs its own sample file and scoring; the explanation one is the shorter pattern to copy.
 6. **Document it** in the README and add a row to this guide.
 
 Coordinate with Jet before changing existing wording: other services cache and threshold against `question_set_version`.
@@ -202,9 +231,11 @@ Coordinate with Jet before changing existing wording: other services cache and t
 ## 8. What is known about how well it works
 
 - Real calls take about half a second per article and cost well under a hundredth of a cent.
-- On 27 hand-written samples (news, blog posts, social posts), relevance and direction agreed with the answer key every time; content type missed two press-release style samples; materiality was always within one level. The key was written by the same person who wrote the samples and was loosened after a first run, so this shows the questions are workable. It is not an accuracy figure and must not be quoted as one.
+- On 32 hand-written samples (news, blog posts, social posts), relevance, direction, event type and upcoming event agreed with the answer key every time; content type missed two press-release style samples; materiality was always within one level. The key was written by the same person who wrote the samples, accepts more than one answer for judgment calls, and was loosened after a first run.
+- On 12 hand-written explanations, every unsupported or contradicted sentence was caught, every supported one passed, and advice and promised outcomes were flagged correctly after one wording fix.
+- Both sets show the questions are workable. Neither is an accuracy figure and neither may be quoted as one.
 - One call out of roughly a hundred failed with a connection error and timed out. Callers saw `unavailable`. Expect this occasionally.
-- Details and request ids: `evals/report-2026-10-10-article-v2.json` and the research doc §12.
+- Details and request ids: `evals/report-2026-10-10-article-v3.json`, `evals/report-2026-10-10-explanation-v1.json` and the research doc §12.
 
 ## 9. Where things are
 
@@ -215,6 +246,6 @@ Coordinate with Jet before changing existing wording: other services cache and t
 | `src/jev_tool/server.py` | MCP server |
 | `src/jev_tool/strands_mcp.py` | `mcp_client()` |
 | `src/jev_tool/env.py` | `.env` loading |
-| `src/jev_tool/evals.py`, `evals/` | Wording check and saved reports |
+| `src/jev_tool/evals.py`, `src/jev_tool/evals_explanation.py`, `evals/` | Wording checks and saved reports |
 | `README.md` | Setup and human-oriented notes |
 | `../../docs/jev-integration-research.md` | Background, limits, planned uses, sources |

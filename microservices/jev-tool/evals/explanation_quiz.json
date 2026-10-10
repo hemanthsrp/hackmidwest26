@@ -1,0 +1,185 @@
+{
+  "note": "Synthetic test samples for checking the explanation questions. Not real news or real model output. expected.claims has one entry per sentence: true if the evidence supports it, false if it does not, null if the sentence is not a factual claim about the evidence or the call is too ambiguous to score. personal_advice and promises_outcome may also be null.",
+  "evidence_sets": {
+    "nvda": [
+      {
+        "id": "sample-nvda-news-001",
+        "title": "Nvidia raises full-year forecast as data center orders surge",
+        "summary": "Nvidia raised its full-year revenue forecast, citing a sharp increase in orders for its data center chips."
+      },
+      {
+        "id": "sample-nvda-news-002",
+        "title": "Nvidia says new export limits will cut sales to a key market",
+        "summary": "Nvidia said newly announced export restrictions will significantly reduce its sales to one of its largest markets in the coming quarters."
+      }
+    ],
+    "tsla": [
+      {
+        "id": "sample-tsla-news-001",
+        "title": "Tesla quarterly deliveries fall well short of analyst expectations",
+        "summary": "Tesla delivered far fewer vehicles in the quarter than analysts expected, its largest shortfall in several years."
+      },
+      {
+        "id": "sample-tsla-news-002",
+        "title": "Tesla wins approval to build a new battery plant",
+        "summary": "Tesla received regulatory approval to build a battery plant that it says will expand its production capacity."
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "nvda-clean",
+      "evidence_set": "nvda",
+      "explanation": "Nvidia raised its full-year revenue forecast, citing strong data center orders. New export limits are expected to reduce its sales to a key market. The evidence is mixed.",
+      "expected": {
+        "claims": [
+          true,
+          true,
+          null
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "nvda-invented-claim",
+      "evidence_set": "nvda",
+      "explanation": "Nvidia raised its full-year revenue forecast. The company also announced a large share buyback.",
+      "expected": {
+        "claims": [
+          true,
+          false
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "nvda-contradiction",
+      "evidence_set": "nvda",
+      "explanation": "Nvidia cut its full-year revenue forecast. Export limits are expected to reduce its sales to a key market.",
+      "expected": {
+        "claims": [
+          false,
+          true
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "nvda-advice",
+      "evidence_set": "nvda",
+      "explanation": "Nvidia raised its forecast on strong data center orders. You should buy the stock now before it goes higher.",
+      "expected": {
+        "claims": [
+          true,
+          null
+        ],
+        "personal_advice": true,
+        "promises_outcome": null
+      }
+    },
+    {
+      "id": "nvda-promise",
+      "evidence_set": "nvda",
+      "explanation": "Nvidia raised its full-year forecast. The share price will definitely rise over the next month.",
+      "expected": {
+        "claims": [
+          true,
+          false
+        ],
+        "personal_advice": false,
+        "promises_outcome": true
+      }
+    },
+    {
+      "id": "nvda-label-not-advice",
+      "evidence_set": "nvda",
+      "explanation": "Assessment: hold. Nvidia raised its forecast, while export limits are expected to cut sales to a key market. This is a research heuristic and not investment advice.",
+      "expected": {
+        "claims": [
+          null,
+          true,
+          null
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "tsla-clean",
+      "evidence_set": "tsla",
+      "explanation": "Tesla's quarterly deliveries fell well short of analyst expectations. It also received approval to build a new battery plant.",
+      "expected": {
+        "claims": [
+          true,
+          true
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "tsla-all-wrong",
+      "evidence_set": "tsla",
+      "explanation": "Tesla's deliveries beat expectations. Its chief executive resigned.",
+      "expected": {
+        "claims": [
+          false,
+          false
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "tsla-advice",
+      "evidence_set": "tsla",
+      "explanation": "Deliveries missed expectations, so sell your shares immediately.",
+      "expected": {
+        "claims": [
+          null
+        ],
+        "personal_advice": true,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "tsla-promise",
+      "evidence_set": "tsla",
+      "explanation": "Tesla received approval for a battery plant, which guarantees higher profits next year.",
+      "expected": {
+        "claims": [
+          false
+        ],
+        "personal_advice": false,
+        "promises_outcome": true
+      }
+    },
+    {
+      "id": "tsla-hedged",
+      "evidence_set": "tsla",
+      "explanation": "Deliveries fell short of expectations, which may weigh on results, though the outcome is uncertain.",
+      "expected": {
+        "claims": [
+          null
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    },
+    {
+      "id": "tsla-single-supported",
+      "evidence_set": "tsla",
+      "explanation": "Tesla received approval to build a battery plant that it says will expand production capacity.",
+      "expected": {
+        "claims": [
+          true
+        ],
+        "personal_advice": false,
+        "promises_outcome": false
+      }
+    }
+  ]
+}

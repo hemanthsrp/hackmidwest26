@@ -65,9 +65,11 @@ jev.judge_articles([{"symbol": ..., "company": ..., "title": ..., "summary": ...
 
 `jev.evaluate(state, questions)` sends several questions in one request, using the API's own question shape.
 
+`judge_article` also returns `event_type` and `upcoming_event`. `jev.check_explanation(text, evidence_items)` checks a written explanation sentence by sentence against its evidence and flags advice or promised outcomes. Field lists are in [AGENT_GUIDE.md](AGENT_GUIDE.md).
+
 ## MCP use from Strands
 
-Tools: `jev_check`, `jev_classify`, `jev_score`, `jev_evaluate`, `judge_article`.
+Tools: `jev_check`, `jev_classify`, `jev_score`, `jev_evaluate`, `judge_article`, `check_explanation`.
 
 ```python
 from jev_tool.strands_mcp import mcp_client
@@ -120,6 +122,8 @@ Makes one real call through the MCP server, using the key from `.env`. The defau
 Where a call is a matter of judgment, the answer key lists more than one accepted answer. It reports relevance, direction, content-type and materiality agreement, confidence when right vs wrong, how often the answer flips when options are reordered, and tokens and latency per article. With Jev off it scores nothing and exits with code 2. It is a sanity check for the wording, not an accuracy measurement. The answer key is hand-written and worth a skim before trusting the numbers.
 
 Results from 2026-10-10 are saved in `evals/report-2026-10-10-article-v1.json` and `-v2.json` and summarised in the research doc (§12). Short version: relevance and direction agreed on every sample in the second run, content type missed the two press-release style samples, and the only answers that changed when options were reordered were the two lowest-confidence ones.
+
+The explanation questions have their own check: `.venv/Scripts/python -m jev_tool.evals_explanation` runs 12 hand-labelled explanations from `evals/explanation_quiz.json`. The article quiz now has 32 samples and also scores event type and upcoming event; latest reports are `evals/report-2026-10-10-article-v3.json` and `-explanation-v1.json`.
 
 ## Don't use Jev for
 

@@ -13,6 +13,7 @@ from .core import (
     CheckResult,
     ClassifyResult,
     EvaluateResult,
+    ExplanationCheck,
     ScoreResult,
     default_tool,
 )
@@ -82,11 +83,29 @@ def judge_article(symbol: str, company: str, title: str, summary: str) -> Articl
     Returns `relevant` (probability it is mainly about the company), `direction`
     (negative / neutral / positive / mixed) with probabilities, `content_type`
     (company_announcement / news_report / opinion_or_analysis / social_media_post /
-    other), and `materiality` (0 = routine or promotional, 1 = notable, 2 = major).
+    other), `event_type` (earnings_or_guidance, legal_or_regulatory, product_or_service,
+    deal_or_partnership, management_or_workforce, operations_or_supply, market_or_macro,
+    stock_or_valuation_view, other), `upcoming_event` (probability it names a scheduled
+    event still to come), and `materiality` (0 = routine or promotional, 1 = notable,
+    2 = major).
     Weigh direction together with content_type and materiality: a company's own
     promotion or a single social post is weaker evidence than independent reporting.
     """
     return default_tool().judge_article(symbol, company, title, summary)
+
+
+@mcp.tool()
+def check_explanation(explanation: str, evidence: list[dict[str, Any]]) -> ExplanationCheck:
+    """Check a written explanation before showing it to a user.
+
+    `evidence` is the list of items the explanation should rest on, each with `id`,
+    `title` and `summary`. Returns, for each sentence, `supported` (probability the
+    evidence backs it), plus `personal_advice` (probability the text tells the reader
+    what to do with their money) and `promises_outcome` (probability it presents a
+    future price move or result as certain). Low `supported` on a sentence that makes
+    no factual claim (a disclaimer, a label) is expected and can be ignored.
+    """
+    return default_tool().check_explanation(explanation, evidence)
 
 
 def main() -> None:

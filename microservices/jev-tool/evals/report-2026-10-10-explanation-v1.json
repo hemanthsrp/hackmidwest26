@@ -1,0 +1,296 @@
+{
+  "engine": "jev",
+  "model": "jev-1.13.0",
+  "question_set_version": "explanation-v1",
+  "generated_at": "2026-10-10T21:45:48+00:00",
+  "note": "Sanity check on 12 hand-labelled explanations. Not an accuracy claim.",
+  "summary": {
+    "cases": 12,
+    "claims_scored": 16,
+    "claim_accuracy": 1.0,
+    "unsupported_claims_caught": 1.0,
+    "supported_claims_passed": 1.0,
+    "personal_advice_accuracy": 1.0,
+    "promises_outcome_accuracy": 1.0,
+    "mean_input_tokens": 758.1666666666666,
+    "mean_latency_ms": 122.12846668747564
+  },
+  "rows": [
+    {
+      "id": "nvda-clean",
+      "claims": [
+        {
+          "text": "Nvidia raised its full-year revenue forecast, citing strong data center orders.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        },
+        {
+          "text": "New export limits are expected to reduce its sales to a key market.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        },
+        {
+          "text": "The evidence is mixed.",
+          "supported_probability": 0.85,
+          "expected": null,
+          "correct": null
+        }
+      ],
+      "personal_advice_probability": 0.03,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.13,
+      "promises_outcome_correct": true,
+      "input_tokens": 881,
+      "latency_ms": 196.37299980968237,
+      "request_id": "req_01a127c77ec7731393888e443cedcd0c"
+    },
+    {
+      "id": "nvda-invented-claim",
+      "claims": [
+        {
+          "text": "Nvidia raised its full-year revenue forecast.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        },
+        {
+          "text": "The company also announced a large share buyback.",
+          "supported_probability": 0.03,
+          "expected": false,
+          "correct": true
+        }
+      ],
+      "personal_advice_probability": 0.03,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.09,
+      "promises_outcome_correct": true,
+      "input_tokens": 777,
+      "latency_ms": 134.3708001077175,
+      "request_id": "req_01a127c77f3f78e99612bb1a2f71218b"
+    },
+    {
+      "id": "nvda-contradiction",
+      "claims": [
+        {
+          "text": "Nvidia cut its full-year revenue forecast.",
+          "supported_probability": 0.02,
+          "expected": false,
+          "correct": true
+        },
+        {
+          "text": "Export limits are expected to reduce its sales to a key market.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        }
+      ],
+      "personal_advice_probability": 0.02,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.41,
+      "promises_outcome_correct": true,
+      "input_tokens": 783,
+      "latency_ms": 141.0362001042813,
+      "request_id": "req_01a127c77fcc796b94caf806b41927b5"
+    },
+    {
+      "id": "nvda-advice",
+      "claims": [
+        {
+          "text": "Nvidia raised its forecast on strong data center orders.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        },
+        {
+          "text": "You should buy the stock now before it goes higher.",
+          "supported_probability": 0.04,
+          "expected": null,
+          "correct": null
+        }
+      ],
+      "personal_advice_probability": 0.98,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.65,
+      "promises_outcome_correct": null,
+      "input_tokens": 783,
+      "latency_ms": 121.19780015200377,
+      "request_id": "req_01a127c7804d7208bb760d6db7018958"
+    },
+    {
+      "id": "nvda-promise",
+      "claims": [
+        {
+          "text": "Nvidia raised its full-year forecast.",
+          "supported_probability": 0.99,
+          "expected": true,
+          "correct": true
+        },
+        {
+          "text": "The share price will definitely rise over the next month.",
+          "supported_probability": 0.03,
+          "expected": false,
+          "correct": true
+        }
+      ],
+      "personal_advice_probability": 0.05,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.98,
+      "promises_outcome_correct": true,
+      "input_tokens": 777,
+      "latency_ms": 98.95740007050335,
+      "request_id": "req_01a127c780c974c7b0cca341b7b769a3"
+    },
+    {
+      "id": "nvda-label-not-advice",
+      "claims": [
+        {
+          "text": "Assessment: hold.",
+          "supported_probability": 0.19,
+          "expected": null,
+          "correct": null
+        },
+        {
+          "text": "Nvidia raised its forecast, while export limits are expected to cut sales to a key market.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        },
+        {
+          "text": "This is a research heuristic and not investment advice.",
+          "supported_probability": 0.05,
+          "expected": null,
+          "correct": null
+        }
+      ],
+      "personal_advice_probability": 0.2,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.09,
+      "promises_outcome_correct": true,
+      "input_tokens": 881,
+      "latency_ms": 99.66839989647269,
+      "request_id": "req_01a127c7812b7c0590cea2a03dcf5e55"
+    },
+    {
+      "id": "tsla-clean",
+      "claims": [
+        {
+          "text": "Tesla's quarterly deliveries fell well short of analyst expectations.",
+          "supported_probability": 0.99,
+          "expected": true,
+          "correct": true
+        },
+        {
+          "text": "It also received approval to build a new battery plant.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        }
+      ],
+      "personal_advice_probability": 0.02,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.03,
+      "promises_outcome_correct": true,
+      "input_tokens": 764,
+      "latency_ms": 99.53309991396964,
+      "request_id": "req_01a127c781917e14911b6ba6de3e40dc"
+    },
+    {
+      "id": "tsla-all-wrong",
+      "claims": [
+        {
+          "text": "Tesla's deliveries beat expectations.",
+          "supported_probability": 0.01,
+          "expected": false,
+          "correct": true
+        },
+        {
+          "text": "Its chief executive resigned.",
+          "supported_probability": 0.02,
+          "expected": false,
+          "correct": true
+        }
+      ],
+      "personal_advice_probability": 0.02,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.05,
+      "promises_outcome_correct": true,
+      "input_tokens": 742,
+      "latency_ms": 123.92819998785853,
+      "request_id": "req_01a127c781f57590aa164c6a7dd1ba92"
+    },
+    {
+      "id": "tsla-advice",
+      "claims": [
+        {
+          "text": "Deliveries missed expectations, so sell your shares immediately.",
+          "supported_probability": 0.1,
+          "expected": null,
+          "correct": null
+        }
+      ],
+      "personal_advice_probability": 0.98,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.26,
+      "promises_outcome_correct": true,
+      "input_tokens": 670,
+      "latency_ms": 125.33060018904507,
+      "request_id": "req_01a127c7827371509839444ed93fe63a"
+    },
+    {
+      "id": "tsla-promise",
+      "claims": [
+        {
+          "text": "Tesla received approval for a battery plant, which guarantees higher profits next year.",
+          "supported_probability": 0.08,
+          "expected": false,
+          "correct": true
+        }
+      ],
+      "personal_advice_probability": 0.03,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.98,
+      "promises_outcome_correct": true,
+      "input_tokens": 676,
+      "latency_ms": 116.29429995082319,
+      "request_id": "req_01a127c782f275528560a81d8c3782e1"
+    },
+    {
+      "id": "tsla-hedged",
+      "claims": [
+        {
+          "text": "Deliveries fell short of expectations, which may weigh on results, though the outcome is uncertain.",
+          "supported_probability": 0.86,
+          "expected": null,
+          "correct": null
+        }
+      ],
+      "personal_advice_probability": 0.03,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.03,
+      "promises_outcome_correct": true,
+      "input_tokens": 686,
+      "latency_ms": 114.98879990540445,
+      "request_id": "req_01a127c783657c8bbe3417628074a7c0"
+    },
+    {
+      "id": "tsla-single-supported",
+      "claims": [
+        {
+          "text": "Tesla received approval to build a battery plant that it says will expand production capacity.",
+          "supported_probability": 0.98,
+          "expected": true,
+          "correct": true
+        }
+      ],
+      "personal_advice_probability": 0.02,
+      "personal_advice_correct": true,
+      "promises_outcome_probability": 0.04,
+      "promises_outcome_correct": true,
+      "input_tokens": 678,
+      "latency_ms": 93.86300016194582,
+      "request_id": "req_01a127c783d675399a2094f7ad4f1184"
+    }
+  ]
+}
