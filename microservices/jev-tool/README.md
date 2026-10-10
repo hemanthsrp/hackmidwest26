@@ -5,6 +5,8 @@ Shared tool for quick, cheap decisions using Jev (TypeSafe AI's System One model
 - **Python functions** for pipeline code.
 - **An MCP server over stdio** for Strands agents.
 
+**Coding agents: start with [AGENT_GUIDE.md](AGENT_GUIDE.md).** It has everything needed to call Jev from another service.
+
 Background, limits and the list of where Jev should and should not be used: [docs/jev-integration-research.md](../../docs/jev-integration-research.md).
 
 > **Status:** tested offline against a mock HTTP transport, and against the real TypeSafe API on 2026-10-10 (direct call, MCP round trip, and the wording quiz below). Question wording in `presets.py` has had one sanity pass on 27 samples; it is not tuned.
