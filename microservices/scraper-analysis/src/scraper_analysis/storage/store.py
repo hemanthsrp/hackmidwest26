@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class EvidenceStore(Protocol):
+    def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]: ...
     def save_evidence(self, items: list[Evidence]) -> None: ...
     def query_evidence(self, symbol: str) -> list[Evidence]: ...
     def save_signals(self, items: list[Signal]) -> None: ...
@@ -28,6 +29,9 @@ class InMemoryEvidenceStore:
     def __init__(self) -> None:
         self._evidence: dict[str, Evidence] = {}
         self._signals: list[Signal] = []
+
+    def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]:
+        return [i for i in items if i.id not in self._evidence]
 
     def save_evidence(self, items: list[Evidence]) -> None:
         for item in items:
@@ -46,6 +50,16 @@ class InMemoryEvidenceStore:
 class PostgresEvidenceStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+
+    def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]:
+        if not items:
+            return []
+        from .db import connect
+
+        with connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute("SELECT id FROM evidence WHERE id = ANY(%s::uuid[])", ([i.id for i in items],))
+            existing = {str(row[0]) for row in cur.fetchall()}
+        return [i for i in items if i.id not in existing]
 
     def save_evidence(self, items: list[Evidence]) -> None:
         from .db import connect
