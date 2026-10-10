@@ -6,7 +6,7 @@ pytest.importorskip("strands")
 
 from jev_tool.strands_mcp import mcp_client  # noqa: E402
 
-EXPECTED_TOOLS = {"jev_check", "jev_classify", "jev_score", "jev_evaluate", "judge_article"}
+EXPECTED_TOOLS = {"jev_check", "jev_classify", "jev_score", "jev_evaluate", "judge_article", "check_explanation"}
 
 
 make_client = mcp_client

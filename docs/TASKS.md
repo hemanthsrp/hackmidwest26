@@ -34,6 +34,11 @@
 - **Not included, left to A2:** the backend's `DecisionAdapter` / `JevDecisionAdapter` and any fixture mode. That adapter should call this package's public interface and pass `engine: unavailable` through.
 - **Done when:** offline tests pass (done: 25 passed) and the live MCP check passes with the key read from `.env` (done).
 
+**A-J3 — Jev event-type and explanation checks** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-event-and-explanation-checks`; complete, ready for review)
+- Owns: `microservices/jev-tool/` only. `judge_article` gains `event_type` and `upcoming_event` (question set `article-v3`); new `check_explanation` function and MCP tool (question set `explanation-v1`) checks a written explanation sentence by sentence against its evidence and flags advice or promised outcomes.
+- **For A2/A3:** call `check_explanation` from the backend adapter once an explanation step exists; see `microservices/jev-tool/AGENT_GUIDE.md`. Thresholds and what to do on a hit are the caller's decision.
+- **Done when:** offline tests pass (done: 34 passed) and both wording checks are run against real Jev with reports saved (done; reports in `microservices/jev-tool/evals/`).
+
 ## Agent B — evidence and quant (Cai lane)
 
 **B1 — Source/data feasibility** (unclaimed; independent discovery)

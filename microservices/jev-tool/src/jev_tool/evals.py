@@ -47,6 +47,11 @@ def load_quiz(path: Path | str = DEFAULT_QUIZ) -> dict[str, Any]:
             raise ValueError(f"{item_id}: expected.relevant must be true or false")
         if not _accepted(expected["content_type"]) <= set(presets.CONTENT_TYPE_OPTIONS):
             raise ValueError(f"{item_id}: bad expected.content_type {expected['content_type']!r}")
+        event_type = expected.get("event_type")
+        if event_type is not None and not _accepted(event_type) <= set(presets.EVENT_TYPE_OPTIONS):
+            raise ValueError(f"{item_id}: bad expected.event_type {event_type!r}")
+        if expected.get("upcoming_event") not in (True, False, None):
+            raise ValueError(f"{item_id}: expected.upcoming_event must be true, false or null")
         if expected["relevant"]:
             if not _accepted(expected["direction"]) <= set(presets.DIRECTION_OPTIONS):
                 raise ValueError(f"{item_id}: bad expected.direction {expected['direction']!r}")
@@ -72,7 +77,8 @@ def score_item(
     reversed_direction: str | None = None,
 ) -> dict[str, Any]:
     """Compare one item's answers with its key. Direction and materiality are only
-    scored for items that are expected to be about the company."""
+    scored for items that are expected to be about the company; event type and
+    upcoming event only where the key gives a value."""
     relevant_probability = answers["relevant"]["noul"]
     row: dict[str, Any] = {
         "relevant_probability": relevant_probability,
@@ -81,12 +87,22 @@ def score_item(
         "direction_confidence": answers["direction"]["confidence"],
         "content_type": answers["content_type"]["choice"],
         "content_type_correct": answers["content_type"]["choice"] in _accepted(expected["content_type"]),
+        "event_type": answers["event_type"]["choice"],
+        "event_type_correct": None,
+        "upcoming_event_probability": answers["upcoming_event"]["noul"],
+        "upcoming_event_correct": None,
         "materiality_score": answers["materiality"]["score"],
         "direction_correct": None,
         "materiality_exact": None,
         "materiality_within_one": None,
         "direction_flipped": None,
     }
+    if expected.get("event_type") is not None:
+        row["event_type_correct"] = row["event_type"] in _accepted(expected["event_type"])
+    if expected.get("upcoming_event") is not None:
+        row["upcoming_event_correct"] = (
+            row["upcoming_event_probability"] >= RELEVANCE_THRESHOLD
+        ) == expected["upcoming_event"]
     if reversed_direction is not None:
         row["direction_flipped"] = reversed_direction != row["direction"]
     if expected["relevant"]:
@@ -116,6 +132,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "relevance_accuracy": _rate([r["relevant_correct"] for r in rows]),
         "direction_accuracy": _rate([r["direction_correct"] for r in rows]),
         "content_type_accuracy": _rate([r["content_type_correct"] for r in rows]),
+        "event_type_accuracy": _rate([r["event_type_correct"] for r in rows]),
+        "upcoming_event_accuracy": _rate([r["upcoming_event_correct"] for r in rows]),
         "materiality_exact": _rate([r["materiality_exact"] for r in rows]),
         "materiality_within_one": _rate([r["materiality_within_one"] for r in rows]),
         "direction_confidence_when_right": _mean(
@@ -192,6 +210,8 @@ def format_report(report: dict[str, Any]) -> str:
         if not r["relevant_correct"]
         or not r["content_type_correct"]
         or r["direction_correct"] is False
+        or r["event_type_correct"] is False
+        or r["upcoming_event_correct"] is False
         or r["materiality_exact"] is False
     ]
     lines += ["", f"Misses ({len(misses)}):"]
@@ -199,6 +219,7 @@ def format_report(report: dict[str, Any]) -> str:
         lines.append(
             f"  {r['id']}: expected {r['expected']} | got relevant={r['relevant_probability']:.2f} "
             f"direction={r['direction']} content_type={r['content_type']} "
+            f"event_type={r['event_type']} upcoming={r['upcoming_event_probability']:.2f} "
             f"materiality={r['materiality_score']:.2f}"
         )
     return "\n".join(lines)

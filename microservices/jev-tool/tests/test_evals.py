@@ -24,6 +24,8 @@ EVIDENCE_FIELDS = {
 def answers(noul=0.9, choice="positive", confidence=0.8, score=2.0, content_type="news_report"):
     return {
         "content_type": {"type": "choice", "choice": content_type, "confidence": 0.9},
+        "event_type": {"type": "choice", "choice": "earnings_or_guidance", "confidence": 0.9},
+        "upcoming_event": {"type": "noul", "noul": 0.1},
         "relevant": {"type": "noul", "noul": noul},
         "direction": {"type": "choice", "choice": choice, "confidence": confidence},
         "materiality": {"type": "score", "score": score},
@@ -40,6 +42,8 @@ def test_bundled_quiz_is_valid_and_covers_every_label():
     assert accepted("direction") == {*presets.DIRECTION_OPTIONS, None}
     assert accepted("materiality") == {0, 1, 2, None}
     assert accepted("content_type") == set(presets.CONTENT_TYPE_OPTIONS)
+    assert accepted("event_type") >= set(presets.EVENT_TYPE_OPTIONS) - {"market_or_macro"}
+    assert accepted("upcoming_event") == {True, False, None}
     assert any(not item["expected"]["relevant"] for item in items)
 
 
@@ -75,6 +79,22 @@ def test_score_item_off_topic_only_scores_relevance():
     assert row["relevant_correct"] and row["content_type_correct"]
     assert row["direction_correct"] is None and row["materiality_exact"] is None
     assert row["direction_flipped"] is None
+
+
+def test_score_item_event_type_and_upcoming_event():
+    expected = {
+        "relevant": True,
+        "direction": "positive",
+        "materiality": 2,
+        "content_type": "news_report",
+        "event_type": ["earnings_or_guidance", "other"],
+        "upcoming_event": True,
+    }
+    row = evals.score_item(expected, answers())
+    assert row["event_type_correct"] is True
+    assert row["upcoming_event_correct"] is False
+    unscored = evals.score_item({**expected, "event_type": None, "upcoming_event": None}, answers())
+    assert unscored["event_type_correct"] is None and unscored["upcoming_event_correct"] is None
 
 
 def test_summarize():

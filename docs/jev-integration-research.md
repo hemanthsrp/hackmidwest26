@@ -239,8 +239,8 @@ Priority: **MVP** = part of the first vertical slice; **Next** = worthwhile once
 | S5 | Is this usable content, or a paywall stub, error page, ad or empty scrape? | choice | Scraped text | Discards junk before anything else runs | Next |
 | S6 | Do these two items describe the same story? | noul or score per candidate pair | Two titles and summaries | De-duplicates. Generate candidate pairs in code first (same symbol, close in time) so the pair count stays small. | Next |
 | S7 | What kind of content is this: company announcement, news report, opinion or analysis, social media post, other? | choice | Title and summary | Lets the combiner weigh a company's own promotion or a single social post less than independent reporting. **Built** into `judge_article` as `content_type` (question set `article-v2`). | MVP |
-| S8 | What kind of event is this: earnings, guidance, legal or regulatory, product, deal or M&A, management change, macro, other? | choice | Title and summary | Lets `decision-maker` connect news to what the options market is pricing (see the quant section below) | Next |
-| S9 | Does the article describe an upcoming scheduled event (for example an earnings date, a ruling, a launch)? | noul | Title and summary | Flags a known catalyst ahead; code widens the uncertainty statement. Jev only spots the mention; any date maths stays in code. | Next |
+| S8 | What kind of event is this: earnings or guidance, legal or regulatory, product or service, deal or partnership, management or workforce, operations or supply, market or macro, stock or valuation view, other? | choice | Title and summary | Lets `decision-maker` connect news to what the options market is pricing (see the quant section below). **Built** into `judge_article` as `event_type` (`article-v3`). | MVP |
+| S9 | Does the article describe an upcoming scheduled event (for example an earnings date, a ruling, a launch)? | noul | Title and summary | Flags a known catalyst ahead; code widens the uncertainty statement. Jev only spots the mention; any date maths stays in code. **Built** as `upcoming_event` (`article-v3`). | MVP |
 
 S1–S3 fit in **one request per article** as three parallel questions. S4, S5 and S7 can ride in the same request at almost no extra latency (the "speculative fan-out" pattern in the official docs).
 
@@ -281,8 +281,8 @@ Cautions:
 | # | Quick decision | Type | Jev receives | Caller does with the answer | Priority |
 |---|---|---|---|---|---|
 | D1 | Cross-check of the final label | choice: buy / hold / sell / insufficient_data | A small text summary: counts by direction and materiality, named quant buckets. No raw numbers. | Compared with the combiner's label; disagreement lowers stated certainty or yields `insufficient_data`. Not the source of truth. | Next |
-| D2 | Is each sentence of the written explanation supported by the evidence it cites? | noul or choice per sentence | The sentence plus the cited evidence text | Removes or flags unsupported sentences | Next |
-| D3 | Does the explanation promise returns, state certainty, or read as personal advice? | noul per rule | The explanation text | Blocks or rewrites before it reaches the UI. Supports the project's "not advice" guardrail. | Next |
+| D2 | Is each sentence of the written explanation supported by the evidence it cites? | noul per sentence | The sentences plus the evidence items | Removes or flags unsupported sentences. **Built** as `check_explanation` (`explanation-v1`). | Next |
+| D3 | Does the explanation promise returns, state certainty, or read as personal advice? | noul per rule | The explanation text | Blocks or rewrites before it reaches the UI. Supports the project's "not advice" guardrail. **Built** in the same `check_explanation` call. | Next |
 
 How the final label itself is produced inside `decision-maker` is covered in §7.
 
@@ -697,8 +697,10 @@ First real calls to Jev, made from a developer laptop with a direct TypeSafe key
 | Same call through the stdio MCP server and Strands `MCPClient` | Answered (`tests/test_mcp_server.py -m live`) |
 | Quiz, `article-v1` questions, 19 news samples | relevance 19/19, direction 12/15, materiality exact 11/15 and always within one level, no answer changed when options were reversed |
 | Quiz, `article-v2` questions (adds content type), 27 samples including blog posts, social posts and press-release style items | relevance 27/27, direction 22/22 against the widened key, content type 25/27, materiality exact 19/22 and always within one level, 2 of 27 direction answers changed when options were reversed |
-| Mean latency per article request | about 0.46 to 0.48 s |
-| Mean input tokens per article request | 580 with three questions, 773 with four |
+| Quiz, `article-v3` questions (adds event type and upcoming event), 32 samples | relevance 32/32, direction 27/27 against the widened key, event type 27/27, upcoming event 23/23, content type 30/32 (the same two press-release style samples), materiality exact 23/27 and always within one level, 1 of 32 direction answers changed when options were reversed |
+| Explanation check, `explanation-v1`, 12 hand-written explanations with 16 scored sentences | unsupported or contradicted sentences caught 6/6, supported sentences passed 10/10, personal advice 12/12 and promised outcome 11/11 after one wording fix (before it, the label "Assessment: hold." scored 0.51 for advice; after, 0.20) |
+| Mean latency per article request | about 0.46 to 0.48 s in the first two runs; about 0.12 to 0.15 s in later runs the same evening |
+| Mean input tokens per article request | 580 with three questions, 773 with four, 1,157 with six |
 
 What this showed:
 

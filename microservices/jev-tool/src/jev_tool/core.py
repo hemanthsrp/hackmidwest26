@@ -40,6 +40,7 @@ class _Result(BaseModel):
     engine: Engine = "unavailable"
     model: str | None = None
     request_id: str | None = None
+    input_tokens: int | None = None
     error: str | None = None
 
 
@@ -66,7 +67,6 @@ class ScoreResult(_Result):
 
 class EvaluateResult(_Result):
     answers: dict[str, dict[str, Any]] = {}
-    input_tokens: int | None = None
 
 
 class ArticleJudgment(_Result):
@@ -79,9 +79,28 @@ class ArticleJudgment(_Result):
     content_type: str | None = None
     content_type_probabilities: dict[str, float] = {}
     content_type_confidence: float | None = None
+    event_type: str | None = None
+    event_type_probabilities: dict[str, float] = {}
+    event_type_confidence: float | None = None
+    upcoming_event: float | None = None
     materiality: float | None = None
     materiality_levels: list[str] = presets.MATERIALITY_LEVELS
     materiality_confidence: float | None = None
+
+
+class ClaimCheck(BaseModel):
+    text: str
+    supported: float
+
+
+class ExplanationCheck(_Result):
+    """Probabilities, not verdicts: the caller chooses the thresholds."""
+
+    question_set_version: str = presets.EXPLANATION_QUESTION_SET_VERSION
+    claims: list[ClaimCheck] = []
+    claims_truncated: bool = False
+    personal_advice: float | None = None
+    promises_outcome: float | None = None
 
 
 def _env_flag(name: str) -> bool:
@@ -144,7 +163,12 @@ class JevTool:
             response.usage.input_tokens,
             (time.perf_counter() - started) * 1000,
         )
-        return response, {"engine": "jev", "model": response.model, "request_id": request_id}
+        return response, {
+            "engine": "jev",
+            "model": response.model,
+            "request_id": request_id,
+            "input_tokens": response.usage.input_tokens,
+        }
 
     def check(
         self,
@@ -194,12 +218,11 @@ class JevTool:
             return EvaluateResult(**meta)
         return EvaluateResult(
             answers={name: answer.model_dump(mode="json") for name, answer in response.answers.items()},
-            input_tokens=response.usage.input_tokens,
             **meta,
         )
 
     def judge_article(self, symbol: str, company: str, title: str, summary: str) -> ArticleJudgment:
-        """Relevance, direction, content type and materiality of one item for one company."""
+        """Relevance, direction, content type, event type, upcoming event and materiality of one item."""
         response, meta = self._call(
             presets.article_state(symbol, company, title, summary), presets.article_questions()
         )
@@ -207,6 +230,7 @@ class JevTool:
             return ArticleJudgment(**meta)
         direction = response.choices["direction"]
         content_type = response.choices["content_type"]
+        event_type = response.choices["event_type"]
         materiality = response.scores["materiality"]
         return ArticleJudgment(
             relevant=response.nouls["relevant"].noul,
@@ -216,6 +240,10 @@ class JevTool:
             content_type=content_type.choice,
             content_type_probabilities=content_type.probabilities,
             content_type_confidence=content_type.confidence,
+            event_type=event_type.choice,
+            event_type_probabilities=event_type.probabilities,
+            event_type_confidence=event_type.confidence,
+            upcoming_event=response.nouls["upcoming_event"].noul,
             materiality=materiality.score,
             materiality_confidence=materiality.confidence,
             **meta,
@@ -248,6 +276,33 @@ class JevTool:
         """Judge many articles concurrently. Each needs symbol, company, title and summary."""
         with ThreadPoolExecutor(max_workers=self.max_concurrency) as pool:
             return list(pool.map(lambda a: self.judge_article(**a), articles))
+
+    def check_explanation(self, explanation: str, evidence: Sequence[Mapping[str, Any]]) -> ExplanationCheck:
+        """Check a written explanation against the evidence it should rest on.
+
+        Each sentence gets `supported` (0 to 1: is it backed by `evidence`, a list of items
+        with `id`, `title`, `summary`). `personal_advice` and `promises_outcome` (0 to 1) cover
+        the whole text. Sentences beyond the first 12 are not checked (`claims_truncated`).
+        """
+        sentences = presets.split_sentences(explanation)
+        claims = sentences[: presets.MAX_CLAIMS]
+        truncated = len(sentences) > len(claims)
+        response, meta = self._call(
+            presets.explanation_state(explanation, claims, evidence),
+            presets.explanation_questions(len(claims)),
+        )
+        if response is None:
+            return ExplanationCheck(claims_truncated=truncated, **meta)
+        return ExplanationCheck(
+            claims=[
+                ClaimCheck(text=text, supported=response.nouls[f"claim_{i}"].noul)
+                for i, text in enumerate(claims)
+            ],
+            claims_truncated=truncated,
+            personal_advice=response.nouls["personal_advice"].noul,
+            promises_outcome=response.nouls["promises_outcome"].noul,
+            **meta,
+        )
 
     def close(self) -> None:
         with self._lock:

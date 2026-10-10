@@ -1,5 +1,5 @@
 {
-  "note": "Synthetic test samples written for checking Jev question wording. Not real news, posts or press releases. Never display these as evidence. The evidence objects follow the proposed shape in docs/api-contract-v0.md. 'expected' is a hand-written answer key; a list means any of those answers is accepted, because the call is a matter of judgment (for example routine good news may be read as neutral or positive). Direction and materiality are null when the item is not about the company. Materiality: 0 = routine or promotional, 1 = notable, 2 = major. Jev sees only the title and summary, not source_name.",
+  "note": "Synthetic test samples written for checking Jev question wording. Not real news, posts or press releases. Never display these as evidence. The evidence objects follow the proposed shape in docs/api-contract-v0.md. 'expected' is a hand-written answer key; a list means any of those answers is accepted, because the call is a matter of judgment (for example routine good news may be read as neutral or positive). Direction and materiality are null when the item is not about the company. Materiality: 0 = routine or promotional, 1 = notable, 2 = major. Jev sees only the title and summary, not source_name. event_type and upcoming_event are null where the item is off-topic or the call is too ambiguous to score.",
   "companies": {
     "AAPL": "Apple",
     "NVDA": "Nvidia",
@@ -23,7 +23,9 @@
         "relevant": true,
         "direction": "positive",
         "materiality": 2,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": "earnings_or_guidance",
+        "upcoming_event": false
       }
     },
     {
@@ -43,7 +45,12 @@
         "relevant": true,
         "direction": "negative",
         "materiality": 1,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "operations_or_supply",
+          "product_or_service"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -66,7 +73,12 @@
           "positive"
         ],
         "materiality": 0,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "operations_or_supply",
+          "other"
+        ],
+        "upcoming_event": null
       }
     },
     {
@@ -86,7 +98,9 @@
         "relevant": true,
         "direction": "negative",
         "materiality": 2,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": "legal_or_regulatory",
+        "upcoming_event": false
       }
     },
     {
@@ -109,7 +123,9 @@
         "content_type": [
           "opinion_or_analysis",
           "other"
-        ]
+        ],
+        "event_type": null,
+        "upcoming_event": null
       }
     },
     {
@@ -129,7 +145,9 @@
         "relevant": true,
         "direction": "mixed",
         "materiality": 2,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": "earnings_or_guidance",
+        "upcoming_event": false
       }
     },
     {
@@ -149,7 +167,9 @@
         "relevant": true,
         "direction": "positive",
         "materiality": 2,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": "earnings_or_guidance",
+        "upcoming_event": false
       }
     },
     {
@@ -169,7 +189,12 @@
         "relevant": true,
         "direction": "negative",
         "materiality": 2,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "legal_or_regulatory",
+          "market_or_macro"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -189,7 +214,9 @@
         "relevant": true,
         "direction": "neutral",
         "materiality": 0,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": "management_or_workforce",
+        "upcoming_event": false
       }
     },
     {
@@ -209,7 +236,9 @@
         "relevant": false,
         "direction": null,
         "materiality": null,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": null,
+        "upcoming_event": null
       }
     },
     {
@@ -229,7 +258,9 @@
         "relevant": true,
         "direction": "positive",
         "materiality": 1,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": "deal_or_partnership",
+        "upcoming_event": false
       }
     },
     {
@@ -249,7 +280,12 @@
         "relevant": true,
         "direction": "mixed",
         "materiality": 1,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "product_or_service",
+          "operations_or_supply"
+        ],
+        "upcoming_event": null
       }
     },
     {
@@ -269,7 +305,12 @@
         "relevant": true,
         "direction": "negative",
         "materiality": 2,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "operations_or_supply",
+          "earnings_or_guidance"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -289,7 +330,12 @@
         "relevant": true,
         "direction": "positive",
         "materiality": 1,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "operations_or_supply",
+          "legal_or_regulatory"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -312,7 +358,13 @@
           "neutral"
         ],
         "materiality": 1,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "product_or_service",
+          "operations_or_supply",
+          "legal_or_regulatory"
+        ],
+        "upcoming_event": null
       }
     },
     {
@@ -335,7 +387,12 @@
           "positive"
         ],
         "materiality": 0,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": [
+          "product_or_service",
+          "other"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -355,7 +412,9 @@
         "relevant": false,
         "direction": null,
         "materiality": null,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": null,
+        "upcoming_event": null
       }
     },
     {
@@ -375,7 +434,9 @@
         "relevant": true,
         "direction": "mixed",
         "materiality": 2,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": "earnings_or_guidance",
+        "upcoming_event": false
       }
     },
     {
@@ -395,7 +456,9 @@
         "relevant": false,
         "direction": null,
         "materiality": null,
-        "content_type": "news_report"
+        "content_type": "news_report",
+        "event_type": null,
+        "upcoming_event": null
       }
     },
     {
@@ -415,7 +478,9 @@
         "relevant": true,
         "direction": "positive",
         "materiality": 0,
-        "content_type": "opinion_or_analysis"
+        "content_type": "opinion_or_analysis",
+        "event_type": "stock_or_valuation_view",
+        "upcoming_event": false
       }
     },
     {
@@ -441,7 +506,9 @@
           1,
           2
         ],
-        "content_type": "social_media_post"
+        "content_type": "social_media_post",
+        "event_type": "deal_or_partnership",
+        "upcoming_event": null
       }
     },
     {
@@ -464,7 +531,12 @@
           "neutral"
         ],
         "materiality": 0,
-        "content_type": "company_announcement"
+        "content_type": "company_announcement",
+        "event_type": [
+          "product_or_service",
+          "other"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -487,7 +559,9 @@
           0,
           1
         ],
-        "content_type": "opinion_or_analysis"
+        "content_type": "opinion_or_analysis",
+        "event_type": "stock_or_valuation_view",
+        "upcoming_event": false
       }
     },
     {
@@ -507,7 +581,9 @@
         "relevant": false,
         "direction": null,
         "materiality": null,
-        "content_type": "social_media_post"
+        "content_type": "social_media_post",
+        "event_type": null,
+        "upcoming_event": null
       }
     },
     {
@@ -530,7 +606,12 @@
           "neutral"
         ],
         "materiality": 0,
-        "content_type": "company_announcement"
+        "content_type": "company_announcement",
+        "event_type": [
+          "other",
+          "product_or_service"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -550,7 +631,12 @@
         "relevant": true,
         "direction": "negative",
         "materiality": 0,
-        "content_type": "social_media_post"
+        "content_type": "social_media_post",
+        "event_type": [
+          "product_or_service",
+          "operations_or_supply"
+        ],
+        "upcoming_event": false
       }
     },
     {
@@ -573,7 +659,150 @@
           "neutral"
         ],
         "materiality": 0,
-        "content_type": "opinion_or_analysis"
+        "content_type": "opinion_or_analysis",
+        "event_type": "product_or_service",
+        "upcoming_event": false
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-007",
+        "symbol": "AAPL",
+        "title": "Apple to report fourth-quarter results on October 30",
+        "summary": "Apple said it will report results for its fiscal fourth quarter on October 30 after the market closes, followed by a conference call with analysts.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-007",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": [
+          0,
+          1
+        ],
+        "content_type": [
+          "news_report",
+          "company_announcement"
+        ],
+        "event_type": "earnings_or_guidance",
+        "upcoming_event": true
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-008",
+        "symbol": "AAPL",
+        "title": "Court to rule next week on Apple's app store appeal",
+        "summary": "An appeals court said it will issue its ruling next week on Apple's challenge to an order requiring changes to its app store.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-008",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "neutral",
+          "negative",
+          "mixed"
+        ],
+        "materiality": [
+          1,
+          2
+        ],
+        "content_type": "news_report",
+        "event_type": "legal_or_regulatory",
+        "upcoming_event": true
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-007",
+        "symbol": "NVDA",
+        "title": "Nvidia to unveil next-generation chips at January conference",
+        "summary": "Nvidia confirmed it will present its next generation of chips at an industry conference in January.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-007",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "positive",
+          "neutral"
+        ],
+        "materiality": [
+          0,
+          1
+        ],
+        "content_type": "news_report",
+        "event_type": "product_or_service",
+        "upcoming_event": true
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-008",
+        "symbol": "NVDA",
+        "title": "Nvidia shares rise after last week's earnings report",
+        "summary": "Nvidia's shares have risen since the company reported quarterly results last week that beat analyst expectations.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-008",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": [
+          1,
+          2
+        ],
+        "content_type": "news_report",
+        "event_type": [
+          "earnings_or_guidance",
+          "stock_or_valuation_view"
+        ],
+        "upcoming_event": false
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-008",
+        "symbol": "TSLA",
+        "title": "Tesla shareholders to vote next month on executive pay package",
+        "summary": "Tesla shareholders will vote at next month's annual meeting on a proposed pay package for the chief executive. Proxy advisers are split on the proposal.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-008",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": [
+          "neutral",
+          "mixed"
+        ],
+        "materiality": [
+          1,
+          2
+        ],
+        "content_type": "news_report",
+        "event_type": "management_or_workforce",
+        "upcoming_event": true
       }
     }
   ]
