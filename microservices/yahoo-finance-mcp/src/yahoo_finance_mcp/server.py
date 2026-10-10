@@ -8,14 +8,15 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from .market_data import get_market_signal
+from .market_data import get_company_fundamentals, get_market_signal
 
 mcp = MCPServer(
     "yahoo-finance-mcp",
     instructions=(
         "Provides one labeled historical market signal from Yahoo Finance via yfinance. "
         "Use sample mode by default. Live mode is opt-in and may return provider_unavailable; "
-        "do not treat it as a forecast, investment advice, or an official Yahoo service."
+        "do not treat it as a forecast, investment advice, or an official Yahoo service. "
+        "Company fundamentals remain disabled until source-policy approval."
     ),
 )
 
@@ -26,6 +27,11 @@ def yahoo_finance_market_signal(
     mode: str = "sample",
     start_date: str | None = None,
     end_date: str | None = None,
+    interval: str = "daily",
+    price_field: str = "close",
+    include_volume: bool = False,
+    include_realized_volatility: bool = False,
+    include_corporate_actions: bool = False,
 ) -> dict[str, Any]:
     """Return a labeled realized price-change signal for one stock symbol.
 
@@ -33,8 +39,26 @@ def yahoo_finance_market_signal(
     request and returns an explicit error when unavailable; it never falls back
     to fixture data. Live requests accept an optional inclusive-start,
     exclusive-end ISO date range; omit both dates for the latest 30-day window.
+    Live queries support daily, weekly, or monthly intervals; close or adjusted
+    close; and optional volume, realized-volatility, dividends, and splits.
     """
-    return get_market_signal(symbol, mode, start_date, end_date)
+    return get_market_signal(
+        symbol,
+        mode,
+        start_date,
+        end_date,
+        interval,
+        price_field,
+        include_volume,
+        include_realized_volatility,
+        include_corporate_actions,
+    )
+
+
+@mcp.tool()
+def yahoo_finance_company_fundamentals(symbol: str, mode: str = "live") -> dict[str, Any]:
+    """Return narrow live fundamentals only when source policy has explicitly enabled it."""
+    return get_company_fundamentals(symbol, mode)
 
 
 def main() -> None:

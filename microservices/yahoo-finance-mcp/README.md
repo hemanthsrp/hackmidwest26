@@ -5,8 +5,8 @@ Hack Midwest research demo.
 
 ## Tool
 
-`yahoo_finance_market_signal(symbol, mode="sample")` returns a labeled
-30-day realized price-change signal:
+`yahoo_finance_market_signal(...)` returns a labeled realized price-change
+signal and optional historical metrics:
 
 - `sample` is deterministic and is the default.
 - `live` is opt-in and retrieves a 30-day historical signal through `yfinance`.
@@ -24,10 +24,27 @@ service an official Yahoo product.
 - `start_date` and `end_date` — optional ISO `YYYY-MM-DD` range for `live`
   requests; provide both. The start is inclusive and the end is exclusive.
   Omitting both uses the latest 30-day window.
+- `interval` — `daily` (default), `weekly`, or `monthly` (`1d`, `1wk`, and
+  `1mo` aliases are also accepted).
+- `price_field` — `close` (default) or `adjusted_close`.
+- `include_volume` — adds average observed volume.
+- `include_realized_volatility` — adds annualized historical volatility from
+  returns, using the selected interval's standard annualization factor.
+- `include_corporate_actions` — adds dividend total and number of split events.
 
-The deterministic sample fixture deliberately rejects date-range filters rather
-than inventing historic values. Invalid symbols, invalid ranges, unavailable
-providers, and unsupported sample filters return explicit error envelopes.
+Explicit ranges are limited to 3,650 days. Requests outside that cap return
+`range_too_large` before any provider call. The deterministic sample fixture
+supports only its daily 30-day close value; it rejects filters rather than
+inventing unsupported fixture values.
+
+`yahoo_finance_company_fundamentals(symbol, mode="live")` exposes a narrow
+fundamentals record (market cap, valuation multiples, dividend yield, sector,
+and industry) only after the project has approved that source use. It is off by
+default. A deployed service must set `YAHOO_FINANCE_FUNDAMENTALS_ENABLED=true`
+only after that decision; otherwise it returns `source_policy_not_approved`.
+
+Invalid symbols, invalid ranges, unavailable providers, and unsupported sample
+filters return explicit error envelopes.
 
 ## Run locally
 
