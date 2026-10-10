@@ -70,6 +70,11 @@
 - Add minimal deployment configuration, health/logging, safe example environment names and a repeatable smoke test. Deploy only with approval; verify actual frontend/backend and Akamai use before claiming them. Local fallback remains runnable.
 - **Done when:** local smoke actually runs, and remote URL/health/log evidence is provided if deployed; failures and remaining manual steps are explicit.
 
+**D3 — Yahoo Finance MCP/API discovery and integration** (claimed by Allen/D on `allen/d3-yahoo-finance-mcp-discovery`; integration owner: Jet; 2026-10-10; queued after current database/API integration)
+- Make Yahoo Finance the proposed primary market-data source for the demo through a project-owned, server-side MCP/API boundary. Reuse the merged `yfinance` market-signal adapter only after confirming its terms, rate limits, reliability, and the allowed data fields; provide deterministic fixtures and explicit unavailable/stale behavior.
+- **Scope:** define the MCP tool contract, provenance/timestamp behavior, source-failure handling, and test plan. Implement only after current database wiring and the source contract are accepted. Do not expose credentials, imply official Yahoo affiliation, bypass access controls, paywalls, robots restrictions, or source terms, or add broad third-party scraping without a separately approved source review.
+- **Done when:** the accepted tool contract and source constraints are documented; a fixture-backed local MCP/API smoke test and failure path pass; live Yahoo Finance access is opt-in and honestly labeled; Jet has reviewed the backend integration boundary.
+
 ## Integration lead checklist
 
 - [ ] Confirm MVP and selected demo symbol(s) with teammates.
