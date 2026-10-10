@@ -1,9 +1,9 @@
 """Pluggable evidence/signal store. Defaults to an in-memory store so the
 service runs and is fully testable before the Akamai Postgres cluster
-exists; switches to PostgresEvidenceStore automatically once
-AKAMAI_DB_HOST/NAME/USER are set (see config.Settings.akamai_db_configured).
-This is the 'graceful failure path' AGENTS.md requires -- storage is never
-silently mocked and reported as done."""
+exists; switches to PostgresEvidenceStore automatically once DATABASE_URL
+is set (see config.Settings.akamai_db_configured). This is the 'graceful
+failure path' AGENTS.md requires -- storage is never silently mocked and
+reported as done."""
 
 import json
 import logging
@@ -155,6 +155,6 @@ def get_store() -> EvidenceStore:
             logger.info("using PostgresEvidenceStore (Akamai)")
             _store = PostgresEvidenceStore(settings)
         else:
-            logger.info("AKAMAI_DB_* not configured; using InMemoryEvidenceStore")
+            logger.info("DATABASE_URL not configured; using InMemoryEvidenceStore")
             _store = InMemoryEvidenceStore()
     return _store

@@ -1,5 +1,5 @@
 -- Akamai Managed PostgreSQL schema for scraper-analysis.
--- Run once against the provisioned cluster (psql "$AKAMAI_DB_URL" -f schema.sql).
+-- Run once against the provisioned cluster (psql "$DATABASE_URL" -f schema.sql).
 
 CREATE EXTENSION IF NOT EXISTS vector;
 

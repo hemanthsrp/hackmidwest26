@@ -1,9 +1,10 @@
 services:
   db:
     # Standard pgvector-enabled Postgres -- stand-in for the Akamai Managed
-    # PostgreSQL cluster. Same engine, same schema.sql; swap the AKAMAI_DB_*
-    # values in .env to point at the real Akamai cluster when it exists,
-    # no code changes needed.
+    # PostgreSQL cluster. Same engine, same schema.sql; set DATABASE_URL in
+    # .env to postgresql://scraper:localdev@localhost:5433/scraper_analysis
+    # to use this, or to the real Akamai cluster URL -- no code changes
+    # needed either way.
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: scraper
