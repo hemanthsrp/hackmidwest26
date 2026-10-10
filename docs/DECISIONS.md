@@ -37,6 +37,12 @@ Keep **confirmed decisions** separate from the recommended MVP and unverified in
 | What is the actual deployment target, available credit and approval to provision? | Allen + Jet; account access and spend approval | Open |
 | What is the evaluation horizon and baseline for any predictive claim? | Cai + Jet; time-split data and metric | Open; no accuracy claims pending evidence |
 
+## A1 contract proposal — pending Gate 0 review
+
+The reviewable A1 proposal is [api-contract-v0.md](api-contract-v0.md). It is **not a recorded decision** and must not be treated as authorization to begin A2. The proposed route is `POST /v0/research-assessments`; it models `live`, `cached`, and `sample` data modes; reserves `insufficient_data` for a truthful successful response; and supplies stable examples for invalid input, unavailable providers, and stale data. It also proposes a server-side-only Akamai OpenAI-compatible inference adapter with an explicitly selected deterministic fixture adapter, while retaining the existing shared `microservices/jev-tool` boundary.
+
+Gate 0 must still accept or revise the route and fields; supported symbols; data-provider rights; timestamp/freshness semantics; stale-data status behavior; assessment horizon/score meaning; Jev access proof; Akamai endpoint/auth/model/test procedure; vector-storage scope; and provisioning approval. Until then, all example values are fixtures and all inference/Jev integrations remain unverified.
+
 ## Decision log template
 
 Add entries only after agreement; don't rewrite prior choices silently.

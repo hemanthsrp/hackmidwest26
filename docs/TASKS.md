@@ -11,9 +11,10 @@
 
 ## Agent A — Strands/API/decision (Jet lane)
 
-**A1 — Feasibility and v0 API contract** (unclaimed; independent discovery)
+**A1 — Feasibility and v0 API contract** (Jet; proposal published 2026-10-10; Gate 0 approval pending)
 - Verify Strands SDK version/examples, JEV availability and actual MCP interface, inference auth/latency, and backend framework choice; record source, evidence, blockers. Draft a *proposed* JSON request/response and `insufficient_data` path for Gate 0.
-- **Done when:** an example payload and error cases are reviewable; unverified integrations are explicitly marked, not stubbed as completed.
+- **A1 handoff:** [api-contract-v0.md](api-contract-v0.md) supplies the reviewable request/success response, invalid-symbol, provider-unavailable, stale-data, and insufficient-data examples; lists unresolved Gate 0 choices; and documents the server-side Akamai OpenAI-compatible adapter plus explicit deterministic-fixture fallback. It preserves the existing shared `microservices/jev-tool`; no live credentials, deployment, provisioning, or A2 code was used.
+- **Done when:** an example payload and error cases are reviewable; unverified integrations are explicitly marked, not stubbed as completed. **A1 deliverable complete; do not begin A2 until Gate 0 is confirmed.**
 
 **A2 — Backend skeleton + orchestration** (unclaimed; after Gate 0)
 - Implement a testable Python HTTP API using the approved schema; orchestrate source/quant/decision adapters via Strands where supported. Keep external tools mockable; validate inputs and classify unavailable/stale data.
