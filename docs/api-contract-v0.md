@@ -95,7 +95,7 @@ Unknown request fields are rejected until the team explicitly chooses forward-co
 - All timestamps are ISO 8601 UTC strings. `published_at` may be `null` only when a source does not provide it; `observed_at` and `retrieved_at` must not be invented.
 - `data_mode` is one of `live`, `cached`, or `sample` and is explicit at both response and record level.
 - `assessment.label` is one of `buy`, `hold`, `sell`, or `insufficient_data`. It is a categorical research heuristic, not a probability, personalized recommendation, or validated forecast.
-- `reason_codes` reference IDs in `evidence` and/or `signals`; the final implementation must not produce dangling references.
+- `reason_codes` reference IDs in `evidence` and/or `signals`, **or** a documented system reason code when no corresponding record can exist. The initial proposed system code is `missing_attributable_evidence`; future system codes require a contract update. The final implementation must not produce undeclared codes or dangling record references.
 - A numeric score is deliberately absent. If later added, Gate 0 must define its range, interpretation, evaluation limits, and UI label.
 - `warnings` is an array of structured warning objects using the same `code`, `message`, and `retryable` fields as errors, but a successful response may still include it.
 
