@@ -1,0 +1,371 @@
+{
+  "note": "Synthetic test samples written for checking Jev question wording. Not real news. Never display these as evidence. The evidence objects follow the proposed shape in docs/api-contract-v0.md (branch jet/a1-api-contract). 'expected' is a hand-written first-pass answer key; direction and materiality are null when the item is not about the company. Materiality: 0 = routine or promotional, 1 = notable, 2 = major.",
+  "companies": {
+    "AAPL": "Apple",
+    "NVDA": "Nvidia",
+    "TSLA": "Tesla"
+  },
+  "items": [
+    {
+      "evidence": {
+        "id": "sample-aapl-news-001",
+        "symbol": "AAPL",
+        "title": "Apple reports record quarterly revenue on strong iPhone demand",
+        "summary": "Apple said quarterly revenue rose to a record, helped by stronger than expected iPhone sales, and raised its outlook for the next quarter.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 2
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-002",
+        "symbol": "AAPL",
+        "title": "Apple recalls a batch of laptop chargers over overheating reports",
+        "summary": "Apple is recalling a limited batch of chargers sold in two countries after a small number of overheating reports. No injuries were reported.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-002",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 1
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-003",
+        "symbol": "AAPL",
+        "title": "Apple to open a new retail store in Austin next month",
+        "summary": "Apple will open one new retail store next month, bringing its total in the state to nineteen.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-003",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": 0
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-004",
+        "symbol": "AAPL",
+        "title": "Regulators fine Apple over app store rules; company to appeal",
+        "summary": "A regulator imposed a multibillion-dollar fine on Apple over its app store payment rules and ordered changes to the business. Apple said it will appeal.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-004",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-005",
+        "symbol": "AAPL",
+        "title": "Ten gadgets we loved this year",
+        "summary": "A roundup of consumer gadgets including a smart speaker, a camera drone and a pair of headphones. An Apple watch band is mentioned among the accessories.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-005",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-news-006",
+        "symbol": "AAPL",
+        "title": "Apple posts higher services revenue but warns of weaker hardware sales",
+        "summary": "Apple reported strong growth in services revenue for the quarter, while warning that hardware sales are expected to decline next quarter.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-news-006",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 2
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-001",
+        "symbol": "NVDA",
+        "title": "Nvidia raises full-year forecast as data center orders surge",
+        "summary": "Nvidia raised its full-year revenue forecast, citing a sharp increase in orders for its data center chips.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 2
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-002",
+        "symbol": "NVDA",
+        "title": "Nvidia says new export limits will cut sales to a key market",
+        "summary": "Nvidia said newly announced export restrictions will significantly reduce its sales to one of its largest markets in the coming quarters.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-002",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-003",
+        "symbol": "NVDA",
+        "title": "Nvidia names new head of investor relations",
+        "summary": "Nvidia appointed a new head of investor relations, replacing an executive who is retiring.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-003",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": 0
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-004",
+        "symbol": "NVDA",
+        "title": "Rival chipmaker unveils processor it says beats competitors",
+        "summary": "A competing chipmaker announced a new processor and described its design and launch schedule in detail. It claimed the chip outperforms products from Nvidia and others.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-004",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-005",
+        "symbol": "NVDA",
+        "title": "Nvidia signs deal to supply driver-assistance chips to an automaker",
+        "summary": "Nvidia announced a multi-year agreement to supply driver-assistance chips to a mid-sized automaker.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-005",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 1
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-news-006",
+        "symbol": "NVDA",
+        "title": "Nvidia delays next-generation chip by a quarter but says demand remains strong",
+        "summary": "Nvidia said its next-generation chip will ship one quarter later than planned because of a packaging issue, and added that customer orders remain ahead of supply.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-news-006",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 1
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-001",
+        "symbol": "TSLA",
+        "title": "Tesla quarterly deliveries fall well short of analyst expectations",
+        "summary": "Tesla delivered far fewer vehicles in the quarter than analysts expected, its largest shortfall in several years.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 2
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-002",
+        "symbol": "TSLA",
+        "title": "Tesla wins approval to build a new battery plant",
+        "summary": "Tesla received regulatory approval to build a battery plant that it says will expand its production capacity.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-002",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": 1
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-003",
+        "symbol": "TSLA",
+        "title": "Tesla recalls vehicles to fix a software issue with an over-the-air update",
+        "summary": "Tesla is recalling a group of vehicles to correct a warning-light software issue. The fix will be delivered by an over-the-air update.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-003",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": 1
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-004",
+        "symbol": "TSLA",
+        "title": "Tesla launches referral promotion offering free charging credits",
+        "summary": "Tesla started a limited-time referral promotion that gives new buyers free charging credits.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-004",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "neutral",
+        "materiality": 0
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-005",
+        "symbol": "TSLA",
+        "title": "City council approves new downtown parking rules",
+        "summary": "A city council approved new parking rules for its downtown area. A council member noted that electric vehicles such as Teslas will be subject to the same rules.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-005",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-006",
+        "symbol": "TSLA",
+        "title": "Tesla reports higher revenue while profit margin narrows",
+        "summary": "Tesla reported higher quarterly revenue than a year earlier, while its profit margin fell to its lowest level in three years.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-006",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "mixed",
+        "materiality": 2
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-news-007",
+        "symbol": "TSLA",
+        "title": "Electric vehicle registrations rise across Europe",
+        "summary": "Industry data showed electric vehicle registrations rose across Europe last month. Several manufacturers, including Tesla, were listed among those with gains.",
+        "source_name": "Fixture News",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-news-007",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null
+      }
+    }
+  ]
+}

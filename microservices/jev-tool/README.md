@@ -105,6 +105,16 @@ export JEV_ENABLED=true
 
 Record the model, request id, latency and `input_tokens` from the log line; that is the observed call the project docs ask for.
 
+## Checking the question wording
+
+`evals/article_quiz.json` holds 19 hand-labelled **sample** headlines for AAPL, NVDA and TSLA (written for testing, not real news) in the evidence shape proposed in `docs/api-contract-v0.md`. The harness runs each through the `judge_article` questions, then again with the direction options reversed, and compares with the answer key:
+
+```sh
+.venv/Scripts/python -m jev_tool.evals --out report.json
+```
+
+It reports relevance, direction and materiality agreement, confidence when right vs wrong, how often the answer flips when options are reordered, and tokens and latency per article. With Jev off it scores nothing and exits with code 2. It is a sanity check for the wording, not an accuracy measurement. The answer key is a first pass and worth a skim before trusting the numbers.
+
 ## Don't use Jev for
 
 Arithmetic or comparing numbers, ordering dates, writing text, or being the only thing that decides buy / hold / sell. Details are in the research doc.
