@@ -1,0 +1,15 @@
+# Local credentials and deployment state. Keep the template tracked.
+.env
+.env.*
+!.env.example
+
+# Local Python/runtime state
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Local deployment artifacts and credentials
+*.pem
+*.key
+kubeconfig*
