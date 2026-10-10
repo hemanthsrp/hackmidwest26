@@ -1,12 +1,12 @@
 # Akamai feasibility — D1 (Allen lane)
 
-**Status:** deployment blocked pending account access and team approval. The supplied Akamai workshop identifies a candidate shared inference endpoint, but this team has not made an authenticated call or deployed an application.
+**Status:** managed PostgreSQL preflight and provisioning are verified; application deployment remains blocked pending Gate 0, a runnable frontend, and a chosen compute target. The supplied Akamai workshop identifies a candidate shared inference endpoint, but this team has not made an authenticated inference call or deployed an application.
 
 ## Scope and decision
 
-The MVP has a small, deterministic evidence set and no approved account credentials. Do not provision an LKE cluster, GPU instance, managed database, object storage bucket, DNS record, or paid inference service for D1.
+The MVP has a small, deterministic evidence set. One managed PostgreSQL database was provisioned after explicit human approval for the vector-storage path; do not provision further LKE, GPU, object-storage, DNS, or inference resources until their specific need, cost, and deployment plan are approved.
 
-**Recommendation for Gate 0:** keep source/evidence retrieval in the backend's deterministic fixture path for the first vertical slice. Do **not** add vector storage unless the agreed source corpus requires semantic retrieval that a bounded, structured in-process store cannot support. This avoids introducing an unverified managed database, embedding model, ingestion pipeline, retention policy, and new cost center before the core API/UI flow works.
+**Recommendation for Gate 0:** keep source/evidence retrieval in the backend's deterministic fixture path for the first vertical slice. The already-provisioned vector database must not be integrated unless the agreed source corpus requires semantic retrieval that a bounded, structured in-process store cannot support. This avoids coupling the core API/UI flow to an as-yet-unapproved embedding model, ingestion pipeline, and retention policy.
 
 If the team later approves deployment, use a single regional Akamai Cloud compute target for the API and serve the static frontend from the same application boundary or another explicitly selected service. Treat Kubernetes/App Platform as a later option, not the default for the hackathon MVP: Akamai documents App Platform as integrated with LKE, which adds cluster setup and operations beyond the first-slice need.
 
@@ -17,7 +17,29 @@ Checked 2026-10-10 in the Allen D1 worktree:
 - No environment variable name containing `AKAMAI`, `LINODE`, `OPENAI`, or `INFERENCE` was present.
 - Neither `linode-cli` nor `akamai` was installed.
 - The tracked project repository has no runnable application code, deployment configuration, or safe environment template yet. The two newly added untracked reference repositories are excluded from this branch and are not project deliverables.
-- Therefore account identity, credit balance, enabled regions/services, this team's inference-key availability, deployment target, and end-to-end setup time remain **unverified**. No login, provisioning, or billed action was attempted.
+- At that time, account identity, credit balance, enabled regions/services, this team's inference-key availability, deployment target, and end-to-end setup time were **unverified**. The managed-database facts that have since been verified are recorded below; hosted inference and application-deployment facts remain unverified.
+
+## Verified managed database outcome
+
+On 2026-10-10, the authorized account was confirmed active with Managed Databases capability and a $300 hackathon promotion available through 2027-01-01. The following approved resource is now active:
+
+- Label: `hackmidwest-vector-db`
+- Region: `us-ord` (Chicago); region status `ok` with Managed Databases capability
+- Plan: one-node `g6-nanode-1`, priced at $0.024/hour and $16/month
+- Engine: PostgreSQL 17.11; TLS required and a single-host `/32` allow list configured
+- Verification: the generated local-only `DATABASE_URL` connected with TLS, and `CREATE EXTENSION IF NOT EXISTS vector` succeeded with pgvector 0.8.6
+
+The connection URL and generated credentials are stored only in the Allen D2 worktree's ignored `.env`; they are not recorded here. The database is ready for project-owned tables after Cai and Jet agree the evidence schema, retention/deletion policy, and embedding model/dimension. It currently permits only the developer address; a deployed workload needs its own approved allow-list or private-network path before it can connect.
+
+## Verified hosted inference outcome
+
+On 2026-10-10, a server-side, credential-redacted probe of the configured Akamai OpenAI-compatible endpoint succeeded:
+
+- `GET /models` returned HTTP 200 with three models; the configured chat and embedding aliases were both present.
+- A bounded chat-completions request returned HTTP 200 with a response choice.
+- A one-sentence embeddings request returned HTTP 200 with a 1,024-dimension vector, matching the managed pgvector candidate schema.
+
+This verifies endpoint reachability, authorization, the current model aliases, and the expected embedding dimension. It does not establish production quota, latency guarantees, structured-output behavior, or a deployed application integration. Jet must still keep inference server-side, use bounded retry/error handling, and retain the explicit fixture/unavailable behavior until those application paths are implemented and tested.
 
 ## Platform findings and sources
 
