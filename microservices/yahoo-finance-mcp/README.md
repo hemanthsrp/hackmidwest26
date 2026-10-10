@@ -39,9 +39,9 @@ inventing unsupported fixture values.
 
 `yahoo_finance_company_fundamentals(symbol, mode="live")` exposes a narrow
 fundamentals record (market cap, valuation multiples, dividend yield, sector,
-and industry) only after the project has approved that source use. It is off by
-default. A deployed service must set `YAHOO_FINANCE_FUNDAMENTALS_ENABLED=true`
-only after that decision; otherwise it returns `source_policy_not_approved`.
+and industry). The project has approved this source use, so the tool is enabled
+by default. Set `YAHOO_FINANCE_FUNDAMENTALS_ENABLED=false` to disable it in a
+specific environment; disabled calls return `source_policy_not_approved`.
 
 Invalid symbols, invalid ranges, unavailable providers, and unsupported sample
 filters return explicit error envelopes.

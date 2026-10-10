@@ -63,8 +63,8 @@ def test_date_range_is_capped_before_live_fetch() -> None:
     }
 
 
-def test_fundamentals_are_blocked_until_source_policy_is_enabled(monkeypatch) -> None:
-    monkeypatch.delenv("YAHOO_FINANCE_FUNDAMENTALS_ENABLED", raising=False)
+def test_fundamentals_can_be_explicitly_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("YAHOO_FINANCE_FUNDAMENTALS_ENABLED", "false")
 
     result = get_company_fundamentals("AAPL", mode="live")
 
@@ -74,4 +74,33 @@ def test_fundamentals_are_blocked_until_source_policy_is_enabled(monkeypatch) ->
             "message": "company fundamentals are disabled pending source-policy approval",
             "retryable": False,
         }
+    }
+
+
+def test_fundamentals_are_enabled_by_default_after_source_policy_approval(monkeypatch) -> None:
+    monkeypatch.delenv("YAHOO_FINANCE_FUNDAMENTALS_ENABLED", raising=False)
+
+    class Ticker:
+        info = {
+            "marketCap": 3_000_000_000_000,
+            "trailingPE": 31.2,
+            "forwardPE": 28.4,
+            "dividendYield": 0.004,
+            "sector": "Technology",
+            "industry": "Consumer Electronics",
+            "unrelated_field": "excluded",
+        }
+
+    monkeypatch.setattr("yahoo_finance_mcp.market_data.yf.Ticker", lambda _: Ticker())
+
+    result = get_company_fundamentals("AAPL")
+
+    assert result["data_mode"] == "live"
+    assert result["fundamentals"] == {
+        "marketCap": 3_000_000_000_000,
+        "trailingPE": 31.2,
+        "forwardPE": 28.4,
+        "dividendYield": 0.004,
+        "sector": "Technology",
+        "industry": "Consumer Electronics",
     }
