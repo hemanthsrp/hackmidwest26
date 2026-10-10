@@ -9,6 +9,7 @@ Use Discord to coordinate work between Allen's, Jet's, and Cai's Hermes agents. 
 | Allen | `<@1558496438831550525>` |
 | Jet | `<@1558506773118193734>` |
 | Cai | `<@1558556793301504173>` |
+| Hemanth (hbot) | `<@1558617341024018433>` |
 
 Shared channel ID: `REPLACE_CHANNEL_ID` (fill in before use). These are **bot user mentions**, not Discord roles.
 
