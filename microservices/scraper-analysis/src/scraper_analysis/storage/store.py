@@ -37,7 +37,12 @@ class InMemoryEvidenceStore:
         return [e for e in self._evidence.values() if e.symbol.upper() == symbol.upper()]
 
     def save_signals(self, items: list[Signal]) -> None:
-        self._signals.extend(items)
+        # Same natural key the Postgres table enforces, so re-ingesting
+        # doesn't pile up duplicate signals in memory either.
+        keys = {(s.symbol, s.name, s.as_of, s.source) for s in self._signals}
+        for s in items:
+            if (s.symbol, s.name, s.as_of, s.source) not in keys:
+                self._signals.append(s)
 
     def query_signals(self, symbol: str) -> list[Signal]:
         return [s for s in self._signals if s.symbol.upper() == symbol.upper()]
