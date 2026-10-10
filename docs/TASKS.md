@@ -60,8 +60,9 @@
 - Verify Akamai account/credits, hosted inference options, deploy target and time-to-setup with Allen. Decide whether vector storage is justified by the MVP; prefer a simpler persistence/retrieval path if not. Never assume accounts or credentials are available.
 - **Done when:** architecture, cost/resource assumptions, required env-var names and blockers are documented; no spend/provisioning without approval.
 
-**D2 — Deployment/observability/smoke** (unclaimed; after Gate 0 and runnable app for remote smoke)
+**D2 — Deployment/observability/smoke** (claimed by Allen/D on `allen/d2-vector-db-preflight`; integration owner: Jet; 2026-10-10)
 - Add minimal deployment configuration, health/logging, safe example environment names and a repeatable smoke test. Deploy only with approval; verify actual frontend/backend and Akamai use before claiming them. Local fallback remains runnable.
+- **D2 initial scope:** safe managed PostgreSQL + pgvector account/plan preflight, secret-safe environment template, provisioning runbook, and database smoke plan. No resource creation until the authorized account holder supplies local credentials and approves the exact available region/plan.
 - **Done when:** local smoke actually runs, and remote URL/health/log evidence is provided if deployed; failures and remaining manual steps are explicit.
 
 ## Integration lead checklist
