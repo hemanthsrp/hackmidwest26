@@ -26,6 +26,22 @@ def _reporting_lag_days(published_at: datetime | None, observed_at: datetime | N
     return (published_at - observed_at).total_seconds() / 86400
 
 
+def _form4_title(symbol: str, f: dict) -> str:
+    who = f["owner"] + (f" ({f['role']})" if f["role"] else "")
+    actions = []
+    if f["buy_shares"]:
+        actions.append(f"bought {f['buy_shares']:,.0f} shares (open market, ~${f['buy_value_usd']:,.0f})")
+    if f["sell_shares"]:
+        actions.append(f"sold {f['sell_shares']:,.0f} shares (open market, ~${f['sell_value_usd']:,.0f})")
+    if not actions:
+        codes = ", ".join(sorted(f["other_codes"])) or "none"
+        actions.append(f"reported non-open-market activity (codes: {codes})")
+    title = f"{who} {' and '.join(actions)} of {symbol} -- Form 4"
+    if f["is_10b5_1"]:
+        title += " [pre-scheduled 10b5-1 plan]"
+    return title
+
+
 @register("sec_filing")
 def _normalize_sec_filing(record: RawRecord, data_mode: str) -> Evidence:
     payload = record.payload
@@ -34,10 +50,27 @@ def _normalize_sec_filing(record: RawRecord, data_mode: str) -> Evidence:
     title = f"{payload.get('company_name', record.symbol)} filed Form {form_type}"
     if items:
         title += f" (items {items})"
+    details: dict = {"form_type": form_type}
+    form4 = payload.get("form4")
+    if form4:
+        title = _form4_title(record.symbol, form4)
+        details.update(
+            {
+                "insider": form4["owner"],
+                "insider_role": form4["role"],
+                "is_10b5_1": form4["is_10b5_1"],
+                "buy_shares": form4["buy_shares"],
+                "buy_value_usd": form4["buy_value_usd"],
+                "sell_shares": form4["sell_shares"],
+                "sell_value_usd": form4["sell_value_usd"],
+                "other_codes": form4["other_codes"],
+            }
+        )
     return Evidence(
         symbol=record.symbol,
         title=title,
         summary=None,
+        details=details,
         source_name="SEC EDGAR",
         source_type=record.source_type,
         source_url=record.url,
@@ -85,6 +118,14 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
         symbol=record.symbol,
         title=title,
         summary=summary,
+        details={
+            "filer": payload.get("filer_name"),
+            "owner": payload.get("owner"),
+            "ticker": payload.get("ticker"),
+            "transaction_type": payload.get("transaction_type"),
+            "amount_range": payload.get("amount_range"),
+            "timing": timing,
+        },
         source_name=record.source_name,
         source_type=record.source_type,
         source_url=record.url,

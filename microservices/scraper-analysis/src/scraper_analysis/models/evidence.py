@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -41,6 +41,10 @@ class Evidence(BaseModel):
     observed_at: datetime | None = None
     retrieved_at: datetime
     reporting_lag_days: float | None = None
+
+    # Structured, source-specific facts (e.g. Form 4 buy/sell totals, Senate
+    # transaction type) so downstream code never has to parse titles.
+    details: dict[str, Any] = Field(default_factory=dict)
 
     entities: Entities = Field(default_factory=Entities)
     sentiment: Sentiment = Field(default_factory=Sentiment)
