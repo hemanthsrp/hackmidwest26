@@ -13,6 +13,21 @@ A fixture-first FastAPI skeleton for the Hack Midwest demo. It returns a **curre
 - `live`: returns `503 provider_unavailable` until a permitted live adapter has been configured. It does **not** fall back to fixtures.
 - `failure`: deterministic `503 simulated_provider_failure` for frontend/demo failure-state testing.
 
+## Akamai inference readiness (server-side plan)
+
+Akamai preflight has verified three server-side operations: model discovery, one bounded chat completion, and one one-sentence embedding request. The configured chat and embedding aliases are available; the embedding result is **1024 dimensions**, matching the pgvector plan. This is preflight evidence, not a claim that the API currently calls Akamai.
+
+When the reviewed live adapter is added, it will read the configured `AKAMAI_INFERENCE_*` environment names only in the backend process (`AKAMAI_INFERENCE_ENABLED`, `AKAMAI_INFERENCE_BASE_URL`, `AKAMAI_INFERENCE_API_KEY`, `AKAMAI_INFERENCE_MODEL`, and `AKAMAI_INFERENCE_TIMEOUT_SECONDS`). No alias, base URL, API key, raw prompt, or provider response is sent to the browser or committed to the repository.
+
+The adapter must retain the existing safety boundary:
+
+- `live` failures remain explicit `503 provider_unavailable` responses; they never switch to fixture output.
+- Retry only transient connection, timeout, `429`, and `5xx` failures, with **at most one retry** and the configured request timeout. Fail fast for missing configuration and other `4xx` responses.
+- Keep `sample` and `failure` modes deterministic for demo and frontend testing.
+- Record only safe operational metadata (request ID when supplied, selected alias, latency, and failure class). Do not log secrets, raw prompts, or raw provider responses.
+
+Implementing this adapter still requires the shared source/schema review; this skeleton intentionally remains fixture-first until that decision is recorded.
+
 ## Local checks
 
 ```bash
