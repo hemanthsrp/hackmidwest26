@@ -13,6 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+strands = ["strands-agents>=1.59"]
 dev = ["pytest>=8", "strands-agents>=1.59"]
 
 [project.scripts]
@@ -23,4 +24,5 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not live'"
 markers = ["live: calls the real TypeSafe API; needs TYPESAFE_API_KEY and JEV_ENABLED=true"]

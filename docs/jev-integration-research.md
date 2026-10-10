@@ -4,7 +4,7 @@
 >
 > **Research date:** 2026-10-10 · **Versions observed:** model `jev-1.13.0` (aliases `jev-latest`, `jev-preview`), Python SDK `typesafe-sdk` 0.7.3 (released 2026-10-09), HTTP API `v1`.
 >
-> **Implementation status (2026-10-10):** the shared Jev tool described in §7 now exists at [`microservices/jev-tool`](../microservices/jev-tool/README.md), built against `typesafe-sdk` 0.7.4, `mcp` 2.1.1 and `strands-agents` 1.59.0. It passes offline tests (real SDK client against a mock HTTP transport, plus a real stdio MCP round trip through Strands' `MCPClient`). **No call to the real TypeSafe API has been made yet.**
+> **Implementation status (2026-10-10):** the shared Jev tool described in §7 now exists at [`microservices/jev-tool`](../microservices/jev-tool/README.md), built against `typesafe-sdk` 0.7.4, `mcp` 2.1.1 and `strands-agents` 1.59.0. It passes offline tests (real SDK client against a mock HTTP transport, plus a real stdio MCP round trip through Strands' `MCPClient`). **Real calls have since been made** (direct and through MCP); see "Observed results" in §12.
 >
 > **Evidence labels used throughout**
 >
@@ -43,6 +43,8 @@ Taken from the existing docs; none of this is changed by this document.
 | Open (Gate 0) | "Is JEV accessible and callable through MCP; what is its input/output contract?" Owner: Jet. Evidence needed: observed test call, policy, latency. | [DECISIONS.md](DECISIONS.md) |
 
 **Repository layout (added 2026-10-10, after the microservice scaffold landed).** The repo now has `frontend/` and `microservices/` with three services: `decision-maker`, `scraper-analysis` and `volatility-surface-builder`. All are empty scaffolds; `microservices/microservices.md` is a heading only. `microservices/decision-maker` (Jet) is the combination layer that makes the final decision; the Jev connection is a shared tool used across services (see §6 and §7). Mapping of the other two folders to lanes is inferred from their names (`scraper-analysis` → Cai's sources and analysis; `volatility-surface-builder` → Hemanth's baseline) and is not yet documented by the team. The older docs still describe a single Python backend; sections 7, 8 and 13 below follow the microservice layout.
+
+**A1 contract proposal (added 2026-10-10).** Branch `jet/a1-api-contract` adds `docs/api-contract-v0.md`: a proposed `POST /v0/research-assessments` route with evidence, signals, assessment, warnings and an error envelope. It is pending Gate 0 review and says A2 must not start before then. It keeps `microservices/jev-tool` as the shared Jev wrapper, gated by `JEV_ENABLED`, with `engine: unavailable` propagating openly, which matches the tool as built. §7 lists how this document lines up with it and three gaps to raise at Gate 0.
 
 **Undecided things that affect a Jev integration** (not resolved here): the v0 API schema, the demo symbol set, the news source and what excerpt length we may store or send onward, which LLM/inference backend drives Strands, the assessment horizon, and whether a vector DB exists at all.
 
@@ -236,13 +238,43 @@ Priority: **MVP** = part of the first vertical slice; **Next** = worthwhile once
 | S4 | Which topic tags apply? (DUMP: "the agent may add additional tags") | one noul per candidate tag, or a choice for a single primary category | Title and summary; tag list with one-line descriptions | Stores tags for search and display | Next |
 | S5 | Is this usable content, or a paywall stub, error page, ad or empty scrape? | choice | Scraped text | Discards junk before anything else runs | Next |
 | S6 | Do these two items describe the same story? | noul or score per candidate pair | Two titles and summaries | De-duplicates. Generate candidate pairs in code first (same symbol, close in time) so the pair count stays small. | Next |
-| S7 | Is this reporting, opinion, or a press release? | choice | Title, summary, source name | Shown as a label; optional weighting input | Next |
+| S7 | What kind of content is this: company announcement, news report, opinion or analysis, social media post, other? | choice | Title and summary | Lets the combiner weigh a company's own promotion or a single social post less than independent reporting. **Built** into `judge_article` as `content_type` (question set `article-v2`). | MVP |
+| S8 | What kind of event is this: earnings, guidance, legal or regulatory, product, deal or M&A, management change, macro, other? | choice | Title and summary | Lets `decision-maker` connect news to what the options market is pricing (see the quant section below) | Next |
+| S9 | Does the article describe an upcoming scheduled event (for example an earnings date, a ruling, a launch)? | noul | Title and summary | Flags a known catalyst ahead; code widens the uncertainty statement. Jev only spots the mention; any date maths stays in code. | Next |
 
 S1–S3 fit in **one request per article** as three parallel questions. S4, S5 and S7 can ride in the same request at almost no extra latency (the "speculative fan-out" pattern in the official docs).
 
 #### `volatility-surface-builder` (quant)
 
-**No Jev use recommended.** This service is numeric end to end, and the official weaknesses page says Jev "is not a calculator" and is unreliable at comparing numbers and ordering dates. Turning numbers into named buckets (for example `trend_30d: down`, `realized_vol: elevated`) is threshold logic and belongs in code.
+**What the starting code is.** [hemanthsrp/vol-surface-builder](https://github.com/hemanthsrp/vol-surface-builder) was read on 2026-10-10 (README, `main.py`, `src/data_feed.py`, `src/surface_builder.py`, `src/svi_calibration.py`, `docs/methodology.md`).
+
+- It is numeric from end to end: it pulls option chains from yfinance (or generates synthetic ones), inverts Black-Scholes to implied volatility, interpolates a surface and draws charts.
+- It contains **no news scraping, no text handling, no prediction and no buy/sell/hold output.**
+- Its product-facing numbers come from `compute_surface_statistics(df, S)`: `atm_iv_mean`, `skew_25d_proxy`, IV / strike / maturity ranges, point and expiry counts. `calibrate_svi_surface(df)` adds a per-expiry `rmse` and `converged` flag.
+- Per its own methodology note, these describe **how much movement and downside protection the options market is pricing**. They do not say which way the stock will go.
+
+**No Jev use inside this service.** Jev "is not a calculator" and is unreliable at comparing numbers and ordering dates. Jev improves the decision at the seams around it:
+
+| Seam | Who does it | What it adds to the decision |
+|---|---|---|
+| News judgment (S1–S3) | Jev, via `judge_article` | The direction that the volatility numbers cannot supply |
+| Linking news to volatility (S8, S9) | Jev classifies event type and spots upcoming scheduled events | Code can explain a volatility reading ("short-dated implied volatility is high and there is an upcoming-earnings article") instead of leaving it unexplained |
+| Numbers into words | **Code in this service, not Jev** | Named buckets that `decision-maker` and any Jev cross-check can consume |
+| Final cross-check (D1) | Jev, over a short text summary of news counts and volatility buckets | Disagreement with the code's label lowers stated certainty or yields `insufficient_data` |
+
+**Proposed buckets [Recommendation for this service's owner; not agreed].**
+
+| Bucket | Derived from | Values |
+|---|---|---|
+| Skew | `skew_25d_proxy` | `normal` / `steep` |
+| Term structure | ATM implied volatility at short vs long maturities | `normal` / `flat` / `inverted` |
+| Data quality | point count, expiry count, SVI `converged` | `ok` / `thin` |
+
+Cautions:
+
+- **"Elevated" needs history.** One snapshot's `atm_iv_mean` cannot be called high or low without a baseline for that symbol, which the code does not keep.
+- **Volatility informs uncertainty and horizon, not direction.** Using it to push the label toward buy or sell would be an unsupported claim.
+- **SPY is the code's default ticker** and is an ETF; company-style news questions fit it poorly. Demo symbols should be single companies if news judgment is part of the demo.
 
 #### `decision-maker` (combination layer; final decision)
 
@@ -377,7 +409,7 @@ flowchart TD
 | Component | Responsibility | Notes |
 |---|---|---|
 | Input validation | Checks the wire format; drops stale or malformed items; records what was dropped | Staleness is decided here in code, not by Jev |
-| Combiner | Pure function: judgments + quant buckets → `label`, `reason_codes`, heuristic score | Weights and thresholds are readable in the repository and versioned. This is where the final decision is made. |
+| Combiner | Pure function: judgments + quant buckets → `label` and `reason_codes` (a numeric score only if Gate 0 adds one) | Weights and thresholds are readable in the repository and versioned. This is where the final decision is made. |
 | Strands agent | Receives the combiner's result and its inputs; writes the explanation and uncertainty statement, citing evidence IDs | Needs a text-generating model. It explains the label; it does not override it. |
 | Jev checks (optional) | D1 cross-check, D2 support check, D3 advice-language check, via the shared tool | Add after the core path works |
 
@@ -389,8 +421,19 @@ flowchart TD
 
 **Suggested contract fields** (for Gate 0 discussion; not applied to `ARCHITECTURE.md`)
 
-- Per evidence item: `judgment` with `relevant`, `direction`, `direction_probabilities`, `materiality`, `confidence`, `engine`, `model`.
-- On the assessment: `decision_engine`, the combiner's weights version, and any check results (D1–D3) that changed the output.
+These are measured against the A1 proposal in `docs/api-contract-v0.md` (branch `jet/a1-api-contract`).
+
+Already consistent with it:
+
+- `assessment.decision_engine` is an object `{name, status}` there. For Jev-backed assessments the natural values are `name: "jev"` with `status: "used"`. When the tool returns `engine: unavailable`, the assessment should carry an explicit status saying so (the proposal currently lists `used` and `not_run`; a value for "attempted but unavailable" is worth adding) plus a warning.
+- `reason_codes` are evidence or signal ids, or a declared system code. The combiner must emit only those.
+- **No numeric score in v0.** The proposal leaves it out on purpose, so the combiner produces a label and reason codes only, unless Gate 0 adds a score and defines it.
+
+Gaps to raise at Gate 0 (proposals; the contract file was not edited):
+
+1. **Company name.** Evidence items carry `symbol` but no company name, and `judge_article` needs one. Either add a field or agree a symbol-to-name lookup. The wording-check quiz uses a `companies` map for this.
+2. **Per-article judgments.** There is nowhere on an evidence item to put Jev's `relevant`, `direction` and `materiality`, with their `engine` and `model`. Proposed: an optional `judgment` object per evidence item.
+3. **Service split.** The proposal describes one backend route. It does not yet say which microservice serves it or what `scraper-analysis` and `volatility-surface-builder` send to `decision-maker`.
 
 ## 8. Proposed integration and data flows
 
@@ -415,7 +458,7 @@ sequenceDiagram
     end
     SC->>DM: evidence items with judgments
     V->>DM: quant signals and buckets
-    DM->>DM: validate, then combine into label, reason codes, heuristic score
+    DM->>DM: validate, then combine into label and reason codes
     DM->>AG: combiner result and its inputs
     AG->>L: write explanation citing evidence IDs
     L-->>AG: explanation text
@@ -558,7 +601,6 @@ Working code now lives in the repository rather than in this document: the serve
 
 ### Still not verified
 
-- **Any real call to the TypeSafe API.**
 - **Handing the MCP tools to a Strands `Agent`**, which needs a text model.
 - **Gateway calls from Python.** No verified request shape.
 
@@ -636,7 +678,7 @@ Goal: close the Gate 0 question with recorded evidence, then stand up the shared
 |---|---|---|---|
 | 0 | **Get access.** Try the TypeSafe console; if signups are closed, ask the hackathon organisers and TypeSafe (waitlist), then evaluate a gateway. | Which route worked, account owner, any cost | No route works → record the blocker; build the tool against the fallback only and do not claim Jev |
 | 1 | **One observed call** from a throwaway script with the official SDK, using a fixture article and the draft S1–S3 questions | Timestamp, `response.model`, `request_id`, `usage`, wall-clock latency, the raw answers | 401/403 or schema mismatch → fix before going further |
-| 2 | **Sanity run** on roughly 10–20 hand-labelled fixture headlines across the demo symbols; reorder Choice options once to check stability | Agreement with hand labels; confidence against correctness; token count per item (settles the billing question in §10) | Answers are unstable or plainly wrong → revise wording, or narrow the list in §6 |
+| 2 | **Sanity run**: `python -m jev_tool.evals` in `microservices/jev-tool` runs 27 hand-labelled samples (AAPL, NVDA, TSLA; news, blog posts, social posts, press-release style) through the article questions, then again with the direction options reversed | Agreement with hand labels; confidence against correctness; token count per item (settles the billing question in §10) | Answers are unstable or plainly wrong → revise wording, or narrow the list in §6 |
 | 3 | **Shared tool, function face:** `jev_check`, `jev_classify`, `jev_score`, `jev_evaluate`, `judge_article`, with flag, timeout, retry, pinned model and labelled fallback | Unit tests pass against fixtures with the flag off; one live call with it on | |
 | 4 | **Shared tool, MCP face:** expose the same functions as MCP tools; call one from a minimal Strands agent | A logged tool call through MCP; latency with and without the hop | The Strands MCP client API differs from what §9 describes → follow the official docs and update this document |
 | 5 | **First consumer:** the `decision-maker` combiner takes fixture evidence with `judge_article` results plus fixture quant buckets and returns a label | Example input and output payloads for the contract checkpoint | |
@@ -644,6 +686,30 @@ Goal: close the Gate 0 question with recorded evidence, then stand up the shared
 Steps 0–2 need no project code. Steps 3–4 can be built before any other service exists. Step 5 needs the input contract agreed, or at least drafted as fixtures.
 
 **Out of scope for the proof of concept:** every "Next" and "Deferred" row in §6, threshold tuning beyond a sanity check, any accuracy claim.
+
+### Observed results (2026-10-10)
+
+First real calls to Jev, made from a developer laptop with a direct TypeSafe key, model `jev-1.13.0`, SDK 0.7.4. Full reports with request ids are in `microservices/jev-tool/evals/report-2026-10-10-article-v1.json` and `...-article-v2.json`.
+
+| Check | Result |
+|---|---|
+| Direct SDK call (`jev_check`) | Answered; about 0.7 s for a single cold call |
+| Same call through the stdio MCP server and Strands `MCPClient` | Answered (`tests/test_mcp_server.py -m live`) |
+| Quiz, `article-v1` questions, 19 news samples | relevance 19/19, direction 12/15, materiality exact 11/15 and always within one level, no answer changed when options were reversed |
+| Quiz, `article-v2` questions (adds content type), 27 samples including blog posts, social posts and press-release style items | relevance 27/27, direction 22/22 against the widened key, content type 25/27, materiality exact 19/22 and always within one level, 2 of 27 direction answers changed when options were reversed |
+| Mean latency per article request | about 0.46 to 0.48 s |
+| Mean input tokens per article request | 580 with three questions, 773 with four |
+
+What this showed:
+
+- **Access works** with a direct key, both as a Python call and through MCP. This is the observed call the Gate 0 question asks for. Policy and rate-limit behaviour under load were not tested.
+- **The answer key was the main source of "misses" in the first run.** Jev read routine good news (a store opening, a promotion) as positive where the key said neutral. The key now accepts either for such judgment calls, and a new `content_type` question separates company announcements, news reports, opinion or analysis, and social media posts, so that a caller can weigh a promotional or single-voice item less.
+- **Low confidence predicted instability.** The only two answers that changed when the options were reordered were also the two lowest-confidence direction answers (0.36 and 0.44). A confidence floor before trusting a direction answer looks worthwhile; the value needs more samples.
+- **Content type missed both press-release style samples**, calling them news reports. Those samples are written in the third person, so this may be the samples rather than the question. Real press-release text should be tried before changing the wording.
+- **Materiality runs conservative**: Jev rated two "revenue up but warning" earnings items as notable where the key said major.
+- **One transient failure**: the very first call failed with connection errors and a 5 s timeout, then every later call succeeded. The tool returned `engine: unavailable` as designed. Cause unknown.
+
+Limits of this evidence: 27 samples written by the same author who wrote the key, with the key widened after seeing the first run. It shows the questions are workable. It does not support any accuracy figure.
 
 ## 13. Implementation roadmap and dependencies
 
@@ -688,13 +754,13 @@ Steps 0–2 need no project code. Steps 3–4 can be built before any other serv
 
 | # | Item | How to verify |
 |---|---|---|
-| 1 | Whether we can obtain a key at all; whether signups are paused | Try the console; ask organisers |
+| 1 | ~~Whether we can obtain a key at all~~ **Resolved 2026-10-10:** a direct key works. | n/a |
 | 2 | Any hackathon-provided Jev access or credit | Ask organisers. The Akamai starter kit README does not mention Jev; its `docs/inference.md` could not be fetched. |
 | 3 | Gateway request shape from Python; whether the SDK `base_url` can target a gateway | Gateway docs; one test call |
 | 4 | Whether `state` tokens are billed once or per question | `usage.input_tokens` on a real call |
 | 5 | Default `RetryPolicy` and timeout values | SDK source or API reference pages |
 | 6 | Correct answer accessor (`answers[...]` vs `nouls` / `choices` / `scores`) | Pinned SDK version |
-| 7 | Real latency from the Akamai region | Measure |
+| 7 | Real latency from the Akamai region (measured so far only from a laptop: about 0.5 s per article) | Measure from the deployed host |
 | 8 | Calibration and accuracy on financial news | Proof-of-concept step 2; no claim until evaluated |
 | 9 | Current Strands MCP client API (`MCPClient`, transports, direct tool invocation) | Official Strands docs |
 | 10 | Whether Akamai's hosted inference is OpenAI-compatible (matters for option F) | Kickoff materials |
@@ -765,7 +831,7 @@ Steps 0–2 need no project code. Steps 3–4 can be built before any other serv
 
 1. Every call to Jev goes through the shared Jev tool (§7). No service imports the TypeSafe SDK or calls the TypeSafe API on its own. Use Jev only for the kinds of decision listed in §6, and never for the "should not be used" rows.
 2. Jev never receives raw numbers to compare, dates to order, user account data, or secrets.
-3. Jev answers are inputs to code. The label and heuristic score are produced by the combiner, with weights that are readable in the repository. The agent explains the result; it does not override the label.
+3. Jev answers are inputs to code. The label is produced by the combiner, with weights that are readable in the repository. The agent explains the result; it does not override the label.
 4. Every result from the tool carries `engine`; callers must check it, handle `unavailable`, and pass it along. Never report `jev` unless the answer came from the real API. Any stand-in logic lives in the caller and is labelled as such.
 5. `insufficient_data` is a valid outcome. Low relevance, low confidence or empty evidence should produce it rather than a forced label.
 6. No Jev probability or confidence is shown to users as a chance of price movement.
