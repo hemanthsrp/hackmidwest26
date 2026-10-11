@@ -19,10 +19,14 @@ def no_live_providers(monkeypatch):
     monkeypatch.delenv("ROBINHOOD_REDIRECT_URI", raising=False)
     from research_api import recommendations
 
+    from research_api import v1
+
     assessment.reset()
     recommendations.reset()
     clear_assessment_cache()
+    v1.clear_assess_cache()
     yield
     assessment.reset()
     recommendations.reset()
     clear_assessment_cache()
+    v1.clear_assess_cache()
