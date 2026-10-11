@@ -13,6 +13,10 @@ def no_live_providers(monkeypatch):
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("VOL_SURFACE_URL", raising=False)
+    from research_api import recommendations
+
     assessment.reset()
+    recommendations.reset()
     yield
     assessment.reset()
+    recommendations.reset()

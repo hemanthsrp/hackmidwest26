@@ -46,6 +46,8 @@ QuantProvider = Callable[[str, str], Any]
 _quant_provider: QuantProvider | None = None
 _decision_maker: Any = None
 _built = False
+_scoring_maker: Any = None
+_scoring_built = False
 
 
 def set_quant_provider(provider: QuantProvider | None) -> None:
@@ -81,8 +83,12 @@ def _jev_tool() -> Any:
     return tool if tool.enabled else None
 
 
-def build_decision_maker(environ: Mapping[str, str] = os.environ) -> Any:
-    """The live decision maker, or None when it cannot be built."""
+def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_only: bool = False) -> Any:
+    """The live decision maker, or None when it cannot be built.
+
+    ``scoring_only`` leaves out the model-written explanation, semantic search and the
+    Jev review of that text. The label and score do not depend on them, so a scoring
+    maker agrees with the full one but is cheap enough to run for a whole industry."""
     database_url = environ.get("DATABASE_URL", "").strip()
     if not database_url:
         return None
@@ -93,14 +99,16 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ) -> Any:
         return None
 
     embedder = agent_factory = chat_model = None
-    try:
-        settings = InferenceSettings.from_environ(environ)
-    except InferenceConfigurationError as error:
-        logger.warning(
-            "inference is not configured (%s): no semantic search or model-written explanation",
-            ", ".join(error.missing_names),
-        )
-    else:
+    settings = None
+    if not scoring_only:
+        try:
+            settings = InferenceSettings.from_environ(environ)
+        except InferenceConfigurationError as error:
+            logger.warning(
+                "inference is not configured (%s): no semantic search or model-written explanation",
+                ", ".join(error.missing_names),
+            )
+    if settings is not None:
         client = AkamaiInferenceClient(settings, httpx_transport)
         embedder = lambda text: client.embedding(text)["data"][0]["embedding"]  # noqa: E731
         agent_factory = openai_compatible_agent_factory(
@@ -119,11 +127,20 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ) -> Any:
         agent_factory=agent_factory,
         agent_model=chat_model,
         use_agent_tools=environ.get("DECISION_AGENT_TOOLS", "false").strip().lower() == "true",
-        article_judge=JevDecisionAdapter(jev) if jev else None,
-        explanation_checker=JevExplanationAdapter(jev) if jev else None,
+        article_judge=JevDecisionAdapter(jev) if jev and not scoring_only else None,
+        explanation_checker=JevExplanationAdapter(jev) if jev and not scoring_only else None,
         companies=COMPANY_NAMES,
         stale_after_seconds=int(environ.get("DECISION_STALE_AFTER_SECONDS", "86400")),
     )
+
+
+def get_scoring_maker() -> Any:
+    """Like ``get_decision_maker`` but for ranking: no model explanation. Built once."""
+    global _scoring_maker, _scoring_built
+    if not _scoring_built:
+        _scoring_maker = build_decision_maker(scoring_only=True)
+        _scoring_built = True
+    return _scoring_maker
 
 
 def configure_quant(environ: Mapping[str, str] = os.environ) -> None:
@@ -147,8 +164,9 @@ def get_decision_maker() -> Any:
 
 def reset() -> None:
     """Forget the cached decision maker and the registered math (tests, config reloads)."""
-    global _decision_maker, _built, _quant_provider
+    global _decision_maker, _built, _quant_provider, _scoring_maker, _scoring_built
     _decision_maker, _built, _quant_provider = None, False, None
+    _scoring_maker, _scoring_built = None, False
 
 
 def sample_decision_maker() -> Any:

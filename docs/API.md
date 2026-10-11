@@ -83,6 +83,26 @@ Unknown fields are rejected (422).
 
 **Environment** (`live`): `DATABASE_URL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `CHAT_MODEL`, `EMBEDDING_MODEL`, `JEV_ENABLED`, `TYPESAFE_API_KEY`, `DECISION_STALE_AFTER_SECONDS`, `VOL_SURFACE_URL`. Meanings are in the [research-api README](../microservices/research-api/README.md).
 
+### `GET /v0/industries`
+`{"industries": [{"slug", "name", "stock_count"}]}`. The 11 GICS sectors: `technology`, `health-care`, `financials`, `consumer-discretionary`, `communication-services`, `consumer-staples`, `energy`, `industrials`, `materials`, `real-estate`, `utilities`. Each has 24 stocks.
+
+### `GET /v0/industries/{slug}/recommended-stocks`
+Always returns the industry's 24 stocks, best score first. Unknown slug is `404 unknown_industry`.
+
+The universe is a curated, committed list (`research_api/universe.py`, dated by `universe_as_of`), not a screen. Each stock is scored by the same combiner and 0 to 100 score as `/v0/research-assessments`, read from the evidence store, without the model-written explanation (fast; no inference or Jev explanation review). The options math is not applied, so a stock's list score can differ slightly from its detail view.
+
+| Field | Meaning |
+|---|---|
+| `industry` | `slug`, `name` |
+| `stocks[]` | `rank` (1 to 24), `symbol`, `name`, `score` (int 0 to 100 or `null`), `label` (`buy` \| `hold` \| `sell` \| `insufficient_data` or `null`), `assessment_status` |
+| `assessment_status` | `scored`, `insufficient_data` (evidence too thin), `stale`, `unavailable` (store down), `error`, or `not_assessed` (scoring not configured) |
+| `scoring` | `status` (`available` \| `unavailable`), `scored`, `total`, `horizon` (30d), `risk_profile` (balanced) |
+| `ranking_basis` | plain-language ordering rule; show it |
+| `warnings[]` | `scoring_unavailable` (no store; all 24 listed unscored in curated order), `partially_scored` (some stocks have no evidence yet) |
+| `universe_as_of`, `generated_at`, `stocks_per_industry` | provenance |
+
+Scored stocks come first by score descending (ties keep curated order), then unscored stocks in curated order. An unscored stock is not a negative signal; it means no stored evidence. Today the store holds little beyond AAPL, so most rows are unscored until symbols are ingested (`scraper-analysis` `POST /ingest/run`). Results are cached for 5 minutes per industry, except outages. The frontend should link each row to `POST /v0/research-assessments` for the full analysis.
+
 ---
 
 ## scraper-analysis
@@ -134,6 +154,7 @@ Read [AGENT_GUIDE.md](../microservices/jev-tool/AGENT_GUIDE.md) before calling. 
 
 ## Known gaps
 
+- Recommended-stocks scores come from stored evidence, so most of an industry is unscored until its symbols are ingested. The universe list needs a periodic manual review.
 - No endpoint triggers ingestion on demand; `live` assessments read what scraper-analysis has already stored.
 - No streaming or job/poll endpoint. A live assessment blocks for 20 to 30 seconds, so the frontend needs a loading state and a generous timeout.
 - No auth and no rate limiting on any service.
