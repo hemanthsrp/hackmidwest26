@@ -50,6 +50,32 @@ _scoring_maker: Any = None
 _scoring_built = False
 
 
+def trigger_ingestion(symbol: str, environ: Mapping[str, str] = os.environ) -> None:
+    """Ask scraper-analysis to strictly refresh a symbol before a live read.
+
+    The dependency stays optional for local/read-only deployments: without an
+    explicit service URL this does nothing. When configured, fixtures are
+    refused and any failure is surfaced rather than silently assessing stale
+    records.
+    """
+    base_url = environ.get("SCRAPER_ANALYSIS_URL", "").strip()
+    if not base_url:
+        return
+    import httpx
+    from decision_maker import ProviderUnavailableError
+
+    try:
+        response = httpx.post(
+            base_url.rstrip("/") + "/ingest/run",
+            params={"symbol": symbol, "live": "true", "fallback": "false", "tag": "true", "judge": "true"},
+            timeout=float(environ.get("INGEST_TIMEOUT_SECONDS", "90")),
+        )
+    except httpx.HTTPError as error:
+        raise ProviderUnavailableError("Evidence ingestion was unavailable; no assessment was generated.", {"provider": "scraper_analysis"}) from error
+    if response.status_code >= 400:
+        raise ProviderUnavailableError("Evidence ingestion did not complete; no assessment was generated.", {"provider": "scraper_analysis"})
+
+
 def set_quant_provider(provider: QuantProvider | None) -> None:
     """Register the math. It is called once per live assessment and should return a
     ``decision_maker.QuantInput`` whose ``vol_surface`` carries the surface statistics
@@ -216,6 +242,8 @@ def assess(maker: Any, *, symbol: str, query: str | None, preferences: Mapping[s
     from decision_maker import DecisionRequest, Preferences
     from decision_maker.models import ResponseWarning
 
+    if not sample:
+        trigger_ingestion(symbol)
     request = DecisionRequest(
         symbol=symbol, query=query, preferences=Preferences(**preferences), mode="sample" if sample else "live"
     )

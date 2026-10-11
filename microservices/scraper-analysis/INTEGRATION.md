@@ -7,7 +7,7 @@ For the A3 wiring in `research-api` (`adapters/source`, `adapters/quant`). This 
 ```
 cd microservices/scraper-analysis
 python -m venv .venv && source .venv/Scripts/activate   # Windows git-bash; use .venv/bin/activate elsewhere
-pip install -e ".[dev]"
+python -m pip install -r requirements-dev-local.txt   # installs sibling agentic-search + this service
 pip install -e ../jev-tool    # optional: only needed when JEV_ENABLED=true (see "Jev judgment" below)
 cp .env.example .env        # fill in values; never commit .env
 uvicorn scraper_analysis.api:app --port 8001 --app-dir src

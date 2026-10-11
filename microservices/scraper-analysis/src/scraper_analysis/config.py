@@ -1,7 +1,7 @@
 import math
 from urllib.parse import parse_qs, urlparse
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     reddit_user_agent: str = "scraper-analysis/0.1 (hackathon research demo)"
 
     news_api_key: str | None = None
+    # Exa is an optional, bounded article-research provider. Its key is read
+    # only by the agentic-search package from EXA_API_KEY; this flag prevents
+    # accidental provider calls in environments that merely carry a key.
+    enable_exa_search: bool = False
+    exa_lookback_days: int = Field(default=30, ge=1, le=30)
+    exa_allowed_domains: str = ""
     noaa_cdo_token: str | None = None
     sec_edgar_user_agent: str = "hackmidwest-scraper-analysis <set-contact-email>"
 
@@ -137,6 +143,10 @@ class Settings(BaseSettings):
         if not math.isfinite(v) or v <= 0:
             raise ValueError(f"must be a finite number greater than 0 (got {v!r})")
         return v
+
+    @property
+    def exa_allowed_domains_list(self) -> list[str]:
+        return [domain.strip() for domain in self.exa_allowed_domains.split(",") if domain.strip()]
 
     @property
     def akamai_db_configured(self) -> bool:
