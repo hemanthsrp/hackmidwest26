@@ -90,8 +90,8 @@ def persist_snapshot(snapshot: Mapping[str, Any], database_url: str | None = Non
     except Exception:
         return None
     return {"id": snapshot_id, "kind": "options_surface", "value_origin": "options_surface",
-            "impact_category": "options_risk", "source_name": snapshot["source"],
-            "as_of": as_of, "retrieved_at": snapshot["retrieved_at"], "data_mode": snapshot["data_mode"]}
+            "impact_category": "options_risk", "source": snapshot["source"],
+            "mode": snapshot["data_mode"], "as_of": as_of, "retrieved_at": snapshot["retrieved_at"]}
 
 
 def vol_surface_provider(base_url: str, post: Callable[..., Any] | None = None) -> Callable[[str, str], Any]:
