@@ -1,35 +1,33 @@
 # Agentic Search
 
-A project-owned, fixture-first search boundary for building attributable research
+A project-owned, fixture-first Search API boundary for attributable research
 context. It is not an assessment or trading-score engine.
 
-## Tavily adapter
+## Exa Search adapter
 
-`TavilyNewsSearch` accepts a bounded request:
+`ExaSearch` uses Exa's [Search API](https://docs.exa.ai/reference/search) with
+a bounded request:
 
-- `symbol` — 1–5 letter ticker
+- `symbol` — 1–5 letter ticker; incorporated into the Exa query
 - `query` — required search terms
-- `start_date` / `end_date` — optional inclusive-start, exclusive-end dates
-- `domains` — optional approved-domain allow-list
-- `max_results` — 1–10
+- `start_date` / `end_date` — optional inclusive-start, exclusive-end dates;
+  sent as Exa `startPublishedDate` / `endPublishedDate`
+- `domains` — optional approved-domain allow-list; sent as `includeDomains`
+- `max_results` — 1–10; sent as `numResults`
 - `mode` — `sample` (default) or `live`
 
-Sample mode returns deterministic records from `fixtures/`. Live mode requires
-server-only `TAVILY_API_KEY`; missing configuration returns an explicit
+Sample mode returns deterministic, symbol-matched records from `fixtures/`.
+Every returned result is labeled with its `data_mode`. Live mode requires the
+server-only `EXA_API_KEY`; missing configuration returns an explicit
 `provider_unavailable` envelope and never substitutes a fixture response.
 
-Tavily's News API request is bounded by the adapter. Publication timestamps are
-normalized and filtered locally after retrieval, so results without a usable
-published date are excluded from explicit date-range requests. This is not a
-claim that Tavily itself provides complete historical coverage for every range.
-
-## Exa seam
-
-Exa is the intended supplementary provider for a later adapter because it
-supports semantic search and documented publication-date filters. Do not add an
-`EXA_API_KEY` or enable a live Exa path until its source policy, retention
-rights, and normalized-result contract have been reviewed. The caller-facing
-result shape must remain identical to the Tavily adapter.
+The adapter calls `POST https://api.exa.ai/search` with the key only in the
+`x-api-key` request header. It requests Exa `highlights`, not raw page text.
+The retrieval boundary deliberately does **not** impose a character cap on
+provider highlights: downstream cleansing/prompt-selection owns shortening,
+source-policy enforcement, relevance selection, and any persisted/prompted
+retention limit. Provider failures collapse to a safe error envelope, so keys,
+request URLs, and raw provider messages are not returned.
 
 ## Evidence and scoring guardrails
 
@@ -37,6 +35,11 @@ Search results provide context, not a buy/sell signal. Persist only permitted
 metadata/excerpts with source URL, published/retrieved timestamps, query, and
 data mode. Any eventual assessment must cite evidence IDs and preserve
 uncertainty; provider relevance is not a trading-confidence score.
+
+The downstream scraper-analysis handoff is intentionally not part of this
+package. When the contract is accepted, scraper-analysis owns ingestion,
+symbol matching, strict-mode handling, ID/deduplication, credibility scoring,
+and database writes. This package does not write to the evidence table.
 
 ## Storage choice
 
