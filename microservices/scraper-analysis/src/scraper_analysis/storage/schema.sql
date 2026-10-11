@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS evidence (
     embedding       vector(1024)
 );
 
+-- Added after the first deploy: structured source-specific facts (Form 4
+-- buy/sell totals, Senate transaction type). Idempotent for existing clusters.
+ALTER TABLE evidence ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}';
+
 CREATE INDEX IF NOT EXISTS idx_evidence_symbol ON evidence (symbol);
 CREATE INDEX IF NOT EXISTS idx_evidence_embedding ON evidence
     USING hnsw (embedding vector_cosine_ops);

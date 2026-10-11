@@ -78,8 +78,8 @@ class PostgresEvidenceStore:
                         id, symbol, title, summary, source_name, source_type,
                         source_url, published_at, observed_at, retrieved_at,
                         reporting_lag_days, entities, sentiment, credibility,
-                        data_mode, embedding
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        data_mode, embedding, details
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
                     """,
                     (
@@ -99,6 +99,7 @@ class PostgresEvidenceStore:
                         json.dumps(item.credibility.model_dump()),
                         item.data_mode,
                         embedding,
+                        json.dumps(item.details),
                     ),
                 )
 
@@ -110,7 +111,7 @@ class PostgresEvidenceStore:
                 """
                 SELECT id, symbol, title, summary, source_name, source_type,
                        source_url, published_at, observed_at, retrieved_at,
-                       reporting_lag_days, entities, sentiment, credibility, data_mode
+                       reporting_lag_days, entities, sentiment, credibility, data_mode, details
                 FROM evidence WHERE symbol = %s ORDER BY retrieved_at DESC
                 """,
                 (symbol.upper(),),
@@ -120,7 +121,7 @@ class PostgresEvidenceStore:
         columns = [
             "id", "symbol", "title", "summary", "source_name", "source_type",
             "source_url", "published_at", "observed_at", "retrieved_at",
-            "reporting_lag_days", "entities", "sentiment", "credibility", "data_mode",
+            "reporting_lag_days", "entities", "sentiment", "credibility", "data_mode", "details",
         ]
         results = []
         for row in rows:

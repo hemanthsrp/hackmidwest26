@@ -7,7 +7,18 @@
     "company_name": "Apple Inc.",
     "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000042/sample-form4.xml",
     "published_at": "2026-09-30T00:00:00Z",
-    "observed_at": "2026-09-29T00:00:00Z"
+    "observed_at": "2026-09-29T00:00:00Z",
+    "form4": {
+      "transaction_date": "2026-09-29",
+      "owner": "Sample Insider",
+      "role": "SVP, Sample Affairs",
+      "is_10b5_1": true,
+      "buy_shares": 0.0,
+      "buy_value_usd": 0.0,
+      "sell_shares": 2399.0,
+      "sell_value_usd": 796502.4,
+      "other_codes": {}
+    }
   },
   {
     "symbol": "AAPL",
