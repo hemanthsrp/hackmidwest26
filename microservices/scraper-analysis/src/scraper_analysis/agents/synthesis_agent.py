@@ -16,12 +16,16 @@ Guards, enforced in code rather than trusted to the prompt:
   do is skew the summary, which the citation check below still bounds.
 - Citations are verified: any evidence/signal ID the agent's tools never
   returned is stripped, and points left with no valid citation are dropped.
+- A directional point (positive/negative/mixed, or buy/sell wording in an
+  insider/congressional point) may not cite a congressional record with an
+  invalid or missing trade date; such citations are stripped with a warning.
 - No evidence -> no model call; model/credential failure -> an explicit
   error, never a made-up briefing.
 """
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from pydantic import ValidationError
@@ -81,6 +85,31 @@ class BriefingUnavailableError(Exception):
     fabricated briefing."""
 
 
+def _congressional_direction_usable(e: Evidence) -> bool:
+    """False only for a congressional record with no valid trade date: same
+    rule as divergence -- a trade counts only with a valid trade date
+    (observed_at), never the filing date, and never with a date_issue."""
+    if e.source_type != "congressional_disclosure":
+        return True
+    return e.observed_at is not None and not (e.details or {}).get("date_issue")
+
+
+# Buy/sell wording in an insider/congressional point is a directional claim
+# even when the model labels it "neutral". A point that says it is about a
+# data-quality problem (invalid/missing date, data gap) is not.
+_TRADE_CLAIM_RE = re.compile(r"\b(buy\w*|bought|purchas\w*|sell\w*|sold|sale|sales|acquir\w*|dispos\w*|"
+                             r"accumulat\w*|dump\w*|unload\w*)\b", re.IGNORECASE)
+_DATA_QUALITY_RE = re.compile(r"\b(invalid|missing|unusable|unparseable|data[- ]quality|data gap|"
+                              r"no (valid|usable) (trade )?date)\b", re.IGNORECASE)
+
+
+def _is_directional(point) -> bool:
+    if point.direction != "neutral":
+        return True
+    return (point.theme in ("congressional", "insider") and bool(_TRADE_CLAIM_RE.search(point.text))
+            and not _DATA_QUALITY_RE.search(point.text))
+
+
 def _evidence_row(e: Evidence) -> dict:
     from ..pipeline import grade
 
@@ -97,9 +126,7 @@ def _evidence_row(e: Evidence) -> dict:
         "details": e.details,
     }
     if e.source_type == "congressional_disclosure":
-        # Same rule as divergence: a trade counts only with a valid trade date
-        # (observed_at), never the filing date, and never with a date_issue.
-        valid = e.observed_at is not None and not (e.details or {}).get("date_issue")
+        valid = _congressional_direction_usable(e)
         row["date_valid"] = valid
         row["direction_usable"] = valid
     return row
@@ -251,17 +278,32 @@ def generate_briefing(
             )
 
     warnings: list[str] = []
+    # A directional point may not rest on a congressional record whose trade
+    # date is invalid/missing (date_valid false, direction_usable false). The
+    # prompt asks for this; it is enforced here so a model that ignores the
+    # prompt cannot present an undated filing as buying or selling.
+    undated = {e.id for e in evidence if not _congressional_direction_usable(e)}
     kept = []
+    undated_stripped = 0
     for point in briefing.points:
         valid = [i for i in point.evidence_ids if i in seen_ids]
         if len(valid) != len(point.evidence_ids):
             warnings.append(f"stripped {len(point.evidence_ids) - len(valid)} unverifiable citation(s)")
+        if _is_directional(point):
+            usable = [i for i in valid if i not in undated]
+            undated_stripped += len(valid) - len(usable)
+            valid = usable
         if not valid:
             warnings.append(f"dropped uncited point: {point.text[:60]!r}")
             continue
         point.evidence_ids = valid
         kept.append(point)
     briefing.points = kept
+    if undated_stripped:
+        warnings.append(
+            f"stripped {undated_stripped} citation(s) of congressional record(s) with an invalid or missing "
+            "trade date from directional point(s): such records cannot support a buy/sell claim"
+        )
 
     modes = sorted({e.data_mode for e in evidence} | {s.data_mode for s in signals})
     if "sample" in modes:
