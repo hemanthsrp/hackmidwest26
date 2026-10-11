@@ -23,12 +23,13 @@ async def lifespan(app: FastAPI):
             interval_minutes=settings.scheduler_interval_minutes,
             offhours_factor=settings.scheduler_offhours_factor,
             tag=settings.scheduler_tag,
-            # With DATABASE_URL set: a Postgres advisory lock so only one
-            # process/replica can own the scheduler. None = in-process only.
+            # With DATABASE_URL set: a per-run factory of Postgres advisory
+            # locks (own connection per run) so only one process/replica can
+            # own the scheduler. None = in-process only.
             owner_lock=build_owner_lock(settings),
         )
         # start() refuses (start_error in /scheduler/status) if another
-        # scheduler owns this process, a previous run is still draining, or
+        # scheduler run owns this process (incl. one still stopping/draining), or
         # another process holds the advisory lock; it never runs two at once.
         scheduler.start()
         app.state.scheduler = scheduler

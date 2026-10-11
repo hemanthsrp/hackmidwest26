@@ -227,7 +227,8 @@ async def test_owner_lock_kept_until_a_timed_out_worker_actually_exits():
 
 def test_owner_lock_is_postgres_advisory_only_when_database_url_is_set():
     assert sched.build_owner_lock(SimpleNamespace(database_url=None)) is None
-    lock = sched.build_owner_lock(SimpleNamespace(database_url="postgresql://u:p@localhost:5432/d"))
+    factory = sched.build_owner_lock(SimpleNamespace(database_url="postgresql://u:p@localhost:5432/d"))
+    lock = factory()  # per-run factory: each start() gets its own lock/connection
     assert isinstance(lock, sched.PostgresAdvisoryLock)
     assert lock.key == sched.SCHEDULER_ADVISORY_LOCK_KEY
 
