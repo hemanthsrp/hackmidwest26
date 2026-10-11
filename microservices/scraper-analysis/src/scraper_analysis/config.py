@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     # sources/reddit_unofficial.py docstring for the accepted risk tradeoff.
     enable_reddit_scraper: bool = False
 
+    # Background ingestion (scheduler.py). Off by default: it writes to the
+    # configured database unattended. Always strict (never persists fixtures).
+    enable_scheduler: bool = False
+    scheduler_symbols: str = "AAPL"  # comma-separated
+    scheduler_interval_minutes: float = 30
+    scheduler_offhours_factor: float = 4
+    scheduler_tag: bool = True  # run the Bedrock tagging agent on new items
+
     @property
     def akamai_db_configured(self) -> bool:
         return bool(self.database_url)

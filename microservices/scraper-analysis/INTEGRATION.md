@@ -22,6 +22,7 @@ Storage is in-memory unless `DATABASE_URL` is set (then Postgres + pgvector; run
 | `GET /evidence?symbol=AAPL` | Everything stored for the symbol. `status` is `ok` or `insufficient_data` |
 | `GET /signals?symbol=AAPL` | Stored quant signals, same `status` convention |
 | `POST /briefing?symbol=AAPL` | Cited research briefing from stored data (one Bedrock call, hence POST) |
+| `GET /scheduler/status` | Whether the background scheduler is on, its interval, and each symbol's last run (new items, per-source status, error) |
 | `GET /health` | Liveness |
 
 Symbols are validated (`^[A-Z]{1,5}(\.[A-Z])?$`); invalid input returns `400 {"detail": ...}`. `/briefing` errors use the contract's envelope: `503 {"error": {"code": "briefing_unavailable", "message": ..., "retryable": true}}`.
@@ -97,6 +98,10 @@ Staleness is the caller's decision: compare `retrieved_at` / `published_at` to y
 ## Briefing
 
 `POST /briefing` returns `{status, briefing, meta, warnings}`. `briefing` has `headline`, `overall_tone`, `points[]` (each with `theme`, `text`, `direction`, `evidence_ids`), `conflicts[]`, `data_gaps[]`, `uncertainty`. It never gives a recommendation or score. Citations are verified server-side: IDs the agent did not actually retrieve are stripped, and uncited points are dropped (reported in `warnings`). Fixture records (evidence and signals) are excluded whenever any live evidence or signal exists. Model or agent-setup failures return the `503 briefing_unavailable` envelope, never a 500. With no stored data it returns `status: "insufficient_data"` without calling the model.
+
+## Scheduler
+
+Optional background ingestion so data refreshes without calling `/ingest/run`. **Off by default**; enable with `ENABLE_SCHEDULER=true` plus `SCHEDULER_SYMBOLS` (comma-separated), `SCHEDULER_INTERVAL_MINUTES` (floor 5), `SCHEDULER_OFFHOURS_FACTOR` (interval multiplier on weekends and outside 08:00-18:00 New York) and `SCHEDULER_TAG`. It is **always strict**: live data only, fixtures are never substituted or persisted, and a failed source is omitted and reported in `/scheduler/status`. Runs never overlap, one symbol failing never stops the others, and errors are sanitized. It writes to whatever `DATABASE_URL` points at, so on the shared cluster enable it deliberately and only after the SEC re-key migration (`python -m scraper_analysis.storage.migrations --apply`) has been run; before that, any live ingest re-inserts SEC filings under their new IDs.
 
 ## Do not claim
 
