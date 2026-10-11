@@ -31,6 +31,8 @@ services:
       - .env
       - microservices/jev-tool/.env
     environment:
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      RESEARCH_DATABASE_URL: ${DATABASE_URL}
       SCRAPER_ANALYSIS_URL: http://scraper:8001
       VOL_SURFACE_URL: http://volatility:8002
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
@@ -43,6 +45,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       AUTH_SECRET: ${AUTH_SECRET:?Set a local AUTH_SECRET before starting the stack}
+      SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET:?Set a shared SERVICE_ASSERTION_SECRET before starting the stack}
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
       AUTH_TRUST_HOST: "true"
       RESEARCH_API_URL: http://research-api:8000

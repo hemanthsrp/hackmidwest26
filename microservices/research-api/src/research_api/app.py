@@ -46,6 +46,14 @@ app.include_router(v1_router)
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import SQLAlchemyError
 
+
+@app.on_event("startup")
+def initialize_private_storage() -> None:
+    """Create the isolated user-record table before serving private routes."""
+    from . import storage
+
+    storage.migrate()
+
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"error":{"code":"request_failed","message":str(exc.detail),"retryable":exc.status_code >= 500}})
