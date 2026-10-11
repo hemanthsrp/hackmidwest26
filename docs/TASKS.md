@@ -20,7 +20,13 @@
 - Implement a testable Python HTTP API using the approved schema; orchestrate source/quant/decision adapters via Strands where supported. Keep external tools mockable; validate inputs and classify unavailable/stale data.
 - **Done when:** a real local request against fixtures returns contract-valid output; tests cover empty evidence, invalid symbol and provider failure; Strands use is demonstrated in executed code, or the blocker is documented.
 
-**A3 — Decision/integration** (unclaimed; after A2+B2, coordinate C2)
+**A3 — Decision/integration** (claimed 2026-10-10: Jet via Claude Code on `jet/a3-decision-maker`; built and tested offline, **not yet run against live services, not merged**)
+- **Claim scope:** new `microservices/decision-maker/` package (the combination layer), one new module plus a small route change in `microservices/research-api/`, and `docs/api-contract-v0.md`. Reads the evidence store with read-only SQL; no change to `scraper-analysis`. The math stays in `research-api` and is passed in.
+- **What exists:** `decision_maker.DecisionMaker.decide(request, quant)` returns the contract shape plus additive fields. A fixed rule (`combiner-v1`) picks the label from four evidence legs; a Strands agent on Akamai inference writes the cited explanation and answers the user's question; Jev reviews that text. `POST /v0/research-assessments` gains `query`, `preferences` and a `sample_decision` mode, and `mode: "live"` runs the decision maker when `DATABASE_URL` is set.
+- **For the math author:** register a provider with `research_api.assessment.set_quant_provider`. The fields, with an example built from `vol-surface-builder`'s functions, are in `microservices/decision-maker/README.md` ("Handing over the math"). The options math sets uncertainty and how much agreement is needed to leave `hold`; it does not set direction.
+- **For the frontend:** `mode: "sample_decision"` returns the live response shape offline.
+- **Checks run:** `decision-maker` 119 passed; `research-api` 42 passed (29 before). All offline.
+- **Open:** a read against the shared store, the Akamai tool-calling check and one end-to-end live request have not been run. Freshness is measured on the newest evidence row's `retrieved_at`, which the scraper sets only when a row is first stored, so a quiet symbol can read as stale; see "Known limits" in the README. The contract additions need Gate 0 review.
 - Wire source and quant outputs into an explainable assessment with horizon/uncertainty and evidence IDs; connect JEV/MCP only if verified, otherwise retain an explicitly labeled fallback and document unmet sponsor criteria.
 - **Done when:** full API demo uses real module boundaries, handles failures, and logged examples do not leak secrets; integration smoke passes locally.
 
