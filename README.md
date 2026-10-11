@@ -10,5 +10,7 @@ Start with [the project brief](docs/PROJECT_BRIEF.md), [current architecture](do
 | [Scraper analysis](microservices/scraper-analysis/README.md) | Source adapters, fixtures, normalized evidence and market signals |
 | [Jev tool](microservices/jev-tool/README.md) | Shared Python/MCP judgments and offline tests |
 | [Volatility surface builder](microservices/volatility-surface-builder/README.md) | Imported Black–Scholes/SVI option diagnostics, charts, tests, and a standalone sample/live HTTP endpoint |
+| [Yahoo Finance MCP](microservices/yahoo-finance-mcp/README.md) | Project-owned MCP server exposing realized price-change and market-data signals with sample fixtures |
+| [Agentic search](microservices/agentic-search/README.md) | Project-owned, fixture-first Exa Search API boundary with bounded queries and domain filters |
 
 The volatility service shows how options price risk. Its grid and skew measurements are not stock-price forecasts or buy/hold/sell recommendations. No frontend or deployed application is claimed here. See each service README for verified local commands.
