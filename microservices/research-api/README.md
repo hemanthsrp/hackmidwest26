@@ -5,6 +5,7 @@ A fixture-first FastAPI skeleton for the Hack Midwest demo. It returns a **curre
 ## Routes
 
 - `GET /health` — local readiness response.
+- `GET /v0/industries` and `GET /v0/industries/{slug}/recommended-stocks` — 24 curated stocks per GICS sector, ranked by the heuristic score where the evidence store has data (details in [docs/API.md](../../docs/API.md)).
 - `POST /v0/research-assessments` — accepts `{ "symbol": "ACME", "mode": "sample" | "live" | "failure" | "sample_decision", "query": "optional question", "preferences": { "horizon": "7d" | "30d" | "90d", "risk_profile": "conservative" | "balanced" | "growth" } }`. Unknown fields are rejected.
 
 ### Mode behavior

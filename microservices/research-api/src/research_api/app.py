@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import assessment
+from . import assessment, recommendations
+from .universe import INDUSTRIES
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,30 @@ def _decide(request: ResearchAssessmentRequest, symbol: str) -> JSONResponse:
 def health() -> dict[str, str]:
     """Return a dependency-free local readiness signal."""
     return {"status": "ok", "service": "research-api"}
+
+
+@app.get("/v0/industries")
+def list_industries() -> dict[str, object]:
+    """The industries (GICS sectors) that have a recommended-stocks list."""
+    return {"industries": recommendations.list_industries()}
+
+
+@app.get("/v0/industries/{slug}/recommended-stocks")
+def recommended_stocks(slug: str):
+    """24 stocks for the industry, best heuristic score first. Reads stored evidence only."""
+    if slug not in INDUSTRIES:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "code": "unknown_industry",
+                    "message": "Unknown industry. GET /v0/industries lists the valid slugs.",
+                    "retryable": False,
+                },
+                "request_id": f"req-{uuid.uuid4().hex}",
+            },
+        )
+    return recommendations.recommended_stocks(slug)
 
 
 @app.post("/v0/research-assessments")
