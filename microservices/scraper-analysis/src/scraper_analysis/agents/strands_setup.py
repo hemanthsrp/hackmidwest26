@@ -10,7 +10,8 @@ the package is installed / before AWS credentials are configured.
 from ..config import get_settings
 
 
-def build_bedrock_agent(system_prompt: str, tools: list | None = None):
+def build_bedrock_agent(system_prompt: str, tools: list | None = None, model_id: str | None = None):
+    """``model_id`` picks the Bedrock model; the tagging and synthesis agents each pass their own."""
     import boto3
     from strands import Agent
     from strands.models import BedrockModel
@@ -30,7 +31,7 @@ def build_bedrock_agent(system_prompt: str, tools: list | None = None):
         region_name=settings.aws_default_region,
     )
     model = BedrockModel(
-        model_id=settings.bedrock_model_id,
+        model_id=model_id or settings.bedrock_synthesis_model_id,
         boto_session=session,
         # This account's IAM user only has bedrock:InvokeModel, not
         # bedrock:InvokeModelWithResponseStream (Strands streams by

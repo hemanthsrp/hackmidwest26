@@ -15,7 +15,11 @@ class Settings(BaseSettings):
     # Newer Claude models on Bedrock require a cross-region inference
     # profile ID ("us." prefix), not the raw model ID -- confirmed via a
     # live invoke_model call against this account.
-    bedrock_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    # Two models, one per job (checked against this account with a live Converse call):
+    # the cheap, fast one assigns the summary and metadata to every ingested record;
+    # the stronger one writes the fuller cited briefing.
+    bedrock_tagging_model_id: str = "us.anthropic.claude-haiku-5-5"
+    bedrock_synthesis_model_id: str = "us.anthropic.claude-sonnet-5-5"
 
     # Single server-only connection string per the DB configuration contract
     # (accepted -- see conversation record): one DATABASE_URL, not split

@@ -233,7 +233,7 @@ def build_tools(
 def generate_briefing(
     symbol: str,
     store: EvidenceStore | None = None,
-    agent_factory=build_bedrock_agent,
+    agent_factory=None,
 ) -> dict:
     store = store or get_store()
     evidence, signals = select_briefing_records(store.query_evidence(symbol), store.query_signals(symbol))
@@ -246,7 +246,12 @@ def generate_briefing(
         }
 
     settings = get_settings()
-    if agent_factory is build_bedrock_agent and not settings.bedrock_configured:
+    default_agent = agent_factory is None
+    if default_agent:
+        agent_factory = lambda system_prompt, tools=None: build_bedrock_agent(  # noqa: E731
+            system_prompt, tools, model_id=settings.bedrock_synthesis_model_id
+        )
+    if default_agent and not settings.bedrock_configured:
         raise BriefingUnavailableError("Bedrock credentials are not configured")
 
     seen_ids: set[str] = set()
@@ -324,7 +329,7 @@ def generate_briefing(
         "briefing": briefing.model_dump(),
         "meta": {
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "model": settings.bedrock_model_id,
+            "model": settings.bedrock_synthesis_model_id,
             "evidence_count": len(evidence),
             "signal_count": len(signals),
             "data_modes": modes,

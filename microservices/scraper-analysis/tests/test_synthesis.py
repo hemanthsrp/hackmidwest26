@@ -135,7 +135,7 @@ def test_model_failure_raises_not_fabricates(store):
 def test_missing_bedrock_credentials_raise(store, monkeypatch):
     class NoCreds:
         bedrock_configured = False
-        bedrock_model_id = "m"
+        bedrock_synthesis_model_id = "m"
     monkeypatch.setattr(sa, "get_settings", lambda: NoCreds())
     with pytest.raises(sa.BriefingUnavailableError, match="credentials"):
         sa.generate_briefing("AAPL", store=store)
@@ -253,3 +253,39 @@ def test_infrastructure_failure_is_not_retried(store):
     with pytest.raises(sa.BriefingUnavailableError):
         sa.generate_briefing("AAPL", store=store, agent_factory=boom_factory)
     assert len(calls) == 1
+
+
+def test_briefing_uses_the_synthesis_model_and_reports_it(store, monkeypatch):
+    from scraper_analysis.config import Settings
+
+    seen = {}
+    reply = payload([{"theme": "news", "text": "t", "direction": "neutral", "evidence_ids": real_ids(store)}])
+
+    def fake_builder(system_prompt, tools=None, model_id=None):
+        seen["model_id"] = model_id
+        return FakeAgent(tools, reply)
+
+    settings = Settings(_env_file=None, aws_access_key_id="a", aws_secret_access_key="b")
+    monkeypatch.setattr(sa, "get_settings", lambda: settings)
+    monkeypatch.setattr(sa, "build_bedrock_agent", fake_builder)
+
+    out = sa.generate_briefing("AAPL", store=store)
+
+    assert seen["model_id"] == "us.anthropic.claude-sonnet-5-5"
+    assert out["meta"]["model"] == "us.anthropic.claude-sonnet-5-5"
+
+
+def test_tagging_uses_the_cheaper_tagging_model(monkeypatch):
+    from scraper_analysis.agents import tagging_agent
+    from scraper_analysis.config import Settings
+
+    seen = {}
+    monkeypatch.setattr(tagging_agent, "_agent", None)
+    monkeypatch.setattr(tagging_agent, "get_settings", lambda: Settings(_env_file=None))
+    monkeypatch.setattr(
+        tagging_agent, "build_bedrock_agent", lambda prompt, tools=None, model_id=None: seen.setdefault("model_id", model_id)
+    )
+
+    tagging_agent._get_agent()
+
+    assert seen["model_id"] == "us.anthropic.claude-haiku-5-5"

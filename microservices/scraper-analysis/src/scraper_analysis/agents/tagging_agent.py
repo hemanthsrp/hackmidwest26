@@ -39,7 +39,7 @@ def _extract_json(text: str) -> dict:
 def _get_agent():
     global _agent
     if _agent is None:
-        _agent = build_bedrock_agent(SYSTEM_PROMPT)
+        _agent = build_bedrock_agent(SYSTEM_PROMPT, model_id=get_settings().bedrock_tagging_model_id)
     return _agent
 
 
