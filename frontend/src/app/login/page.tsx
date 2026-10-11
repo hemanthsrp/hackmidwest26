@@ -87,7 +87,13 @@ function Login() {
             Explore the demo <ArrowUpRight size={15} />
           </Link>
         </div>
-        <small>Source-backed research. A broader perspective.</small>
+        <div>
+          <small>Source-backed research. A broader perspective.</small>
+          <div className="legal-links auth-legal-links">
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
+          </div>
+        </div>
       </div>
       <div className="auth-form">
         <div className="auth-box">

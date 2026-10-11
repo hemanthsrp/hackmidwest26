@@ -293,50 +293,84 @@ export function Settings({
               {tab === "Connected accounts" && (
                 <>
                   <p>
-                    Bring your positions into focus. Account access is used for
-                    research only.
+                    Use Robinhood&apos;s official authorization. Folio stores an
+                    encrypted refresh grant and reads your account, portfolio,
+                    and equity positions to personalize research.
                   </p>
                   <div className="setting-row">
                     <div>
                       <strong>Robinhood</strong>
                       <p>
-                        {rows.length
-                          ? "Connected · holdings access"
-                          : "Connect equities and portfolio balances"}
+                        {rows.some((r) => r.provider === "robinhood")
+                          ? "Connected · read-only in Folio"
+                          : "Official Robinhood Trading MCP authorization"}
                       </p>
                     </div>
-                    <button
-                      className="outline-button"
-                      disabled={demo || busy}
-                      onClick={() =>
-                        void action(
-                          "/api/service/broker-connections/robinhood/start",
-                        )
-                      }
-                    >
-                      Connect <ExternalLink size={13} />
-                    </button>
-                  </div>
-                  {rows.map((r) => (
-                    <div className="setting-row" key={r.id}>
-                      <strong>{r.name || "Robinhood account"}</strong>
+                    {rows.some((r) => r.provider === "robinhood") ? (
                       <button
-                        className="text-button danger"
+                        className="outline-button"
+                        disabled={demo || busy}
+                        onClick={() =>
+                          void action("/api/service/portfolio/refresh")
+                        }
+                      >
+                        Refresh portfolio
+                      </button>
+                    ) : (
+                      <button
+                        className="outline-button"
+                        disabled={demo || busy}
                         onClick={() =>
                           void action(
-                            `/api/service/broker-connections/${r.id}`,
-                            "DELETE",
+                            "/api/service/broker-connections/robinhood/start",
                           )
                         }
                       >
-                        Disconnect
+                        Connect <ExternalLink size={13} />
                       </button>
+                    )}
+                  </div>
+                  {rows.map((r) => (
+                    <div className="setting-row" key={r.id}>
+                      {r.provider === "robinhood" && (
+                        <>
+                          <strong>{r.name || "Robinhood"}</strong>
+                          <button
+                            className="text-button danger"
+                            disabled={busy}
+                            onClick={() =>
+                              void action(
+                                `/api/service/broker-connections/${r.id}`,
+                                "DELETE",
+                              ).then((d) => {
+                                if (d) setRows(rows.filter((x) => x.id !== r.id));
+                              })
+                            }
+                          >
+                            Disconnect
+                          </button>
+                        </>
+                      )}
                     </div>
                   ))}
                   <div className="notice">
-                    Robinhood connection becomes available when this application
-                    is approved. Your brokerage password is never collected
-                    here.
+                    Robinhood&apos;s consent screen grants read access to your
+                    Robinhood accounts, account numbers, positions, balances,
+                    and transaction history. Folio only calls account,
+                    portfolio, and equity-position read tools; trading tools
+                    are blocked. You need to open the dedicated MCP account
+                    Robinhood offers for external agents. Folio never asks for
+                    your Robinhood password. Disconnecting here deletes Folio&apos;s
+                    token; also revoke Folio in Robinhood&apos;s account settings.
+                    <p>
+                      <a
+                        href="https://robinhood.com/us/en/support/articles/onboarding-an-external-agent/"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Robinhood connection and account details
+                      </a>
+                    </p>
                   </div>
                 </>
               )}

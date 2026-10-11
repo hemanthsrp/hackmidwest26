@@ -729,6 +729,60 @@ td small {
   max-width: 1350px;
   margin: auto;
 }
+.legal-links {
+  display: flex;
+  gap: 14px;
+  color: var(--muted);
+}
+.legal-links a:hover {
+  color: var(--green);
+}
+.auth-legal-links {
+  margin-top: 16px;
+  font-size: 10px;
+}
+.legal-page {
+  width: min(100%, 820px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 48px 36px 80px;
+  color: var(--text);
+}
+.legal-page > .eyebrow {
+  margin-top: 36px;
+  color: var(--green);
+}
+.legal-page h1 {
+  margin-top: 10px;
+  font-size: clamp(30px, 5vw, 42px);
+  letter-spacing: -1.2px;
+}
+.legal-updated {
+  color: var(--muted);
+  margin-top: 10px;
+  font-size: 11px;
+}
+.legal-page section {
+  margin-top: 32px;
+}
+.legal-page section h2 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+.legal-page section p,
+.legal-draft {
+  max-width: 680px;
+  color: var(--subtle);
+  font-size: 13px;
+  line-height: 1.8;
+  margin-top: 10px;
+}
+.legal-draft {
+  border-top: 1px solid var(--border);
+  margin-top: 38px;
+  padding-top: 18px;
+  font-size: 11px;
+}
 .chat-rail {
   border-left: 1px solid var(--border);
   background: var(--rail);

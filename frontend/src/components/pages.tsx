@@ -191,7 +191,10 @@ export function Home() {
               </span>
             ) : (
               <button className="text-button" onClick={openSettings}>
-                <Link2 size={14} /> Connect your Robinhood portfolio
+                <Link2 size={14} />
+                {q.data?.data?.connected
+                  ? "Refresh Robinhood portfolio"
+                  : "Connect your Robinhood portfolio"}
               </button>
             )}
           </div>
@@ -784,7 +787,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
         title={s ? `${s.name} · ${symbol}` : symbol}
         description={
           s
-            ? `${s.industry} · ${demo ? "Sample market snapshot" : "Research snapshot"}`
+            ? `${s.industry} · ${q.data?.data_mode === "live" ? "Live source data" : demo ? "Sample market snapshot" : "Research snapshot"}`
             : "Source-backed market research"
         }
       >
@@ -792,7 +795,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
           <RefreshCw size={14} /> Refresh
         </button>
       </PageHeader>
-      {demo && s && (
+      {demo && s && q.data?.data_mode !== "live" && (
         <section className="panel detail-chart">
           <div className="card-row">
             <div>
@@ -897,7 +900,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
           )}
         </div>
       )}
-      {demo && (
+      {demo && q.data?.data_mode !== "live" && (
         <>
           <SectionTitle title="Related stories" />
           <ArticleList items={articles.filter((a) => a.symbol === symbol)} />

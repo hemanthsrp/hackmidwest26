@@ -64,6 +64,28 @@ EMBEDDING_MODEL
 
 The browser never receives these values. Configuration errors name only missing variables, not values; the API key is omitted from settings representations and provider errors never include raw response bodies.
 
+## Robinhood portfolio connection
+
+The optional local connector uses Robinhood's official Trading MCP OAuth
+authorization-code flow with PKCE. Configure `ROBINHOOD_MCP_ENABLED=true`, a
+base64-encoded 32-byte `BROKER_ENCRYPTION_KEY`, and `AUTH_URL` (or the explicit
+`ROBINHOOD_REDIRECT_URI`). The callback is
+`/api/broker/robinhood/callback`; requests must return through the signed-in
+Folio session. The connector stores user-bound encrypted access/refresh tokens
+in research storage and refreshes tokens server-side.
+
+`RobinhoodAdapter` allows only `get_accounts`, `get_portfolio`,
+`get_equity_positions`, and `get_equity_quotes`; the portfolio refresh currently
+calls only the first three. It does not expose MCP tools or grants to the model,
+and order, cancellation, watchlist mutation, and all unknown tools are rejected
+before transport. The browser receives normalized symbols, share counts, prices,
+and total value; account numbers and transaction history are discarded. Folio
+disconnect deletes its token and snapshot. Robinhood does not advertise a token
+revocation endpoint in its OAuth metadata, so users must also revoke Folio in
+Robinhood account settings. The public-deployment flag defaults off; do not
+enable a hosted platform until Robinhood has approved it and the operator has
+reviewed the broad provider consent scope.
+
 The client has a fixed 10-second request bound and at most one retry for connection, timeout, `408`, `429`, and `5xx` failures. It fails fast for missing configuration and other `4xx` responses. Tests inject an in-memory transport, so they make no live network calls.
 
 The safety boundary remains unchanged:
@@ -86,9 +108,16 @@ The safety boundary remains unchanged:
 
 ```bash
 python -m pip install -e '.[dev]'
+python -m pip install -e '../decision-maker[pg,agent]'
+python -m pip install -e '../jev-tool[dev]'  # optional Jev adapter and tests
 python -m pytest
 python -m uvicorn research_api.app:app --app-dir src --port 8000
 ```
+
+The test suite imports the sibling decision-maker package; installing only
+this service leaves those imports unavailable. The `pg` and `agent` extras
+enable the PostgreSQL evidence source and Strands explanation. The Compose
+image installs the research API and decision-maker together with these extras.
 
 ## Scheduler hook
 

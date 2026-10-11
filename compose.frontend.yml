@@ -1,46 +1,124 @@
 services:
   database:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:0.8.7-pg17-trixie
     environment:
       POSTGRES_USER: folio
       POSTGRES_PASSWORD: localdev
       POSTGRES_DB: folio
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DATABASE_PORT:-5433}:5432"
     volumes:
       - folio-local-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U folio"]
       interval: 5s
       retries: 10
+  frontend-migrations:
+    build:
+      context: ./frontend
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://folio:localdev@database:5432/folio
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: "no"
+  scraper-schema:
+    build:
+      context: .
+      dockerfile: microservices/scraper-analysis/Dockerfile
+    env_file:
+      - path: ./microservices/scraper-analysis/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://folio:localdev@database:5432/folio
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"
+    command: ["python", "-m", "scraper_analysis.storage.bootstrap"]
+    depends_on:
+      database:
+        condition: service_healthy
+      frontend-migrations:
+        condition: service_completed_successfully
+    restart: "no"
+  scraper-analysis:
+    build:
+      context: .
+      dockerfile: microservices/scraper-analysis/Dockerfile
+    env_file:
+      - path: ./microservices/scraper-analysis/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://folio:localdev@database:5432/folio
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"
+      ENABLE_SCHEDULER: "false"
+      ENABLE_REDDIT_SCRAPER: "false"
+      ENABLE_X_SCRAPER: "false"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      database:
+        condition: service_healthy
+      scraper-schema:
+        condition: service_completed_successfully
+  # Internal-only API; do not publish port 8001 outside the Compose network.
   research-api:
-    build: ./microservices/research-api
+    build:
+      context: .
+      dockerfile: microservices/research-api/Dockerfile
     environment:
       RESEARCH_DATABASE_URL: postgresql+psycopg://folio:localdev@database:5432/folio
+      DATABASE_URL: postgresql://folio:localdev@database:5432/folio
       SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET:?Set a random 32-byte service assertion secret}
-      SCRAPER_API_URL: ${SCRAPER_API_URL:-}
+      BROKER_ENCRYPTION_KEY: ${BROKER_ENCRYPTION_KEY:-}
+      ROBINHOOD_MCP_ENABLED: ${ROBINHOOD_MCP_ENABLED:-false}
+      ROBINHOOD_REDIRECT_URI: ${ROBINHOOD_REDIRECT_URI:-http://localhost:${HOST_PORT:-3100}/api/broker/robinhood/callback}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3100}
+      SCRAPER_API_URL: http://scraper-analysis:8001
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CHAT_MODEL: ${CHAT_MODEL:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+    command: ["sh", "-c", "python -m research_api.storage && uvicorn research_api.app:app --host 0.0.0.0 --port 8000"]
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${RESEARCH_API_PORT:-8100}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
     depends_on:
       database:
+        condition: service_healthy
+      frontend-migrations:
+        condition: service_completed_successfully
+      scraper-analysis:
         condition: service_healthy
   frontend:
     build: ./frontend
     environment:
       DATABASE_URL: postgresql://folio:localdev@database:5432/folio
       AUTH_SECRET: ${AUTH_SECRET:?Set a random auth secret}
-      AUTH_URL: http://localhost:3000
+      AUTH_URL: ${AUTH_URL:-http://localhost:3100}
       AUTH_TRUST_HOST: "true"
       SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET}
       RESEARCH_API_URL: http://research-api:8000
-      ALLOW_REGISTRATION: "false"
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      LOCAL_ACCOUNT_AUTH: ${LOCAL_ACCOUNT_AUTH:-false}
+      PUBLIC_LIVE_RESEARCH: ${PUBLIC_LIVE_RESEARCH:-true}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${HOST_PORT:-3100}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     depends_on:
-      - research-api
+      frontend-migrations:
+        condition: service_completed_successfully
+      research-api:
+        condition: service_healthy
 volumes:
   folio-local-data:

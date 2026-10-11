@@ -5,6 +5,17 @@ RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
+
+FROM node:24-alpine AS migrator
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY drizzle.config.ts tsconfig.json ./
+COPY drizzle ./drizzle
+COPY src/lib/schema.ts ./src/lib/schema.ts
+COPY src/lib/market.ts ./src/lib/market.ts
+CMD ["npm", "run", "db:migrate"]
+
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000
