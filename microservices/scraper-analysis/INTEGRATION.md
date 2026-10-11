@@ -21,6 +21,7 @@ Storage is in-memory unless `DATABASE_URL` is set (then Postgres + pgvector; run
 | `POST /ingest/run?symbol=AAPL&live=true&fallback=true&tag=true` | Collect from all sources, score, dedupe, store. Returns **only newly stored** items, `signals`, a per-source `sources` report and `warnings`; a repeat run returns `evidence: []`. `live=false` forces fixtures; `fallback=false` refuses fixtures (see below); `tag=false` skips the Bedrock tagging call |
 | `GET /evidence?symbol=AAPL` | Everything stored for the symbol. `status` is `ok` or `insufficient_data` |
 | `GET /signals?symbol=AAPL` | Stored quant signals, same `status` convention |
+| `GET /divergence?symbol=AAPL` | Where independent source types disagree (price vs discretionary insider trades vs Senate trades vs news tone). Deterministic, thresholds returned in the response |
 | `POST /briefing?symbol=AAPL` | Cited research briefing from stored data (one Bedrock call, hence POST) |
 | `GET /health` | Liveness |
 
@@ -98,9 +99,15 @@ Staleness is the caller's decision: compare `retrieved_at` / `published_at` to y
 
 `POST /briefing` returns `{status, briefing, meta, warnings}`. `briefing` has `headline`, `overall_tone`, `points[]` (each with `theme`, `text`, `direction`, `evidence_ids`), `conflicts[]`, `data_gaps[]`, `uncertainty`. It never gives a recommendation or score. Citations are verified server-side: IDs the agent did not actually retrieve are stripped, and uncited points are dropped (reported in `warnings`). Fixture records (evidence and signals) are excluded whenever any live evidence or signal exists. Model or agent-setup failures return the `503 briefing_unavailable` envelope, never a 500. With no stored data it returns `status: "insufficient_data"` without calling the model.
 
+## Divergence
+
+`GET /divergence` compares the **direction** of four legs, each backed by cited records, and flags the pairs that disagree: `price` (30-day change), `insider` (discretionary Form 4 open-market net; pre-scheduled 10b5-1 trades and tax withholding are excluded and explained in `notes`), `congress` (Senate purchases vs sales) and `news` (credibility-weighted tone of Bedrock-tagged items, needs at least 3). Response: `status` (`ok` needs 2+ usable legs, else `insufficient_data`), `legs`, `flags[]` (each with the legs involved and `evidence_ids`), `notes`, `thresholds`, `data_modes`. Fixtures are ignored whenever any live record exists. The synthesis agent can call the same analysis as a tool.
+
+This is deliberately **not** the README's social-volume z-score "squeeze engine": that needs a social feed (Reddit is blocked, X was dropped) and a history baseline we don't have, so the number would be invented precision. A flag means "these sources point different ways", never that a price will move, and it is not a score.
+
 ## Do not claim
 
-- Credibility scores, tone, or the briefing as validated or predictive.
+- Credibility scores, tone, divergence flags, or the briefing as validated or predictive.
 - Coverage of Bloomberg/WSJ/Reuters (excluded: no sanctioned access) or House of Representatives disclosures (not implemented).
 - Reddit data: the adapter exists but Reddit blocks it (403); it is off by default.
 - Commodity fundamentals (WASDE/stocks-to-use, crop yield, soil moisture): not collected.
