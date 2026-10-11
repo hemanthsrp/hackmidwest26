@@ -18,7 +18,9 @@ from scraper_analysis.models.signal import Signal
 from scraper_analysis.pipeline import divergence as dv
 from scraper_analysis.storage import store as store_module
 
-NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
+# Price freshness is checked against the request time, so fixtures are dated
+# relative to today (midnight UTC, like a real daily close) to stay current.
+NOW = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 STALE = datetime(2010, 1, 1, tzinfo=timezone.utc)
 RECENT = NOW - timedelta(days=10)
 
@@ -161,3 +163,117 @@ def test_tax_withholding_only_filings_leave_insider_leg_unusable():
     r = dv.analyze("AAPL", [form4(other={"F": 40.0})], [price(9.0)])
     assert r["legs"]["insider"]["direction"] is None
     assert r["status"] == "insufficient_data"
+
+
+# === Second review (hbot on b8a13ce) ======================================
+#
+# A. a stale price signal (e.g. 2010) must not anchor the analysis and be
+#    presented as a current flag;
+# B. evidence outside the price signal's own change window (30d) must not be
+#    paired with that price move;
+# C. "live only" means data_mode == "live": cached records are excluded too;
+# D. excluded counts cover every dropped record, including fixtures the
+#    endpoint used to drop before analyze() could count them;
+# E. a congressional row with an invalid trade date (observed_at None,
+#    details.date_issue set) never falls back to published_at.
+
+def test_stale_2010_price_is_not_a_current_flag():
+    r = dv.analyze("AAPL", [form4(sell=500_000, when=STALE)], [price(9.0, as_of=STALE)], as_of=NOW)
+    assert r["flags"] == []
+    assert r["legs"]["price"]["direction"] is None
+    assert r["window"]["anchor"] == NOW.isoformat()  # anchored on request time, not 2010
+    assert r["window"]["price_as_of"] == STALE.isoformat()
+    assert any("stale" in w.lower() for w in r["warnings"])
+    assert r["excluded"]["stale_price"] == 1
+
+
+def test_price_older_than_freshness_limit_is_unusable():
+    old = NOW - timedelta(days=dv.MAX_PRICE_SIGNAL_AGE_DAYS + 1)
+    r = dv.analyze("AAPL", [form4(sell=500_000, when=old - timedelta(days=2))], [price(9.0, as_of=old)], as_of=NOW)
+    assert r["legs"]["price"]["direction"] is None and r["flags"] == []
+
+
+def test_fresh_price_reports_its_age():
+    r = dv.analyze("AAPL", [form4(sell=500_000)], [price(9.0, as_of=NOW - timedelta(days=3))], as_of=NOW)
+    assert flag_ids(r) == {"insiders_selling_into_rally"}
+    assert r["window"]["request_time"] == NOW.isoformat()
+    assert r["window"]["price_age_days"] == 3.0
+
+
+def test_endpoint_with_only_2010_data_has_no_flags(store):
+    store.save_evidence([form4(sell=500_000, when=STALE)])
+    store.save_signals([price(9.0, as_of=STALE)])
+    body = client.get("/divergence", params={"symbol": "AAPL"}).json()
+    assert body["flags"] == [] and body["status"] == "insufficient_data"
+
+
+def test_filing_outside_30d_price_window_is_not_compared():
+    r = dv.analyze("AAPL", [form4(sell=500_000, when=NOW - timedelta(days=40))], [price(9.0)], as_of=NOW)
+    assert r["flags"] == [] and r["legs"]["insider"]["direction"] is None
+    assert r["window"]["lookback_days"] == 30
+
+
+def test_lookback_follows_the_price_signal_window():
+    short = Signal(symbol="AAPL", name="30-day price change", value=9.0, unit="percent", window="14d",
+                   as_of=NOW, source="yf", data_mode="live")
+    r = dv.analyze("AAPL", [form4(sell=500_000, when=NOW - timedelta(days=20))], [short], as_of=NOW)
+    assert r["flags"] == [] and r["window"]["lookback_days"] == 14
+
+
+def test_filing_after_the_price_close_is_not_compared():
+    r = dv.analyze("AAPL", [form4(sell=500_000, when=NOW + timedelta(days=2))], [price(9.0)], as_of=NOW)
+    assert r["flags"] == []
+
+
+def test_cached_evidence_does_not_count():
+    r = dv.analyze("AAPL", [form4(sell=500_000, mode="cached")], [price(9.0)], as_of=NOW)
+    assert r["legs"]["insider"]["direction"] is None and r["flags"] == []
+    assert r["excluded"]["cached"] == 1
+    assert any("cached" in w.lower() for w in r["warnings"])
+
+
+def test_cached_price_does_not_count():
+    r = dv.analyze("AAPL", [form4(sell=500_000)], [price(9.0, mode="cached")], as_of=NOW)
+    assert r["legs"]["price"]["direction"] is None and r["flags"] == []
+    assert r["excluded"]["cached"] == 1
+
+
+def test_endpoint_counts_fixtures_dropped_next_to_live_data(store):
+    store.save_evidence([form4(sell=500_000), form4(buy=9_000_000, mode="sample"), news("Bullish", mode="sample")])
+    store.save_signals([price(9.0), price(-50.0, mode="sample"), price(1.0, mode="cached")])
+    body = client.get("/divergence", params={"symbol": "AAPL"}).json()
+    assert flag_ids(body) == {"insiders_selling_into_rally"}
+    assert body["excluded"]["sample"] == 3
+    assert body["excluded"]["cached"] == 1
+    assert body["data_modes"] == ["live"]
+
+
+def house_bad_date(kind="Purchase"):
+    return Evidence(symbol="AAPL", title="h", source_name="House Clerk", source_type="congressional_disclosure",
+                    retrieved_at=NOW, observed_at=None, published_at=RECENT, data_mode="live",
+                    details={"chamber": "House", "transaction_type": kind,
+                             "date_issue": "trade date after filing date"})
+
+
+def test_invalid_house_trade_date_is_not_a_buying_flag():
+    ev = [house_bad_date(), house_bad_date(), form4(sell=300_000)]
+    r = dv.analyze("AAPL", ev, [], as_of=NOW)
+    assert r["legs"]["congress"]["direction"] is None
+    assert "congress_buying_insiders_selling" not in flag_ids(r)
+    assert r["excluded"]["invalid_date"] == 2
+
+
+def test_congress_never_falls_back_to_published_at():
+    undated = Evidence(symbol="AAPL", title="h", source_name="House Clerk", source_type="congressional_disclosure",
+                       retrieved_at=NOW, observed_at=None, published_at=RECENT, data_mode="live",
+                       details={"chamber": "House", "transaction_type": "Purchase"})
+    r = dv.analyze("AAPL", [undated, form4(sell=300_000)], [], as_of=NOW)
+    assert r["legs"]["congress"]["direction"] is None
+    assert r["excluded"]["undated"] == 1
+
+
+def test_date_issue_excludes_even_with_observed_at():
+    e = senate("Purchase")
+    e.details["date_issue"] = "trade date after filing date"
+    r = dv.analyze("AAPL", [e, form4(sell=300_000)], [], as_of=NOW)
+    assert r["legs"]["congress"]["direction"] is None and r["excluded"]["invalid_date"] == 1

@@ -125,16 +125,13 @@ def get_signals(symbol: str = Query(...)) -> dict:
 def get_divergence(symbol: str = Query(...)) -> dict:
     """Where independent source types disagree (price vs insiders vs Senate
     vs news). Deterministic and rule-based; thresholds are in the response.
-    Only live records inside the recency window around the price signal can
-    contribute to a flag; fixtures never do (see pipeline/divergence.py)."""
+    Only live records (never sample or cached) inside the price signal's
+    window, with a fresh price, can contribute to a flag (see
+    pipeline/divergence.py). Raw stored records are passed so `excluded`
+    counts every dropped record."""
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = get_store()
-    evidence, signals = synthesis_agent.select_briefing_records(
-        store.query_evidence(validated), store.query_signals(validated)
-    )
-    result = divergence.analyze(validated, evidence, signals)
-    result["data_modes"] = sorted({e.data_mode for e in evidence} | {s.data_mode for s in signals})
-    return result
+    return divergence.analyze(validated, store.query_evidence(validated), store.query_signals(validated))
