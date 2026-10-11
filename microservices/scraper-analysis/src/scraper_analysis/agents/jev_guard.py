@@ -40,6 +40,11 @@ def review_briefing(briefing: Briefing, evidence: list[Evidence], tool=None) -> 
         except ImportError:
             logger.warning("JEV_ENABLED is set but jev-tool is not installed; skipping briefing review")
             return None
+        except Exception as exc:
+            # A constructor that raises: same fallback (briefing unreviewed). Never exc_info.
+            logger.warning("jev tool could not be built; returning the briefing unreviewed: %s",
+                           describe_exception(exc))
+            return None
     try:
         return _review(briefing, evidence, tool)
     except Exception as exc:

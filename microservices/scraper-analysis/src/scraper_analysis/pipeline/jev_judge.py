@@ -66,7 +66,8 @@ STATUS_OK = "ok"  # a validated judgment (engine "jev")
 STATUS_UNAVAILABLE = "unavailable"  # the tool answered "unavailable" for this record
 STATUS_MALFORMED = "malformed"  # a result came back but failed validation
 STATUS_MISSING = "missing"  # sent, but no result came back for this record
-STATUS_FAILED = "failed"  # the whole call raised
+STATUS_FAILED = "failed"  # the whole call raised, or the tool could not be built
+TOOL_UNAVAILABLE_ERROR = "jev tool unavailable"  # fixed text: never the constructor's exception
 
 # Jev direction -> the tagging agent's vocabulary. "mixed" has no equivalent there.
 _SENTIMENT_FROM_DIRECTION = {"positive": "Bullish", "negative": "Bearish", "neutral": "Neutral", "mixed": "Neutral"}
@@ -132,8 +133,18 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
             return items
         try:
             tool = _get_tool()
-        except ImportError:
-            logger.warning("JEV_ENABLED is set but jev-tool is not installed; skipping judgment")
+        except Exception as exc:
+            # Any construction failure (not installed, or a constructor that raises): the
+            # records were meant to be judged, so mark them failed with fixed text. Never
+            # exc_info, never the exception text in the record: it can carry the API key.
+            if isinstance(exc, ImportError):
+                logger.warning("JEV_ENABLED is set but jev-tool is not installed; marking %d record(s) failed",
+                               len(targets))
+            else:
+                logger.warning("jev tool could not be built; marking %d record(s) failed: %s", len(targets),
+                               describe_exception(exc))
+            for evidence in targets:
+                evidence.details["jev"] = _unavailable(STATUS_FAILED, TOOL_UNAVAILABLE_ERROR)
             return items
 
     payload = [{"id": e.id, "symbol": e.symbol, "title": e.title, "summary": e.summary} for e in targets]
