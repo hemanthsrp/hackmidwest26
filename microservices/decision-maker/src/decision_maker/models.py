@@ -213,6 +213,8 @@ class QuantInput(BaseModel):
     vol_surface: VolSurfaceSnapshot | None = None
     # Any further dated signals in the contract shape. Returned and citable.
     signals: list[SignalRecord] = Field(default_factory=list)
+    # Immutable provider snapshots surfaced separately from market signals.
+    quant_citations: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class Leg(BaseModel):

@@ -55,3 +55,19 @@ CREATE INDEX IF NOT EXISTS idx_evidence_current_filters
     ON evidence (symbol, lifecycle_status, value_origin, impact_category, retrieved_at DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_current_filters
     ON signals (symbol, lifecycle_status, value_origin, impact_category, as_of DESC);
+
+-- Immutable, citable options diagnostics captured for an assessment request.
+CREATE TABLE IF NOT EXISTS volatility_snapshots (
+    id UUID PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    source TEXT NOT NULL,
+    data_mode TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+    statistics JSONB NOT NULL,
+    lifecycle_status TEXT NOT NULL DEFAULT 'fresh',
+    stale_at TIMESTAMPTZ,
+    retention_until TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_volatility_snapshots_symbol_time
+    ON volatility_snapshots (symbol, retrieved_at DESC);
