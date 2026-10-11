@@ -103,8 +103,9 @@
 - **Done when:** architecture, cost/resource assumptions, required env-var names and blockers are documented; no spend/provisioning without approval.
 - **Claim scope:** `docs/AKAMAI_FEASIBILITY.md`, `docs/JET_A1_HANDOFF.md`, root `.env.example`, root `.gitignore`, and this D1 task record only. Discord claim cannot be posted because `COMMUNICATIONS.md` still has the placeholder channel ID `REPLACE_CHANNEL_ID`; the team/human must relay the claim or configure the channel before cross-agent messaging is used.
 
-**D2 — Deployment/observability/smoke** (unclaimed; after Gate 0 and runnable app for remote smoke)
+**D2 — Deployment/observability/smoke** (claimed by Allen/D on `allen/d2-vector-db-preflight`; integration owner: Jet; 2026-10-10)
 - Add minimal deployment configuration, health/logging, safe example environment names and a repeatable smoke test. Deploy only with approval; verify actual frontend/backend and Akamai use before claiming them. Local fallback remains runnable.
+- **D2 initial scope:** safe managed PostgreSQL + pgvector account/plan preflight, secret-safe environment template, provisioning runbook, and database smoke plan. No resource creation until the authorized account holder supplies local credentials and approves the exact available region/plan.
 - **Done when:** local smoke actually runs, and remote URL/health/log evidence is provided if deployed; failures and remaining manual steps are explicit.
 
 **D3 — Yahoo Finance MCP/API discovery and integration** (claimed by Allen/D on `allen/d3-yahoo-finance-mcp-discovery`; integration owner: Jet; 2026-10-10; active)
