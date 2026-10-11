@@ -50,8 +50,9 @@ def load_quiz(path: Path | str = DEFAULT_QUIZ) -> dict[str, Any]:
         event_type = expected.get("event_type")
         if event_type is not None and not _accepted(event_type) <= set(presets.EVENT_TYPE_OPTIONS):
             raise ValueError(f"{item_id}: bad expected.event_type {event_type!r}")
-        if expected.get("upcoming_event") not in (True, False, None):
-            raise ValueError(f"{item_id}: expected.upcoming_event must be true, false or null")
+        for name in ("upcoming_event", "sensational", "usable_content"):
+            if expected.get(name) not in (True, False, None):
+                raise ValueError(f"{item_id}: expected.{name} must be true, false or null")
         if expected["relevant"]:
             if not _accepted(expected["direction"]) <= set(presets.DIRECTION_OPTIONS):
                 raise ValueError(f"{item_id}: bad expected.direction {expected['direction']!r}")
@@ -91,6 +92,10 @@ def score_item(
         "event_type_correct": None,
         "upcoming_event_probability": answers["upcoming_event"]["noul"],
         "upcoming_event_correct": None,
+        "sensational_probability": answers["sensational"]["noul"],
+        "sensational_correct": None,
+        "usable_content_probability": answers["usable_content"]["noul"],
+        "usable_content_correct": None,
         "materiality_score": answers["materiality"]["score"],
         "direction_correct": None,
         "materiality_exact": None,
@@ -103,6 +108,9 @@ def score_item(
         row["upcoming_event_correct"] = (
             row["upcoming_event_probability"] >= RELEVANCE_THRESHOLD
         ) == expected["upcoming_event"]
+    for name in ("sensational", "usable_content"):
+        if expected.get(name) is not None:
+            row[f"{name}_correct"] = (row[f"{name}_probability"] >= RELEVANCE_THRESHOLD) == expected[name]
     if reversed_direction is not None:
         row["direction_flipped"] = reversed_direction != row["direction"]
     if expected["relevant"]:
@@ -134,6 +142,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "content_type_accuracy": _rate([r["content_type_correct"] for r in rows]),
         "event_type_accuracy": _rate([r["event_type_correct"] for r in rows]),
         "upcoming_event_accuracy": _rate([r["upcoming_event_correct"] for r in rows]),
+        "sensational_accuracy": _rate([r["sensational_correct"] for r in rows]),
+        "usable_content_accuracy": _rate([r["usable_content_correct"] for r in rows]),
         "materiality_exact": _rate([r["materiality_exact"] for r in rows]),
         "materiality_within_one": _rate([r["materiality_within_one"] for r in rows]),
         "direction_confidence_when_right": _mean(
@@ -212,6 +222,8 @@ def format_report(report: dict[str, Any]) -> str:
         or r["direction_correct"] is False
         or r["event_type_correct"] is False
         or r["upcoming_event_correct"] is False
+        or r["sensational_correct"] is False
+        or r["usable_content_correct"] is False
         or r["materiality_exact"] is False
     ]
     lines += ["", f"Misses ({len(misses)}):"]
@@ -220,6 +232,7 @@ def format_report(report: dict[str, Any]) -> str:
             f"  {r['id']}: expected {r['expected']} | got relevant={r['relevant_probability']:.2f} "
             f"direction={r['direction']} content_type={r['content_type']} "
             f"event_type={r['event_type']} upcoming={r['upcoming_event_probability']:.2f} "
+            f"sensational={r['sensational_probability']:.2f} usable={r['usable_content_probability']:.2f} "
             f"materiality={r['materiality_score']:.2f}"
         )
     return "\n".join(lines)

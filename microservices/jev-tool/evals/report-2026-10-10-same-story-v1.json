@@ -1,0 +1,103 @@
+{
+  "engine": "jev",
+  "model": "jev-1.13.0",
+  "question_set_version": "same-story-v1",
+  "generated_at": "2026-10-11T01:10:33+00:00",
+  "note": "Sanity check on 12 hand-labelled pairs. Not an accuracy claim.",
+  "summary": {
+    "pairs": 12,
+    "pairs_scored": 11,
+    "accuracy": 1.0,
+    "same_story_found": 1.0,
+    "different_story_kept_apart": 1.0,
+    "input_tokens": 1748,
+    "latency_ms": 204.79500014334917
+  },
+  "request_id": "req_01a12882f6cb7659922225c40d334592",
+  "rows": [
+    {
+      "a": "nvda_forecast_a",
+      "b": "nvda_forecast_b",
+      "same": true,
+      "same_probability": 0.97,
+      "correct": true
+    },
+    {
+      "a": "tsla_deliveries_a",
+      "b": "tsla_deliveries_b",
+      "same": true,
+      "same_probability": 0.97,
+      "correct": true
+    },
+    {
+      "a": "aapl_fine_a",
+      "b": "aapl_fine_b",
+      "same": true,
+      "same_probability": 0.97,
+      "correct": true
+    },
+    {
+      "a": "nvda_forecast_a",
+      "b": "nvda_export",
+      "same": false,
+      "same_probability": 0.03,
+      "correct": true
+    },
+    {
+      "a": "nvda_forecast_a",
+      "b": "nvda_ir",
+      "same": false,
+      "same_probability": 0.02,
+      "correct": true
+    },
+    {
+      "a": "nvda_forecast_a",
+      "b": "amd_forecast",
+      "same": false,
+      "same_probability": 0.04,
+      "correct": true
+    },
+    {
+      "a": "nvda_forecast_b",
+      "b": "amd_forecast",
+      "same": false,
+      "same_probability": 0.05,
+      "correct": true
+    },
+    {
+      "a": "tsla_deliveries_a",
+      "b": "tsla_plant",
+      "same": false,
+      "same_probability": 0.04,
+      "correct": true
+    },
+    {
+      "a": "tsla_deliveries_b",
+      "b": "tsla_plant",
+      "same": false,
+      "same_probability": 0.05,
+      "correct": true
+    },
+    {
+      "a": "aapl_fine_a",
+      "b": "nvda_export",
+      "same": false,
+      "same_probability": 0.02,
+      "correct": true
+    },
+    {
+      "a": "tsla_deliveries_a",
+      "b": "tsla_deliveries_reaction",
+      "same": null,
+      "same_probability": 0.76,
+      "correct": null
+    },
+    {
+      "a": "nvda_export",
+      "b": "nvda_ir",
+      "same": false,
+      "same_probability": 0.02,
+      "correct": true
+    }
+  ]
+}

@@ -130,6 +130,7 @@ def test_judge_article():
     assert judgment.content_type == "company_announcement"
     assert judgment.event_type == "earnings_or_guidance"
     assert judgment.upcoming_event == 0.9
+    assert judgment.sensational == 0.9 and judgment.usable_content == 0.9
     assert judgment.input_tokens == 42
     assert judgment.materiality == 2.0
     body = requests[0]
@@ -187,6 +188,27 @@ def test_load_env_does_not_override_existing(tmp_path, monkeypatch):
     assert load_env(tmp_path / "missing.env") is None
 
 
+def test_same_story_asks_one_question_per_pair():
+    tool, requests = make_tool()
+    items = [{"title": f"t{i}", "summary": "s", "id": i} for i in range(3)]
+    result = tool.same_story(items, [(0, 1), (1, 2)])
+    assert result.engine == "jev"
+    assert [(p.a, p.b, p.same) for p in result.pairs] == [(0, 1, 0.9), (1, 2, 0.9)]
+    body = requests[0]
+    assert body["state"]["items"][0] == {"title": "t0", "summary": "s"}
+    assert "items[1]" in body["questions"]["pair_1"]["instructions"]
+    assert "items[2]" in body["questions"]["pair_1"]["instructions"]
+
+
+def test_same_story_with_no_pairs_makes_no_call_and_caps_pairs():
+    tool, requests = make_tool()
+    assert tool.same_story([], []).pairs == [] and requests == []
+    many = [(0, 1)] * 50
+    result = tool.same_story([{"title": "a"}, {"title": "b"}], many)
+    assert len(result.pairs) == 40 and result.pairs_truncated
+    assert JevTool(enabled=False).same_story([{}, {}], [(0, 1)]).engine == "unavailable"
+
+
 def test_judge_articles_keeps_order():
     tool, requests = make_tool()
     articles = [
@@ -205,6 +227,13 @@ def test_api_errors_become_unavailable(status):
     assert result.direction is None
     assert str(status) in result.error
     assert "test-key" not in result.error
+
+
+def test_api_key_can_be_passed_instead_of_read_from_the_environment(monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    tool = JevTool(enabled=True, api_key="explicit-key")
+    tool._get_client()  # raises TypeSafeError if no key were available
+    tool.close()
 
 
 def test_missing_api_key_becomes_unavailable(monkeypatch):

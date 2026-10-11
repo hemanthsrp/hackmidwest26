@@ -50,6 +50,18 @@ class Settings(BaseSettings):
     noaa_cdo_token: str | None = None
     sec_edgar_user_agent: str = "hackmidwest-scraper-analysis <set-contact-email>"
 
+    # Jev (TypeSafe System One) via the shared microservices/jev-tool package.
+    # Off unless JEV_ENABLED=true; adds details["jev"] to news/social evidence.
+    jev_enabled: bool = False
+    typesafe_api_key: str | None = None
+    jev_model: str = "jev-1.13.0"
+    # Opt-in on top of JEV_ENABLED: when the tagging agent left sentiment
+    # empty (Bedrock off or failed), fill it from Jev's direction.
+    jev_fill_sentiment: bool = False
+    # Records Jev scores below this for relevance to the symbol are graded
+    # "off_topic" (kept and labelled, never dropped). See pipeline/grade.py.
+    jev_relevance_gate: float = 0.3
+
     enable_x_scraper: bool = False
     # Unofficial public .json scraping (no OAuth) -- off by default, see
     # sources/reddit_unofficial.py docstring for the accepted risk tradeoff.
@@ -62,6 +74,10 @@ class Settings(BaseSettings):
     @property
     def akamai_inference_configured(self) -> bool:
         return bool(self.akamai_inference_base_url and self.akamai_inference_api_key)
+
+    @property
+    def jev_configured(self) -> bool:
+        return bool(self.jev_enabled and self.typesafe_api_key)
 
     @property
     def bedrock_configured(self) -> bool:
