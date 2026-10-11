@@ -207,6 +207,13 @@ def test_api_errors_become_unavailable(status):
     assert "test-key" not in result.error
 
 
+def test_api_key_can_be_passed_instead_of_read_from_the_environment(monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    tool = JevTool(enabled=True, api_key="explicit-key")
+    tool._get_client()  # raises TypeSafeError if no key were available
+    tool.close()
+
+
 def test_missing_api_key_becomes_unavailable(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     result = JevTool(enabled=True).check("text", "Is this about billing?")

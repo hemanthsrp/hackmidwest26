@@ -44,6 +44,8 @@ Settings come from environment variables. For local work, copy `.env.example` to
 | `JEV_MAX_RETRIES` | `2` | Retries with backoff |
 | `JEV_MAX_CONCURRENCY` | `8` | Threads used by batch calls |
 
+A service that keeps its own settings object (and does not export them to the process environment) can pass them in instead: `JevTool(enabled=True, api_key=settings.typesafe_api_key, model=...)`. `scraper-analysis` does this in `pipeline/jev_judge.py`.
+
 ## 3. The five rules
 
 1. **Check `engine` on every result.** `"jev"` means a real answer. `"unavailable"` means there is no answer: answer fields are `None` and `error` says why.

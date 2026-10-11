@@ -46,13 +46,17 @@ def ingest_run(
         "Pass false to refuse fixtures: failed sources are omitted and reported as 'unavailable'.",
     ),
     tag: bool = Query(True, description="Run the Strands/Bedrock tagging agent on each record"),
+    judge: bool = Query(
+        True,
+        description="Add a Jev judgment (details.jev) to new news/social records. No-op unless JEV_ENABLED.",
+    ),
 ):
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
+    result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback, judge=judge)
     # Adapters already sanitize via sources.base.resolve(); repeat it at the
     # API boundary so no future source path can return raw upstream text.
     sources = [

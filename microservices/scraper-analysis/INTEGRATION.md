@@ -18,7 +18,7 @@ Storage is in-memory unless `DATABASE_URL` is set (then Postgres + pgvector; run
 
 | Route | Purpose |
 |---|---|
-| `POST /ingest/run?symbol=AAPL&live=true&fallback=true&tag=true` | Collect from all sources, score, dedupe, store. Returns **only newly stored** items, `signals`, a per-source `sources` report and `warnings`; a repeat run returns `evidence: []`. `live=false` forces fixtures; `fallback=false` refuses fixtures (see below); `tag=false` skips the Bedrock tagging call |
+| `POST /ingest/run?symbol=AAPL&live=true&fallback=true&tag=true` | Collect from all sources, score, dedupe, store. Returns **only newly stored** items, `signals`, a per-source `sources` report and `warnings`; a repeat run returns `evidence: []`. `live=false` forces fixtures; `fallback=false` refuses fixtures (see below); `tag=false` skips the Bedrock tagging call; `judge=false` skips the optional Jev judgment (see below) |
 | `GET /evidence?symbol=AAPL` | Everything stored for the symbol. `status` is `ok` or `insufficient_data` |
 | `GET /signals?symbol=AAPL` | Stored quant signals, same `status` convention |
 | `POST /briefing?symbol=AAPL` | Cited research briefing from stored data (one Bedrock call, hence POST) |
@@ -56,7 +56,7 @@ Superset of the v0 contract in `docs/api-contract-v0.md`: every field there is p
 - **IDs are deterministic**: the same item keeps the same ID across runs, so `reason_codes` can reference them safely. SEC filings hash the filing URL only (one row per accession number), so Form 4 enrichment, which rewrites the title and moves `observed_at` to the trade date, never mints a second ID; a stored copy is replaced only by a strictly better one (live beats sample, then parsed Form 4 details beat metadata-only), so a persisted fixture never blocks its live filing and a later fixture or metadata-only copy never downgrades it. Other records hash source URL + title + observed date. Stores populated before this rule: run `python -m scraper_analysis.storage.migrations` (dry run), then `--apply`, to re-key old SEC rows and delete their duplicates; it is idempotent.
 - **Form 4 dates:** `observed_at` is the earliest actual `transactionDate` in the filing, not `periodOfReport`. `details.transaction_dates` lists every trade date (the title shows the range when there are several) and `details.period_of_report` keeps the filing's reporting period.
 - **Three timestamps, never invented:** `published_at` (filing/article time), `observed_at` (when the underlying event happened, e.g. the trade date), `retrieved_at` (when we fetched it). Either of the first two can be `null` if the source doesn't give it.
-- **Extras beyond v0:** `source_type`, `reporting_lag_days`, `details`, `entities`, `sentiment`, `credibility`. `details` holds structured, source-specific facts (Form 4 buy/sell totals, Senate transaction type and amount range). `entities`/`sentiment` are only filled when `tag=true` and Bedrock is reachable.
+- **Extras beyond v0:** `source_type`, `reporting_lag_days`, `details`, `entities`, `sentiment`, `credibility`. `details` holds structured, source-specific facts (Form 4 buy/sell totals, Senate transaction type and amount range) and, when Jev is enabled, `details.jev` on news and social records. `entities`/`sentiment` are only filled when `tag=true` and Bedrock is reachable.
 - **`source_type`** is one of `sec_filing`, `congressional_disclosure`, `general_news`, `social_media`.
 - **`credibility.overall_score`** is a heuristic (outlet prior + cross-source corroboration, see `pipeline/scoring.py`), not a validated measure. Official filings are `1.0` by definition.
 
@@ -93,6 +93,39 @@ Realized, historical measures only, never forecasts.
 Fixtures are persisted like any other record (labeled), so a store that has ever seen a fallback run can hold `sample` rows next to live ones: filter on `data_mode` when reading `/evidence`. `/briefing` decides once across evidence and signals together: if any live record of either kind exists, every fixture (evidence and signal) is excluded.
 
 Staleness is the caller's decision: compare `retrieved_at` / `published_at` to your freshness window. There is no scheduler yet, so data only refreshes when `/ingest/run` is called.
+
+## Jev judgment (optional, off by default)
+
+With `JEV_ENABLED=true` and `TYPESAFE_API_KEY` set (and the shared package installed: `pip install -e ../jev-tool`), each **new** `general_news` and `social_media` record gets one Jev call at ingestion and gains `details.jev`:
+
+```json
+"details": {"jev": {
+  "engine": "jev", "model": "jev-1.13.0", "question_set_version": "article-v3", "request_id": "req_...",
+  "relevant": 0.98, "direction": "positive", "direction_confidence": 0.91,
+  "content_type": "news_report", "content_type_confidence": 0.95,
+  "event_type": "earnings_or_guidance", "event_type_confidence": 0.9,
+  "upcoming_event": 0.05, "materiality": 1.9, "materiality_confidence": 0.8}}
+```
+
+| Field | Meaning |
+|---|---|
+| `relevant` | 0 to 1: how likely the item is mainly about this company (an article about a supplier scores around 0.5 to 0.7) |
+| `direction` | `negative`, `neutral`, `positive` or `mixed`: what the item reports about the company's business |
+| `content_type` | `company_announcement`, `news_report`, `opinion_or_analysis`, `social_media_post`, `other` |
+| `event_type` | `earnings_or_guidance`, `legal_or_regulatory`, `product_or_service`, `deal_or_partnership`, `management_or_workforce`, `operations_or_supply`, `market_or_macro`, `stock_or_valuation_view`, `other` |
+| `upcoming_event` | 0 to 1: the item names a scheduled event still to come |
+| `materiality` | 0 to 2: 0 routine or promotional, 1 notable, 2 major |
+| `*_confidence` | 0 to 1: how peaked Jev's answer was; treat low-confidence answers as unknown |
+
+- **Additive only.** Nothing is filtered or dropped, and `sentiment`, `entities` and `credibility` are not touched. With Jev off (the default) records are byte-for-byte what they were before.
+- **`engine` must be checked.** If Jev was enabled but did not answer, the record carries `{"engine": "unavailable", "error": "..."}` and no judgment fields. A record with no `details.jev` at all was not sent to Jev.
+- **Filings are skipped.** `sec_filing` and `congressional_disclosure` records are never sent: they are parsed deterministically here, and Jev is unreliable with numbers and dates.
+- **Judged once.** Only newly stored records are judged, so a repeat run costs nothing. A record stored while Jev was off or unavailable is not judged later.
+- **Text leaves the service.** The record's `title` and `summary` are sent to TypeSafe's API. Do not enable this for sources whose terms forbid passing content to a third party.
+- **Heuristic, not validated.** These are model judgments checked only on a small hand-written sample (`microservices/jev-tool/evals/`). None is a probability that a price will move.
+- **The briefing sees it.** `/briefing` already passes `details` to the synthesis agent, so judged records reach it with their Jev judgment attached.
+
+Code: `src/scraper_analysis/pipeline/jev_judge.py`. Caller rules for Jev: `microservices/jev-tool/AGENT_GUIDE.md`.
 
 ## Briefing
 

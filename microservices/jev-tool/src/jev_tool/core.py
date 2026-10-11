@@ -114,6 +114,7 @@ class JevTool:
         self,
         *,
         enabled: bool | None = None,
+        api_key: str | None = None,
         model: str | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
@@ -127,6 +128,7 @@ class JevTool:
             max_retries if max_retries is not None else int(os.environ.get("JEV_MAX_RETRIES", "2"))
         )
         self.max_concurrency = max_concurrency or int(os.environ.get("JEV_MAX_CONCURRENCY", "8"))
+        self._api_key = api_key
         self._client = client
         self._lock = threading.Lock()
 
@@ -134,6 +136,7 @@ class JevTool:
         with self._lock:
             if self._client is None:
                 self._client = TypeSafeClient(
+                    api_key=self._api_key,
                     model=self.model,
                     timeout=self.timeout,
                     retry=RetryPolicy(max_retries=self.max_retries),
