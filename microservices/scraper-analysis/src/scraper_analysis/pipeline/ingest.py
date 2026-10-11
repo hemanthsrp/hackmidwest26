@@ -62,6 +62,19 @@ class IngestCancelled(RuntimeError):
         self.signals_saved = signals_saved
 
 
+class IngestPartialFailure(RuntimeError):
+    """The evidence step already SAVED its records, then a later step (signals)
+    failed. Raised so callers can report what really persisted instead of a bare
+    error that makes it look like nothing was written. ``__cause__`` is the
+    original exception; ``evidence`` and ``reports`` are what the first step
+    produced."""
+
+    def __init__(self, evidence: list, reports: list, cause: BaseException) -> None:
+        super().__init__(f"{type(cause).__name__}: {cause}")
+        self.evidence = evidence
+        self.reports = reports
+
+
 StopCheck = Callable[[], bool] | None
 
 
@@ -163,7 +176,12 @@ def ingest_symbol(
     write. It cannot interrupt a write already in progress, which may complete
     after the caller has stopped waiting."""
     evidence, ev_reports = ingest_evidence(symbol, allow_live, tag, fallback, should_stop)
-    signals, sig_reports = ingest_signals(symbol, allow_live, fallback, should_stop, len(evidence))
+    try:
+        signals, sig_reports = ingest_signals(symbol, allow_live, fallback, should_stop, len(evidence))
+    except IngestCancelled:
+        raise  # already carries what was saved
+    except Exception as exc:
+        raise IngestPartialFailure(evidence, ev_reports, exc) from exc
     return IngestResult(evidence, signals, ev_reports + sig_reports)
 
 

@@ -66,6 +66,7 @@ from zoneinfo import ZoneInfo
 
 from .pipeline.ingest import (
     IngestCancelled,
+    IngestPartialFailure,
     InvalidSymbolError,
     ingest_symbol,
     validate_symbol,
@@ -223,6 +224,9 @@ class SymbolStatus:
     ok: bool | None = None
     new_evidence: int = 0
     new_signals: int = 0
+    # Records the sources RETURNED this run (before dedup / already-stored filtering).
+    # 0 new rows can be healthy (all already stored); 0 fetched from every live source is not.
+    fetched: int = 0
     sources: list[dict] = field(default_factory=list)
     error: str | None = None
     # Some data was ingested but coverage was incomplete: a source was not
@@ -411,6 +415,20 @@ class Scheduler:
                 status.error = str(exc)
                 logger.warning("scheduled ingest for %s %s", symbol, exc)
                 return not late
+            if isinstance(exc, IngestPartialFailure):
+                # Evidence was saved before a later step failed: report what persisted.
+                status.sources, status.notes = _source_reports(exc.reports)
+                status.new_evidence, status.new_signals = len(exc.evidence), 0
+                status.fetched = sum(x["count"] for x in status.sources)
+                status.ok, status.partial = False, True
+                status.consecutive_failures += 1
+                prefix = f"failed {when}: " if late else ""
+                status.error = sanitize_error(
+                    f"{prefix}{len(exc.evidence)} evidence item(s) were saved, then the signals step failed: {exc}")
+                if late:
+                    status.after_stop = status.error
+                logger.warning("scheduled ingest for %s partially failed: %s", symbol, status.error)
+                return not late
             if exc is not None:
                 if not isinstance(exc, Exception):  # BaseException (e.g. SystemExit) in the thread
                     status.ok = False
@@ -430,6 +448,14 @@ class Scheduler:
             sources, notes = _source_reports(result.sources)
             status.sources, status.notes = sources, notes
             status.new_evidence, status.new_signals = len(result.evidence), len(result.signals)
+            status.fetched = sum(x["count"] for x in sources)
+            if result.any_live and status.fetched == 0:
+                # Every source answered "live" yet nothing came back at all. That is
+                # what an upstream layout change or a silent outage looks like, so it
+                # is not a clean success (a healthy run always returns something,
+                # e.g. at least the price signal).
+                notes = [*notes, "every live source returned zero items"]
+                status.notes = notes
             if result.any_live:
                 status.consecutive_failures = 0
                 if notes:  # live data arrived, but coverage was incomplete
@@ -444,7 +470,7 @@ class Scheduler:
             if result.any_live:
                 status.last_success = {
                     "at": status.last_run_at, "ok": status.ok, "partial": status.partial,
-                    "new_evidence": status.new_evidence, "new_signals": status.new_signals,
+                    "new_evidence": status.new_evidence, "new_signals": status.new_signals, "fetched": status.fetched,
                     "sources": [dict(x) for x in sources], "notes": list(notes)}
             if late:
                 status.after_stop = (f"finished {when}; its writes landed late: "
@@ -466,7 +492,7 @@ class Scheduler:
             status.ok, status.error = None, None
             status.after_stop, status.finished_after_stop = None, False
             status.partial, status.notes = False, []
-            status.sources, status.new_evidence, status.new_signals = [], 0, 0
+            status.sources, status.new_evidence, status.new_signals, status.fetched = [], 0, 0, 0
         call = _Call(symbol)
         inflight = asyncio.ensure_future(asyncio.to_thread(self._ingest_in_thread, symbol, run, call))
         # Belt and braces: whatever happens to the awaiting task, retrieve the
