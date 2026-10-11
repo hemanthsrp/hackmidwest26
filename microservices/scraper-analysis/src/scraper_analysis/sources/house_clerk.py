@@ -255,8 +255,16 @@ def parse_ptr_lines(ptr_lines: list[PtrLine]) -> list[dict]:
         left = line[: m.start()].strip()
         trailing = line[m.end():].strip()  # e.g. "... $15,000 (AAPL) [ST]"
         asset_lines = [left] + ([trailing] if trailing else [])
-        for nxt in lines[i + 1 : i + 1 + MAX_CONTINUATION_LINES]:
-            if not nxt.text or _MARKER_RE.match(nxt.text) or _ANCHOR_RE.search(nxt.text):
+        # An asset whose own line already carries its type code ("[ST]") is
+        # complete: text after it belongs to something else (a note, or the
+        # next asset), and its ticker must not be adopted (PR #17 review).
+        # Otherwise a wrapped line is only a continuation if it is not itself
+        # the start of the next row (the line right before that row's anchor).
+        own_complete = any(_ASSET_TYPE_RE.search(part) for part in asset_lines)
+        for j, nxt in enumerate(lines[i + 1 : i + 1 + MAX_CONTINUATION_LINES], start=i + 1):
+            if own_complete or not nxt.text or _MARKER_RE.match(nxt.text) or _ANCHOR_RE.search(nxt.text):
+                break
+            if j + 1 < len(lines) and _ANCHOR_RE.search(lines[j + 1].text):
                 break
             asset_lines.append(nxt.text)
         if block is not None and pl.anchor_aligned is None:
