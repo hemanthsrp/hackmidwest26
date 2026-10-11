@@ -1,5 +1,7 @@
 # Proposed v0 research-assessment API contract
 
+> Repository-status update (2026-10-10): the standalone option-volatility endpoint is documented in [the volatility service README](../microservices/volatility-surface-builder/README.md). It does not alter or freeze the research-assessment contract below.
+
 > **Status: A1 proposal for Gate 0 review, not an implemented or frozen endpoint.**
 >
 > This contract exists so the frontend, evidence/quant, platform, and orchestration lanes can integrate against one small, deterministic shape. It does not authorize A2 implementation. All field values below are examples using fixtures, not live market data or investment advice.
@@ -96,7 +98,7 @@ Unknown request fields are rejected until the team explicitly chooses forward-co
 - `data_mode` is one of `live`, `cached`, or `sample` and is explicit at both response and record level.
 - `assessment.label` is one of `buy`, `hold`, `sell`, or `insufficient_data`. It is a categorical research heuristic, not a probability, personalized recommendation, or validated forecast.
 - `reason_codes` reference IDs in `evidence` and/or `signals`, **or** a documented system reason code when no corresponding record can exist. The initial proposed system code is `missing_attributable_evidence`; future system codes require a contract update. The final implementation must not produce undeclared codes or dangling record references.
-- A numeric score is deliberately absent. If later added, Gate 0 must define its range, interpretation, evaluation limits, and UI label.
+- `sample` mode carries no numeric score. The decision-maker modes (`live`, `sample_decision`) add `assessment.score`: an integer 0-100, a linear rescale of the combiner's internal net direction (50 neutral, 100 every usable leg fully bullish), with `score_sell_at_or_below` and `score_buy_at_or_above` giving the scores at which the label flips. It is `null` for `insufficient_data`. It is a position on a hand-set heuristic scale, not a probability, forecast or validated predictor; the UI must label it “Heuristic score.” The accepted Gate 0 meaning is recorded in [DECISIONS.md](DECISIONS.md).
 - `warnings` is an array of structured warning objects using the same `code`, `message`, and `retryable` fields as errors, but a successful response may still include it.
 
 ## Error envelope
@@ -253,6 +255,45 @@ ASSESSMENT_INFERENCE_MODE=fixture
 ```
 
 These are intentionally names and defaults only. They do not assert Akamai's final endpoint, authentication scheme, model catalog, or provisioning state.
+
+## Additions made by the decision maker (A3)
+
+> **Status: implemented on `jet/a3-decision-maker`, tested offline and run live for one symbol on 2026-10-10; not yet reviewed at Gate 0.** Everything above still stands. These are additive: a client written against the shapes above keeps working. Detail is in [`microservices/decision-maker/README.md`](../microservices/decision-maker/README.md).
+
+### Request
+
+| Field | Type | Required | Rule |
+|---|---|---:|---|
+| `query` | string | no | A free-text question about the symbol, at most 2,000 characters (the decision maker uses the first 500). It steers which evidence the explanation looks at and what `assessment.answer` says. **It never changes `assessment.label`.** |
+| `mode` | string | no | `sample` (the fixed snapshot, unchanged), `live`, `failure`, or `sample_decision` (the decision maker over its packaged fixture, offline). |
+
+`preferences.horizon` now scales the implied-move figure in the uncertainty statement. `preferences.risk_profile` is passed to the explanation for tone only and does not affect the label.
+
+### Response
+
+| Field | Meaning |
+|---|---|
+| `query` | The question as used (cleaned and capped), or `null` |
+| `assessment.answer` | The model's short answer to the question; `null` with no question, no model, or when the answer failed review |
+| `assessment.explanation_points` | `[{text, evidence_ids}]`: the cited points that `assessment.explanation` is assembled from |
+| `assessment.decision_engine` | `{name: "combiner-v1", status: "used" \| "not_run"}`. `not_run` only when no evidence was in the recency window. A `buy` or `sell` needs at least one kind of attributable evidence leaning that way; a price move alone gives `hold`. |
+| `freshness.status` | Adds `unknown` (no evidence to date) alongside `fresh` and `stale` |
+| `meta` | `decision_trace`, `explanation_engine`, `jev_review`, `judgments_at_decision`, `retrieval`. Diagnostic; safe to show, not required to render. |
+
+Signals now include rows derived from the options math when the volatility service is configured (`VOL_SURFACE_URL`), for example `ATM implied volatility` and `Implied one-standard-deviation move`. They describe how much movement is priced, not direction. The volatility service's own `POST /v0/volatility-surfaces` contract is unchanged.
+
+### System reason codes
+
+`reason_codes` may contain, besides ids of returned evidence and signals:
+
+| Code | When |
+|---|---|
+| `missing_attributable_evidence` | No evidence for the symbol inside the recency window (already declared above) |
+| `insufficient_direction_signals` | Evidence exists, but fewer than two independent kinds gave a usable reading |
+
+### Errors
+
+Unchanged envelope. `stale_data` (`409`) carries `details.newest_retrieved_at` and `details.stale_after_seconds`. An unexpected server fault returns `500` with `code: internal_error`.
 
 ## Gate 0 decisions still unresolved
 

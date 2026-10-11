@@ -11,6 +11,7 @@ import re
 
 from ..config import get_settings
 from ..models.evidence import Entities, Evidence, Sentiment
+from ..sources.base import describe_exception
 from .strands_setup import build_bedrock_agent
 
 logger = logging.getLogger(__name__)
@@ -53,8 +54,9 @@ def tag_evidence(evidence: Evidence) -> Evidence:
         agent = _get_agent()
         result = agent(prompt)
         parsed = _extract_json(str(result))
-    except Exception:
-        logger.warning("tagging agent failed for %s; leaving evidence untagged", evidence.id, exc_info=True)
+    except Exception as exc:
+        logger.warning("tagging agent failed for %s; leaving evidence untagged: %s", evidence.id,
+                       describe_exception(exc))
         return evidence
 
     evidence.entities = Entities(

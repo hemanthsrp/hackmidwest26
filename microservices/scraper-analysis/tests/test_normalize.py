@@ -44,6 +44,51 @@ def test_normalize_general_news_uses_title_and_description():
     assert evidence.data_mode == "live"
 
 
+def test_normalize_congressional_disclosure_builds_title_and_flags_historical():
+    record = RawRecord(
+        source_name="Senate eFD",
+        source_type="congressional_disclosure",
+        symbol="AAPL",
+        payload={
+            "filer_name": "Jane Doe",
+            "owner": "Spouse",
+            "ticker": "AAPL",
+            "asset_name": "Apple Inc.",
+            "asset_type": "Stock",
+            "transaction_type": "Purchase",
+            "amount_range": "$15,001 - $50,000",
+        },
+        retrieved_at=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        published_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        observed_at=datetime(2026, 8, 15, tzinfo=timezone.utc),  # 47 days lag -> historical
+        url="https://efdsearch.senate.gov/search/view/ptr/sample/",
+    )
+
+    evidence = normalize(record, "sample")
+
+    assert "Jane Doe" in evidence.title
+    assert "Historical Position Adjustment" in evidence.title
+    assert evidence.credibility.verified_filing is True
+
+
+def test_normalize_social_media_is_low_credibility_by_default():
+    record = RawRecord(
+        source_name="r/stocks",
+        source_type="social_media",
+        symbol="AAPL",
+        payload={"title": "AAPL earnings play", "description": "thoughts?"},
+        retrieved_at=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        published_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+        observed_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+    )
+
+    evidence = normalize(record, "live")
+
+    assert evidence.title == "AAPL earnings play"
+    assert evidence.credibility.verified_filing is False
+    assert evidence.credibility.overall_score < 0.5
+
+
 def test_normalize_unknown_source_type_falls_back_to_generic():
     record = RawRecord(
         source_name="mystery",

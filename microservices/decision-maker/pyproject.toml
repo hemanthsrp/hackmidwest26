@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decision-maker"
+version = "0.1.0"
+description = "Combination layer: evidence, a user question and the quant math in; a cited research assessment out."
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.8",
+]
+
+[project.optional-dependencies]
+pg = ["psycopg[binary]>=3.2"]
+agent = ["strands-agents[openai]>=1.59"]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+decision_maker = ["fixtures/*.json"]

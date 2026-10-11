@@ -12,14 +12,19 @@ from typing import Protocol
 from ..config import Settings, get_settings
 from ..models.evidence import Evidence
 from ..models.signal import Signal
+from ..pipeline.dedup import is_upgrade, record_rank
 from .embeddings import get_embedding
 
 logger = logging.getLogger(__name__)
 
 
 class EvidenceStore(Protocol):
+    def search_evidence(self, symbol: str, query: str, limit: int = 5) -> list[Evidence]: ...
+    def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]: ...
     def save_evidence(self, items: list[Evidence]) -> None: ...
     def query_evidence(self, symbol: str) -> list[Evidence]: ...
+    def query_evidence_by_source_type(self, source_type: str) -> list[Evidence]: ...
+    def rekey_evidence(self, renames: dict[str, str], delete_ids: list[str]) -> None: ...
     def save_signals(self, items: list[Signal]) -> None: ...
     def query_signals(self, symbol: str) -> list[Signal]: ...
 
@@ -29,15 +34,49 @@ class InMemoryEvidenceStore:
         self._evidence: dict[str, Evidence] = {}
         self._signals: list[Signal] = []
 
+    def search_evidence(self, symbol: str, query: str, limit: int = 5) -> list[Evidence]:
+        # No embeddings in memory: rank by query-word overlap. Good enough
+        # for tests and local runs; Postgres does real vector search.
+        words = {w for w in query.lower().split() if len(w) > 2}
+        scored = [
+            (sum(w in f"{e.title} {e.summary or ''}".lower() for w in words), e)
+            for e in self.query_evidence(symbol)
+        ]
+        return [e for score, e in sorted(scored, key=lambda t: -t[0]) if score > 0][:limit]
+
+    def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]:
+        return [
+            i for i in items
+            if i.id not in self._evidence or is_upgrade(self._evidence[i.id], i)
+        ]
+
     def save_evidence(self, items: list[Evidence]) -> None:
         for item in items:
-            self._evidence[item.id] = item
+            old = self._evidence.get(item.id)
+            if old is None or is_upgrade(old, item):
+                self._evidence[item.id] = item
 
     def query_evidence(self, symbol: str) -> list[Evidence]:
         return [e for e in self._evidence.values() if e.symbol.upper() == symbol.upper()]
 
+    def query_evidence_by_source_type(self, source_type: str) -> list[Evidence]:
+        return [e for e in self._evidence.values() if e.source_type == source_type]
+
+    def rekey_evidence(self, renames: dict[str, str], delete_ids: list[str]) -> None:
+        for old_id in delete_ids:
+            self._evidence.pop(old_id, None)
+        moved = {new: self._evidence.pop(old) for old, new in renames.items() if old in self._evidence}
+        for new_id, item in moved.items():
+            item.id = new_id
+            self._evidence[new_id] = item
+
     def save_signals(self, items: list[Signal]) -> None:
-        self._signals.extend(items)
+        # Same natural key the Postgres table enforces, so re-ingesting
+        # doesn't pile up duplicate signals in memory either.
+        keys = {(s.symbol, s.name, s.as_of, s.source) for s in self._signals}
+        for s in items:
+            if (s.symbol, s.name, s.as_of, s.source) not in keys:
+                self._signals.append(s)
 
     def query_signals(self, symbol: str) -> list[Signal]:
         return [s for s in self._signals if s.symbol.upper() == symbol.upper()]
@@ -46,6 +85,40 @@ class InMemoryEvidenceStore:
 class PostgresEvidenceStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+
+    def search_evidence(self, symbol: str, query: str, limit: int = 5) -> list[Evidence]:
+        """Semantic search: embed the query via Akamai, rank by pgvector
+        cosine distance. If embedding is unavailable, return nothing rather
+        than silently substituting an unrelated ordering."""
+        vector = get_embedding(query)
+        if vector is None:
+            return []
+        from .db import connect
+
+        with connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM evidence WHERE symbol = %s AND embedding IS NOT NULL "
+                "ORDER BY embedding <=> %s::vector LIMIT %s",
+                (symbol.upper(), vector, limit),
+            )
+            ranked = [str(r[0]) for r in cur.fetchall()]
+        by_id = {e.id: e for e in self.query_evidence(symbol)}
+        return [by_id[i] for i in ranked if i in by_id]
+
+    def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]:
+        if not items:
+            return []
+        from .db import connect
+
+        with connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, data_mode, details FROM evidence WHERE id = ANY(%s::uuid[])", ([i.id for i in items],)
+            )
+            existing = {str(row[0]): record_rank(row[1], row[2]) for row in cur.fetchall()}
+        return [
+            i for i in items
+            if i.id not in existing or record_rank(i.data_mode, i.details) > existing[i.id]
+        ]
 
     def save_evidence(self, items: list[Evidence]) -> None:
         from .db import connect
@@ -59,9 +132,20 @@ class PostgresEvidenceStore:
                         id, symbol, title, summary, source_name, source_type,
                         source_url, published_at, observed_at, retrieved_at,
                         reporting_lag_days, entities, sentiment, credibility,
-                        data_mode, embedding
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO NOTHING
+                        data_mode, embedding, details
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        title = EXCLUDED.title, summary = EXCLUDED.summary,
+                        source_name = EXCLUDED.source_name, published_at = EXCLUDED.published_at,
+                        observed_at = EXCLUDED.observed_at, retrieved_at = EXCLUDED.retrieved_at,
+                        reporting_lag_days = EXCLUDED.reporting_lag_days,
+                        entities = EXCLUDED.entities, sentiment = EXCLUDED.sentiment,
+                        credibility = EXCLUDED.credibility, data_mode = EXCLUDED.data_mode,
+                        embedding = EXCLUDED.embedding, details = EXCLUDED.details
+                    -- replace only with a strictly better copy (pipeline.dedup.record_rank):
+                    -- live beats sample, then parsed details beat metadata-only; never a downgrade
+                    WHERE (EXCLUDED.data_mode <> 'sample', EXCLUDED.details ? 'insider')
+                        > (evidence.data_mode <> 'sample', evidence.details ? 'insider')
                     """,
                     (
                         item.id,
@@ -80,10 +164,28 @@ class PostgresEvidenceStore:
                         json.dumps(item.credibility.model_dump()),
                         item.data_mode,
                         embedding,
+                        json.dumps(item.details),
                     ),
                 )
 
     def query_evidence(self, symbol: str) -> list[Evidence]:
+        return self._select_evidence("symbol = %s", symbol.upper())
+
+    def query_evidence_by_source_type(self, source_type: str) -> list[Evidence]:
+        return self._select_evidence("source_type = %s", source_type)
+
+    def rekey_evidence(self, renames: dict[str, str], delete_ids: list[str]) -> None:
+        """Delete duplicates then move kept rows to their new IDs, in one
+        transaction so a failure leaves the table untouched."""
+        from .db import connect
+
+        with connect(self._settings) as conn, conn.transaction(), conn.cursor() as cur:
+            if delete_ids:
+                cur.execute("DELETE FROM evidence WHERE id = ANY(%s::uuid[])", (delete_ids,))
+            for old_id, new_id in renames.items():
+                cur.execute("UPDATE evidence SET id = %s WHERE id = %s", (new_id, old_id))
+
+    def _select_evidence(self, where: str, value: str) -> list[Evidence]:
         from .db import connect
 
         with connect(self._settings) as conn, conn.cursor() as cur:
@@ -91,17 +193,17 @@ class PostgresEvidenceStore:
                 """
                 SELECT id, symbol, title, summary, source_name, source_type,
                        source_url, published_at, observed_at, retrieved_at,
-                       reporting_lag_days, entities, sentiment, credibility, data_mode
-                FROM evidence WHERE symbol = %s ORDER BY retrieved_at DESC
+                       reporting_lag_days, entities, sentiment, credibility, data_mode, details
+                FROM evidence WHERE """ + where + """ ORDER BY retrieved_at DESC
                 """,
-                (symbol.upper(),),
+                (value,),
             )
             rows = cur.fetchall()
 
         columns = [
             "id", "symbol", "title", "summary", "source_name", "source_type",
             "source_url", "published_at", "observed_at", "retrieved_at",
-            "reporting_lag_days", "entities", "sentiment", "credibility", "data_mode",
+            "reporting_lag_days", "entities", "sentiment", "credibility", "data_mode", "details",
         ]
         results = []
         for row in rows:

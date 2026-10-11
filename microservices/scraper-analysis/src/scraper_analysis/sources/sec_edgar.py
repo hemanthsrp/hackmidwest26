@@ -9,13 +9,15 @@ Form 4 / 8-K filings as evidence. It does not parse Form 4 XML line items
 
 from datetime import datetime, timedelta, timezone
 from typing import ClassVar
+from xml.etree import ElementTree
 
 import httpx
 
 from ..config import get_settings
 from .base import RawRecord, SourceAdapter, SourceUnavailableError
+from . import sec_tickers
+from .form4 import parse_form4
 
-TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 RELEVANT_FORMS = {"4", "8-K"}
 
@@ -45,9 +47,34 @@ class SecEdgarAdapter(SourceAdapter):
                 resp = client.get(SUBMISSIONS_URL.format(cik=cik))
                 resp.raise_for_status()
                 data = resp.json()
+                records = self._build_records(data, cik, symbol)
+                # Only the capped, newest records get their Form 4 XML
+                # fetched, so request volume stays bounded (SEC asks for
+                # <= 10 req/s; this is at most MAX_RECORDS sequential calls).
+                for record in records:
+                    if record.payload["form_type"] == "4":
+                        self._enrich_form4(client, record, cik)
+                return records
         except (httpx.HTTPError, ValueError) as exc:
             raise SourceUnavailableError(str(exc)) from exc
 
+    @staticmethod
+    def _enrich_form4(client: httpx.Client, record: RawRecord, cik: int) -> None:
+        """Best-effort: on any failure the record stays metadata-only rather
+        than being dropped -- a filing we know exists is still evidence."""
+        accession_nodash = record.payload["accession_number"].replace("-", "")
+        raw_name = record.payload["primary_document"].split("/")[-1]  # strip the xsl render dir
+        try:
+            resp = client.get(f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_nodash}/{raw_name}")
+            resp.raise_for_status()
+            parsed = parse_form4(resp.text)
+        except (httpx.HTTPError, ElementTree.ParseError):
+            return
+        record.payload["form4"] = parsed
+        if parsed.get("transaction_date"):
+            record.observed_at = datetime.fromisoformat(parsed["transaction_date"]).replace(tzinfo=timezone.utc)
+
+    def _build_records(self, data: dict, cik: int, symbol: str) -> list[RawRecord]:
         recent = data.get("filings", {}).get("recent", {})
         forms = recent.get("form", [])
         dates = recent.get("filingDate", [])
@@ -80,6 +107,7 @@ class SecEdgarAdapter(SourceAdapter):
                         "form_type": form,
                         "items": item,
                         "accession_number": accession,
+                        "primary_document": primary_doc,
                         "company_name": data.get("name"),
                     },
                     retrieved_at=now,
@@ -93,9 +121,5 @@ class SecEdgarAdapter(SourceAdapter):
 
     @staticmethod
     def _lookup_cik(client: httpx.Client, symbol: str) -> int | None:
-        resp = client.get(TICKERS_URL)
-        resp.raise_for_status()
-        for entry in resp.json().values():
-            if entry.get("ticker", "").upper() == symbol.upper():
-                return int(entry["cik_str"])
-        return None
+        info = sec_tickers.lookup(symbol, client)  # cached: not re-downloaded on every ingest
+        return info.cik if info else None

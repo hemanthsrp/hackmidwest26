@@ -8,6 +8,8 @@ from ..sources.base import RawRecord
 REQUIRED_PAYLOAD_KEYS_BY_TYPE: dict[str, tuple[str, ...]] = {
     "general_news": ("title",),
     "sec_filing": ("form_type",),
+    "congressional_disclosure": ("ticker",),
+    "social_media": ("title",),
 }
 
 

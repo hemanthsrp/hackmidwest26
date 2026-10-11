@@ -9,8 +9,9 @@ Use Discord to coordinate work between Allen's, Jet's, and Cai's Hermes agents. 
 | Allen | `<@1558496438831550525>` |
 | Jet | `<@1558506773118193734>` |
 | Cai | `<@1558556793301504173>` |
+| Hemanth (hbot) | `<@1558617341024018433>` |
 
-Shared channel ID: `REPLACE_CHANNEL_ID` (fill in before use). These are **bot user mentions**, not Discord roles.
+Shared channel ID: `1558498454911717446`. These are **bot user mentions**, not Discord roles.
 
 ## Communication rules
 
@@ -23,7 +24,7 @@ Shared channel ID: `REPLACE_CHANNEL_ID` (fill in before use). These are **bot us
 ## Send a task from the terminal
 
 ```bash
-hermes send --to discord:REPLACE_CHANNEL_ID \
+hermes send --to discord:1558498454911717446 \
   '<@1558506773118193734> [TASK: 1042] Allen -> Jet: Review the changes. Mention Allen back (bot ID 1558496438831550525) ONLY if you need a fix or answer. Otherwise post [DONE: 1042] with findings and no mention.'
 ```
 

@@ -1,0 +1,111 @@
+{
+  "note": "Synthetic test samples for checking the same-story question. Not real news. `same` is true when both items report the same event, false when they do not, and null where the call is ambiguous (for example a market reaction to an event) and is not scored.",
+  "items": {
+    "nvda_forecast_a": {
+      "title": "Nvidia raises full-year forecast as data center orders surge",
+      "summary": "Nvidia raised its full-year revenue forecast, citing a sharp increase in orders for its data center chips."
+    },
+    "nvda_forecast_b": {
+      "title": "Chipmaker Nvidia lifts annual outlook on AI server demand",
+      "summary": "The company now expects higher revenue for the year after stronger than expected data center sales."
+    },
+    "nvda_export": {
+      "title": "Nvidia says new export limits will cut sales to a key market",
+      "summary": "Nvidia said newly announced export restrictions will significantly reduce its sales to one of its largest markets."
+    },
+    "nvda_ir": {
+      "title": "Nvidia names new head of investor relations",
+      "summary": "Nvidia appointed a new head of investor relations, replacing an executive who is retiring."
+    },
+    "amd_forecast": {
+      "title": "AMD raises full-year forecast on data center demand",
+      "summary": "AMD lifted its annual revenue forecast, pointing to strong demand for its data center processors."
+    },
+    "tsla_deliveries_a": {
+      "title": "Tesla quarterly deliveries fall well short of analyst expectations",
+      "summary": "Tesla delivered far fewer vehicles in the quarter than analysts expected."
+    },
+    "tsla_deliveries_b": {
+      "title": "Tesla misses delivery estimates in third quarter",
+      "summary": "The electric car maker handed over fewer cars than Wall Street had forecast for the three months to September."
+    },
+    "tsla_plant": {
+      "title": "Tesla wins approval to build a new battery plant",
+      "summary": "Tesla received regulatory approval to build a battery plant that it says will expand its production capacity."
+    },
+    "tsla_deliveries_reaction": {
+      "title": "Tesla shares slide after delivery miss",
+      "summary": "Tesla stock fell in early trading after the company reported fewer deliveries than analysts expected."
+    },
+    "aapl_fine_a": {
+      "title": "Regulators fine Apple over app store rules; company to appeal",
+      "summary": "A regulator imposed a multibillion-dollar fine on Apple over its app store payment rules."
+    },
+    "aapl_fine_b": {
+      "title": "Apple hit with record penalty in app store case",
+      "summary": "Apple was ordered to pay a multibillion-dollar fine for restricting how developers take payments, and said it would appeal."
+    }
+  },
+  "pairs": [
+    {
+      "a": "nvda_forecast_a",
+      "b": "nvda_forecast_b",
+      "same": true
+    },
+    {
+      "a": "tsla_deliveries_a",
+      "b": "tsla_deliveries_b",
+      "same": true
+    },
+    {
+      "a": "aapl_fine_a",
+      "b": "aapl_fine_b",
+      "same": true
+    },
+    {
+      "a": "nvda_forecast_a",
+      "b": "nvda_export",
+      "same": false
+    },
+    {
+      "a": "nvda_forecast_a",
+      "b": "nvda_ir",
+      "same": false
+    },
+    {
+      "a": "nvda_forecast_a",
+      "b": "amd_forecast",
+      "same": false
+    },
+    {
+      "a": "nvda_forecast_b",
+      "b": "amd_forecast",
+      "same": false
+    },
+    {
+      "a": "tsla_deliveries_a",
+      "b": "tsla_plant",
+      "same": false
+    },
+    {
+      "a": "tsla_deliveries_b",
+      "b": "tsla_plant",
+      "same": false
+    },
+    {
+      "a": "aapl_fine_a",
+      "b": "nvda_export",
+      "same": false
+    },
+    {
+      "a": "tsla_deliveries_a",
+      "b": "tsla_deliveries_reaction",
+      "same": null
+    },
+    {
+      "a": "nvda_export",
+      "b": "nvda_ir",
+      "same": false
+    }
+  ]
+}

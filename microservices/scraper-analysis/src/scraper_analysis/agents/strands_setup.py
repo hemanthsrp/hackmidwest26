@@ -10,7 +10,7 @@ the package is installed / before AWS credentials are configured.
 from ..config import get_settings
 
 
-def build_bedrock_agent(system_prompt: str):
+def build_bedrock_agent(system_prompt: str, tools: list | None = None):
     import boto3
     from strands import Agent
     from strands.models import BedrockModel
@@ -37,4 +37,5 @@ def build_bedrock_agent(system_prompt: str):
         # default) -- confirmed via a live AccessDeniedException.
         streaming=False,
     )
-    return Agent(model=model, system_prompt=system_prompt)
+    # callback_handler=None stops Strands echoing every response to stdout.
+    return Agent(model=model, system_prompt=system_prompt, tools=tools or [], callback_handler=None)
