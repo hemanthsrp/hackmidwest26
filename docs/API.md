@@ -81,6 +81,8 @@ Unknown fields are rejected (422).
 
 **Rendering the sources list.** Group `evidence[]` by `source_type`, link `source_url`, show `published_at`, and show `data_mode` on any item that is not `live`. Citations in `explanation_points[].evidence_ids` and `reason_codes` refer to `evidence[].id` and `signals[].id`.
 
+**Freshness.** Evidence whose newest `retrieved_at` is older than `DECISION_STALE_AFTER_SECONDS` returns `409 stale_data` (and a `stale` row in recommended-stocks). The code default is 24 hours; the shared `.env.example` sets 7 days for now. The check uses the time a row was first stored, not the source's publish time.
+
 **Environment** (`live`): `DATABASE_URL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `CHAT_MODEL`, `EMBEDDING_MODEL`, `JEV_ENABLED`, `TYPESAFE_API_KEY`, `DECISION_STALE_AFTER_SECONDS`, `VOL_SURFACE_URL`. Meanings are in the [research-api README](../microservices/research-api/README.md).
 
 ### `GET /v0/industries`
