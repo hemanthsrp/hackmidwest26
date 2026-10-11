@@ -31,6 +31,7 @@ from ..config import get_settings
 from ..models.briefing import Briefing
 from ..models.evidence import Evidence
 from ..pipeline import divergence
+from ..sources.base import describe_exception, sanitize_error
 from ..storage.store import EvidenceStore, get_store
 from .strands_setup import build_bedrock_agent
 from .tagging_agent import _extract_json
@@ -222,7 +223,7 @@ def generate_briefing(
     try:
         agent = agent_factory(SYSTEM_PROMPT, tools=build_tools(store, symbol, seen_ids, evidence, signals))
     except Exception as exc:  # bad model id, boto/session setup, tool registration...
-        logger.warning("briefing agent setup failed for %s", symbol, exc_info=True)
+        logger.warning("briefing agent setup failed for %s: %s", symbol, describe_exception(exc))
         raise BriefingUnavailableError(f"briefing agent setup failed: {type(exc).__name__}") from exc
     today = datetime.now(timezone.utc).date().isoformat()
     prompt = f"Today is {today}. Write the research briefing for {symbol}."
@@ -231,15 +232,15 @@ def generate_briefing(
         try:
             result = agent(prompt)
         except Exception as exc:  # infrastructure/model failure: don't retry blindly
-            logger.warning("briefing generation failed for %s", symbol, exc_info=True)
-            raise BriefingUnavailableError(f"{type(exc).__name__}: {exc}") from exc
+            logger.warning("briefing generation failed for %s: %s", symbol, describe_exception(exc))
+            raise BriefingUnavailableError(describe_exception(exc)) from exc
         try:
             briefing = Briefing.model_validate(_extract_json(str(result)))
             break
         except (ValueError, ValidationError) as exc:
-            logger.warning("briefing output invalid for %s (attempt %d): %s", symbol, attempt + 1, exc)
+            logger.warning("briefing output invalid for %s (attempt %d): %s", symbol, attempt + 1, describe_exception(exc))
             if attempt + 1 == MAX_ATTEMPTS:
-                raise BriefingUnavailableError(f"model output did not match the schema: {exc}") from exc
+                raise BriefingUnavailableError(f"model output did not match the schema: {sanitize_error(exc)}") from exc
             # Strands agents keep conversation history, so a short correction suffices.
             prompt = (
                 f"Your reply could not be parsed: {str(exc)[:300]}. "

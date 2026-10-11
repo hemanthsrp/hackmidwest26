@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..models.evidence import Evidence
+from ..sources.base import describe_exception
 from .jev_judge import request_enabled, same_story_ids, valid_judgment
 
 logger = logging.getLogger(__name__)
@@ -158,11 +159,11 @@ def grade_evidence(items: list[Evidence]) -> list[Evidence]:
     for evidence in items:
         try:
             evidence.details["grade"] = grade_record(evidence, settings.jev_relevance_gate, known_ids)
-        except Exception:
+        except Exception as exc:
             # Grading is optional. One record that can't be graded stays ungraded
             # (readers already treat that as "no grade"); it must never abort the
             # ingest and lose the whole batch.
-            logger.warning("could not grade record %s; leaving it ungraded", evidence.id, exc_info=True)
+            logger.warning("could not grade record %s; leaving it ungraded: %s", evidence.id, describe_exception(exc))
     return items
 
 

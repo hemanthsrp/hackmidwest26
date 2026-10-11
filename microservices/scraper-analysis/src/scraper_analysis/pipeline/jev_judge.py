@@ -27,7 +27,7 @@ from contextvars import ContextVar
 
 from ..config import get_settings
 from ..models.evidence import Evidence, Sentiment
-from ..sources.base import sanitize_error
+from ..sources.base import describe_exception, sanitize_error
 from .scoring import _jaccard, _tokens
 from .symbol_match import SYMBOL_NAME_HINTS
 
@@ -140,9 +140,10 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
     companies = {e.symbol: company_name(e.symbol) for e in targets}
     try:
         judgments = list(tool.judge_evidence_items(payload, companies))
-    except Exception:
+    except Exception as exc:
         # Sent but nothing came back: mark it, so "Jev failed" never looks like "never judged".
-        logger.warning("jev judgment failed for %d record(s)", len(targets), exc_info=True)
+        # Never exc_info: the raw exception/traceback can carry the API key or a tokened URL.
+        logger.warning("jev judgment failed for %d record(s): %s", len(targets), describe_exception(exc))
         for evidence in targets:
             evidence.details["jev"] = _unavailable(STATUS_FAILED, "jev call failed")
         return items
@@ -151,24 +152,25 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
         # Each record on its own: one bad result can never stop the others being attached.
         try:
             evidence.details["jev"] = _read_result(result)
-        except Exception:
-            logger.warning("unreadable jev result for %s; marking it malformed", evidence.id, exc_info=True)
+        except Exception as exc:
+            logger.warning("unreadable jev result for %s; marking it malformed: %s", evidence.id,
+                           describe_exception(exc))
             evidence.details["jev"] = _unavailable(STATUS_MALFORMED, "unreadable judgment")
             continue
         if evidence.details["jev"]["engine"] == "jev":
             try:
                 _fill_sentiment(evidence)
-            except Exception:
-                logger.warning("jev sentiment fill failed for %s; skipping", evidence.id, exc_info=True)
+            except Exception as exc:
+                logger.warning("jev sentiment fill failed for %s; skipping: %s", evidence.id, describe_exception(exc))
     for evidence in targets:
         if "jev" not in evidence.details:
             evidence.details["jev"] = _unavailable(STATUS_MISSING, "no judgment returned for this record")
 
     try:
         _mark_same_story([e for e in targets if e.details["jev"]["engine"] == "jev"], tool)
-    except Exception:
+    except Exception as exc:
         # Optional and additive: whatever went wrong, the records still get stored.
-        logger.warning("jev same-story marking failed; keeping records as they are", exc_info=True)
+        logger.warning("jev same-story marking failed; keeping records as they are: %s", describe_exception(exc))
     return items
 
 
@@ -203,8 +205,8 @@ def _match_results(targets: list[Evidence], results: list) -> list[tuple[Evidenc
     for index, result in enumerate(results):
         try:
             key = _field(result, "evidence_id") if _is_result(result) else None
-        except Exception:
-            logger.warning("could not read evidence_id from jev result %d", index, exc_info=True)
+        except Exception as exc:
+            logger.warning("could not read evidence_id from jev result %d: %s", index, describe_exception(exc))
             key = None
         if not isinstance(key, str) or key not in by_id:
             dropped += 1
@@ -346,8 +348,8 @@ def _mark_same_story(judged: list[Evidence], tool) -> None:
         return
     try:
         result = tool.same_story([{"title": e.title, "summary": e.summary} for e in judged], pairs)
-    except Exception:
-        logger.warning("jev same-story check failed; skipping", exc_info=True)
+    except Exception as exc:
+        logger.warning("jev same-story check failed; skipping: %s", describe_exception(exc))
         return
     if _field(result, "engine") != "jev":
         return
@@ -363,8 +365,8 @@ def _mark_same_story(judged: list[Evidence], tool) -> None:
                 continue
             _link(first, second.id)
             _link(second, first.id)
-        except Exception:
-            logger.warning("skipping an unreadable same-story pair", exc_info=True)
+        except Exception as exc:
+            logger.warning("skipping an unreadable same-story pair: %s", describe_exception(exc))
 
 
 

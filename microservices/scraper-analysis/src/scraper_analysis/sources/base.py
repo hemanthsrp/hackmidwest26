@@ -67,6 +67,17 @@ def sanitize_error(error: object) -> str:
     return text
 
 
+def describe_exception(exc: BaseException) -> str:
+    """One sanitized line for logging a provider failure (Jev/TypeSafe, Bedrock,
+    embeddings): the exception type plus sanitize_error() of its text.
+
+    Use this instead of ``exc_info=True`` / ``logger.exception`` wherever the
+    exception can carry provider text: a traceback prints the raw message (and
+    any chained cause), which can include API keys and tokened URLs."""
+    text = sanitize_error(f"{type(exc).__name__}: {exc}")
+    return " ".join(text.split())
+
+
 class LiveRecords(list):
     """A live fetch's items plus an optional coverage note. An adapter returns
     this instead of a plain list when the source answered but only partly
