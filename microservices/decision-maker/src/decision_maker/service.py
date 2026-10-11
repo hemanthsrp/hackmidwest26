@@ -306,6 +306,7 @@ class DecisionMaker:
                 "jev_review": outcome.meta,
                 "judgments_at_decision": judgments,
                 "retrieval": retrieval,
+                "quant_citations": quant.quant_citations if quant else [],
             },
         )
 

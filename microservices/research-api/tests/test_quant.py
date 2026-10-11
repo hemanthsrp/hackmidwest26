@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from research_api import assessment
 from research_api.app import app
-from research_api.quant import VolSurfaceUnavailable, to_quant_input, vol_surface_provider
+from research_api.quant import VolSurfaceUnavailable, persist_snapshot, to_quant_input, vol_surface_provider
 from test_assessment import RecordingMaker
 
 
@@ -78,6 +78,37 @@ def test_the_provider_asks_the_service_for_a_live_surface() -> None:
 
     assert calls == [("http://127.0.0.1:8002/v0/volatility-surfaces", {"symbol": "AAPL", "mode": "live"})]
     assert quant.vol_surface.atm_iv_mean == 0.31
+
+
+def test_persisted_surface_citation_uses_frontend_contract_field_names(monkeypatch) -> None:
+    import psycopg
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, *args):
+            pass
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: Connection())
+
+    citation = persist_snapshot(surface_response(), database_url="postgresql://localhost/test")
+
+    assert citation["source"] == "Yahoo Finance option chain"
+    assert citation["mode"] == "live"
 
 
 @pytest.mark.parametrize("failure", [httpx.Response(503, json={"error": {"code": "options_provider_unavailable"}}), httpx.ConnectError("refused")])

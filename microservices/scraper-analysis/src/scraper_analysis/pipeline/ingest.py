@@ -14,6 +14,7 @@ from ..models.signal import Signal
 from ..sources import commodities, market_signals
 from ..sources.base import SourceAdapter, SourceStatus
 from ..sources.congressional import SenateEfdAdapter
+from ..sources.exa import ExaNewsAdapter
 from ..sources.house_clerk import HouseClerkAdapter
 from ..sources.news_marketaux import MarketauxNewsAdapter
 from ..sources.official_rss import ADAPTERS as OFFICIAL_RSS_ADAPTERS
@@ -43,6 +44,8 @@ def build_adapters() -> list[SourceAdapter]:
     ]
     if get_settings().enable_reddit_scraper:
         adapters.append(RedditUnofficialAdapter())
+    if get_settings().enable_exa_search:
+        adapters.append(ExaNewsAdapter())
     return adapters
 
 

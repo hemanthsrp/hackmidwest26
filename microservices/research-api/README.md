@@ -107,7 +107,7 @@ The safety boundary remains unchanged:
 ## Local checks
 
 ```bash
-python -m pip install -e '.[dev]'
+python -m pip install -r requirements-dev-local.txt
 python -m pip install -e '../decision-maker[pg,agent]'
 python -m pip install -e '../jev-tool[dev]'  # optional Jev adapter and tests
 python -m pytest
