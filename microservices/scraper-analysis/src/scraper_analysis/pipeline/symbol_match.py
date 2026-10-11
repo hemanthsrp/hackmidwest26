@@ -26,7 +26,15 @@ English word (`WORD_TICKERS`: ON, ALL, NOW, CAT, OPEN, ...).
   "ALL EYES ON THE FED"): the text must contain lowercase letters, neither
   neighbouring word may itself be all-caps, and the token must be followed by
   a stock word ("ALL stock", "NOW shares") or preceded by "shares of/in".
+  A sentence-initial auxiliary/question word in a question ("CAN stock be
+  counted?", "ARE stock buybacks good?") is grammar, not a ticker; "CAN stock
+  jumps" and "Is CAN stock a buy?" still match. Known residual ambiguity:
+  sentence-initial non-question uses like "NOW stock futures rise" match NOW.
 - Otherwise ambiguous tickers match only via the company name.
+- Class shares are symmetric across separators: for BRK.B (the pipeline's
+  form), BRK-B (SEC's form) or BRK/B, any of "BRK.B", "BRK-B", "BRK/B" in the
+  text matches; none of them matches the base BRK, and BRK or BRK.A does not
+  match BRK.B.
 
 Company-name rules:
 - Names come from a small curated override table (distinctive short forms
@@ -191,14 +199,30 @@ def is_ambiguous_ticker(symbol: str) -> bool:
 
 
 # A ticker ends at a non-alphanumeric that is not the start of a class-share
-# or suffix ("F.X", "BRK.B", "BRK-B"); a bare trailing "." still ends it.
-_END = r"(?![A-Za-z0-9])(?![.-][A-Za-z0-9])"
+# or suffix ("F.X", "BRK.B", "BRK-B", "BRK/B"); a bare trailing "." still ends
+# it. "/" only counts when followed by a 1-2 letter class ("AAPL/MSFT" is a pair).
+_END = r"(?![A-Za-z0-9])(?![.-][A-Za-z0-9])(?!/[A-Za-z]{1,2}(?![A-Za-z0-9]))"
 _START = r"(?<![A-Za-z0-9])(?<![A-Za-z0-9][.-])"
+
+
+_CLASS_SHARE = re.compile(r"([A-Z0-9]+)[./-]([A-Z]{1,2})")
+
+
+def normalize_symbol(symbol: str) -> str:
+    """Upper-case; class shares in the pipeline's dotted form ("BRK-B",
+    "brk/b" -> "BRK.B")."""
+    symbol = symbol.strip().upper()
+    m = _CLASS_SHARE.fullmatch(symbol)
+    return f"{m.group(1)}.{m.group(2)}" if m else symbol
 
 
 @lru_cache(maxsize=512)
 def _forms(symbol: str) -> str:
-    forms = {symbol, symbol.replace(".", "-")}
+    m = _CLASS_SHARE.fullmatch(symbol)
+    if m:  # every way a class share is written
+        forms = {f"{m.group(1)}{sep}{m.group(2)}" for sep in ".-/"}
+    else:
+        forms = {symbol, symbol.replace(".", "-")}
     return "|".join(re.escape(f) for f in sorted(forms, key=len, reverse=True))
 
 
@@ -265,6 +289,18 @@ def _paren_ok(text: str, m: re.Match, symbol: str, ambiguous: bool) -> bool:
     return False
 
 
+# Word tickers that open English questions ("CAN stock be counted?").
+_QUESTION_WORDS = frozenset({"CAN", "ARE", "HAS", "HOW", "WHY", "WHO"})
+
+
+def _starts_question(text: str, m: re.Match) -> bool:
+    """The token opens a sentence (or follows "Label:") that ends in "?"."""
+    if text[:m.start()].rstrip() and not text[:m.start()].rstrip().endswith((".", "!", "?", ":")):
+        return False
+    end = re.search(r"[.!?]", text[m.end():])
+    return bool(end) and end.group() == "?"
+
+
 def _bare_ok(text: str, m: re.Match, symbol: str) -> bool:
     if len(re.sub(r"[^A-Za-z]", "", symbol)) < 3:
         return False
@@ -278,7 +314,7 @@ def _bare_ok(text: str, m: re.Match, symbol: str) -> bool:
             or _is_caps_word(after):
         return False  # part of a shouted phrase ("BREAKING: CAN THE RALLY LAST")
     if after and after.lower() in _STOCK_WORDS:
-        return True
+        return not (symbol in _QUESTION_WORDS and _starts_question(text, m))
     return len(before) == 2 and before[0].lower() in {"share", "shares"} and before[1].lower() in {"of", "in"}
 
 
@@ -298,7 +334,7 @@ def _proper_noun(found: str, name: str) -> bool:
 
 
 def matches_symbol(text: str, symbol: str) -> bool:
-    symbol = symbol.upper()
+    symbol = normalize_symbol(symbol)
     if any(p.search(text) for p in _ticker_patterns(symbol)):
         return True
     ambiguous = is_ambiguous_ticker(symbol)

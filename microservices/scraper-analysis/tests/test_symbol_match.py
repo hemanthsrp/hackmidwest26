@@ -346,3 +346,67 @@ def test_incomplete_or_generic_names_do_not_match(partial_name_table, text, symb
 ])
 def test_full_company_names_still_match(partial_name_table, text, symbol):
     assert matches_symbol(text, symbol) is True
+
+
+# --- PR #18 review (hbot) on bfa1a26: BRK-B vs BRK.B must be symmetric ------
+
+CLASS_SHARE_MENTIONS = [
+    "Buying $BRK.B today", "Buying $BRK-B today", "Buying $BRK/B today", "Buying $brk.b today",
+    "BRK.B hits a record", "BRK-B hits a record", "BRK/B hits a record",
+    "Berkshire (BRK.B) hits a record", "Berkshire (BRK-B) hits a record", "Berkshire (BRK/B) hits a record",
+    "(NYSE: BRK.B) up", "(NYSE: BRK-B) up", "NYSE: BRK/B up",
+]
+
+
+@pytest.mark.parametrize("symbol", ["BRK.B", "BRK-B", "BRK/B", "brk.b"])
+@pytest.mark.parametrize("text", CLASS_SHARE_MENTIONS)
+def test_class_share_matching_is_symmetric_across_separators(text, symbol):
+    assert matches_symbol(text, symbol) is True
+
+
+@pytest.mark.parametrize("text", CLASS_SHARE_MENTIONS)
+def test_class_share_mentions_do_not_match_the_base_symbol(text):
+    assert matches_symbol(text, "BRK") is False
+
+
+@pytest.mark.parametrize("symbol", ["BRK.B", "BRK-B"])
+@pytest.mark.parametrize("text", [
+    "Buying $BRK today", "BRK hits a record", "(NYSE: BRK) up", "Berkshire (BRK) up",
+    "Buying $BRK.A today", "BRK-A hits a record", "BRK/A hits a record",
+])
+def test_base_or_other_class_does_not_match_a_class_share(text, symbol):
+    assert matches_symbol(text, symbol) is False
+
+
+def test_class_share_gets_its_sec_name_from_a_dash_keyed_table(monkeypatch):
+    import time
+    table = {"BRK-B": sec_tickers.TickerInfo(1067983, "Berkshire Hathaway Inc")}
+    monkeypatch.setattr(sec_tickers, "_cache", (time.monotonic(), table))
+    assert matches_symbol("Berkshire Hathaway posts record cash pile", "BRK.B") is True
+    assert matches_symbol("Berkshire Hathaway posts record cash pile", "BRK") is False
+
+
+def test_slash_does_not_swallow_ordinary_pairs():
+    assert matches_symbol("AAPL/MSFT spread widens", "AAPL") is True
+    assert matches_symbol("AAPL/MSFT spread widens", "MSFT") is True
+
+
+# --- PR #18 review (hbot): "CAN stock be counted?" is a question, not CAN ----
+
+@pytest.mark.parametrize("text, symbol", [
+    ("CAN stock be counted as collateral?", "CAN"),
+    ("ARE stock buybacks good for investors?", "ARE"),
+    ("Question: HAS stock picking died?", "HAS"),
+])
+def test_sentence_initial_auxiliary_word_in_a_question_is_not_a_ticker(text, symbol):
+    assert matches_symbol(text, symbol) is False
+
+
+@pytest.mark.parametrize("text, symbol", [
+    ("CAN stock jumps after Canaan earnings beat", "CAN"),
+    ("Is CAN stock a buy after the halving?", "CAN"),
+    ("NOW stock: buy or sell?", "NOW"),
+    ("OPEN stock soars on guidance", "OPEN"),
+])
+def test_word_ticker_stock_mentions_still_match(text, symbol):
+    assert matches_symbol(text, symbol) is True

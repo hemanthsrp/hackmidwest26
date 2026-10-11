@@ -217,7 +217,19 @@ def _json_client(*bodies):
     {"0": {"ticker": "X"}},  # no cik_str
     {"0": "junk", "1": ["also junk"]},
     {"0": {"cik_str": "not-a-number", "ticker": "AAPL", "title": "Apple Inc."}},
-])
+    # hbot re-review on 7e7dd59: none of these is a usable entry
+    {"0": {"ticker": None, "cik_str": 1}},  # was cached as ticker "NONE"
+    {"0": {"ticker": "  ", "cik_str": 1}},
+    {"0": {"ticker": "", "cik_str": 1}},
+    {"0": {"ticker": 123, "cik_str": 1}},
+    {"0": {"ticker": "123", "cik_str": 1}},
+    {"0": {"ticker": "AAPL", "cik_str": 0}},
+    {"0": {"ticker": "AAPL", "cik_str": "0"}},
+    {"0": {"ticker": "AAPL", "cik_str": -5}},
+    {"0": {"ticker": "AAPL", "cik_str": "-5"}},
+    {"0": {"ticker": "AAPL", "cik_str": True}},
+    {"0": {"ticker": "AAPL", "cik_str": 1.5}},
+], ids=lambda raw: repr(raw)[:60])
 def test_table_without_usable_entries_is_a_failed_load_and_not_cached(raw):
     c = _json_client(raw)
     with pytest.raises(ValueError) as ei:
@@ -252,3 +264,127 @@ def test_sec_adapter_sanitizes_empty_ticker_table(monkeypatch):
         SecEdgarAdapter().fetch_live("AAPL")
     assert str(ei.value) == sec_tickers.EMPTY_MESSAGE
     assert sec_tickers._cache is None
+
+
+# --- PR #18 review (hbot) on 7e7dd59: a malformed-but-200 table that still has
+# SOME usable rows must not be cached either ---------------------------------
+
+def _good_rows(n=20):
+    return {str(i): {"cik_str": 1000 + i, "ticker": f"T{i:03d}", "title": f"Co {i} Inc"} for i in range(n)}
+
+
+def _with(extra):
+    rows = _good_rows()
+    rows.update(extra)
+    return rows
+
+
+def _mostly_junk():
+    rows = {str(i): {"ticker": f"J{i}"} for i in range(40)}  # missing cik_str
+    rows["good"] = {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}
+    return rows
+
+
+CORRUPT_TABLES = {
+    "non-dict value mixed in": _with({"x": "junk"}),
+    "list value mixed in": _with({"x": ["AAPL", 320193]}),
+    "null value mixed in": _with({"x": None}),
+    "non-string ticker": _with({"x": {"cik_str": 5, "ticker": 12345, "title": "Num Inc"}}),
+    "null ticker": _with({"x": {"cik_str": 5, "ticker": None, "title": "Null Inc"}}),
+    "bool cik": _with({"x": {"cik_str": True, "ticker": "BOOL", "title": "Bool Inc"}}),
+    "float cik": _with({"x": {"cik_str": 1.5, "ticker": "FLT", "title": "Float Inc"}}),
+    "negative cik": _with({"x": {"cik_str": -7, "ticker": "NEG", "title": "Neg Inc"}}),
+    "non-string title": _with({"x": {"cik_str": 5, "ticker": "TTL", "title": {"a": 1}}}),
+    "html in ticker": _with({"x": {"cik_str": 5, "ticker": "<html><body>", "title": "X"}}),
+    "mostly rows missing cik": _mostly_junk(),
+}
+
+
+@pytest.mark.parametrize("raw", list(CORRUPT_TABLES.values()), ids=list(CORRUPT_TABLES))
+def test_partially_usable_but_corrupt_table_is_not_cached_and_recovers(raw):
+    c = _json_client(raw, RAW)
+    with pytest.raises(ValueError) as ei:
+        sec_tickers.load(c)
+    assert str(ei.value) == sec_tickers.MALFORMED_MESSAGE  # fixed text, no body echoed
+    assert sec_tickers._cache is None
+    assert sec_tickers.cached_title("AAPL") is None
+    assert sec_tickers.lookup("AAPL", c).cik == 320193  # next call retries and recovers
+    assert c.calls == 2
+
+
+@pytest.mark.parametrize("raw", [None, "AAPL", 42, [RAW], [RAW["0"]] * 50_000],
+                         ids=["null", "string", "number", "list", "huge-list"])
+def test_non_object_json_is_malformed_and_recovers(raw):
+    c = _json_client(raw, RAW)
+    with pytest.raises(ValueError) as ei:
+        sec_tickers.load(c)
+    assert str(ei.value) == sec_tickers.MALFORMED_MESSAGE
+    assert sec_tickers._cache is None
+    assert sec_tickers.lookup("AAPL", c).cik == 320193
+    assert c.calls == 2
+
+
+def test_oversized_table_is_malformed(monkeypatch):
+    monkeypatch.setattr(sec_tickers, "MAX_ENTRIES", 10, raising=False)
+    c = _json_client(_good_rows(11), RAW)
+    with pytest.raises(ValueError) as ei:
+        sec_tickers.load(c)
+    assert str(ei.value) == sec_tickers.MALFORMED_MESSAGE
+    assert sec_tickers.lookup("AAPL", c).cik == 320193
+
+
+def _transport_client(*responses):
+    queue = list(responses)
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), seen
+
+
+@pytest.mark.parametrize("resp", [
+    lambda: httpx.Response(200, text="<html><body>Request Rate Threshold Exceeded</body></html>",
+                           headers={"content-type": "text/html"}),
+    lambda: httpx.Response(200, text="null", headers={"content-type": "application/json"}),
+    lambda: httpx.Response(200, text="", headers={"content-type": "application/json"}),
+    # valid-looking JSON served as an HTML error page is not trusted either
+    lambda: httpx.Response(200, json=RAW, headers={"content-type": "text/html; charset=utf-8"}),
+], ids=["html-body", "json-null", "empty-body", "json-as-html"])
+def test_bad_200_bodies_are_not_cached_and_recover(resp):
+    client, seen = _transport_client(resp(), httpx.Response(200, json=RAW))
+    with client:
+        with pytest.raises(ValueError) as ei:
+            sec_tickers.load(client)
+        assert str(ei.value) == sec_tickers.MALFORMED_MESSAGE
+        assert "Threshold" not in str(ei.value)
+        assert sec_tickers._cache is None
+        assert sec_tickers.lookup("AAPL", client).cik == 320193
+    assert len(seen) == 2
+
+
+def test_real_shaped_table_with_a_few_incomplete_rows_still_loads():
+    rows = _good_rows(20)
+    rows["x"] = {"ticker": "NOCIK", "title": "No Cik Inc"}  # a missing field is skipped
+    table = sec_tickers._parse(rows)
+    assert "T000" in table and "NOCIK" not in table
+
+
+# --- PR #18 review (hbot): class shares are BRK-B at SEC, BRK.B in the pipeline
+
+def test_class_share_lookup_is_separator_agnostic():
+    raw = {"0": {"cik_str": 1067983, "ticker": "BRK-B", "title": "Berkshire Hathaway Inc"},
+           "1": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}}
+    c = _json_client(raw)
+    for sym in ("BRK-B", "BRK.B", "brk.b", "BRK/B"):
+        assert sec_tickers.lookup(sym, c).cik == 1067983
+        assert sec_tickers.cached_title(sym) == "Berkshire Hathaway Inc"
+    assert sec_tickers.lookup("BRK", c) is None
+    assert sec_tickers.cached_title("BRK") is None
+    assert c.calls == 1
+
+
+def test_ticker_whitespace_is_stripped_not_kept():
+    c = _json_client({"0": {"cik_str": 320193, "ticker": " aapl ", "title": "Apple Inc."}})
+    assert sec_tickers.lookup("AAPL", c).cik == 320193

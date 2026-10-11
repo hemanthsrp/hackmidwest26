@@ -8,12 +8,28 @@ sources that aren't scoped to one symbol (pipeline/symbol_match.py), which
 only ever READS the cache and never triggers a download itself.
 
 Loading is single-flight: concurrent cold lookups (e.g. parallel ingests)
-share one download instead of each fetching the file. A failed, malformed or
-empty download (no usable ticker entries) is not cached, so the next lookup
-retries instead of serving an empty table for a whole TTL; malformed and
-empty tables raise fixed ValueError messages (never the response body).
+share one download instead of each fetching the file.
+
+Only a table that looks like SEC's real file is cached. A download is a
+failed load (not cached, so the next lookup retries; fixed ValueError text,
+never the response body) when:
+- the response is served as HTML, or the body is not JSON / not a JSON object
+  (null, list, string, ...), or it has more than MAX_ENTRIES rows;
+- ANY row is structurally corrupt: a row that is not an object, or a present
+  field of the wrong type (ticker not a ticker-shaped string, cik_str not a
+  positive int / digit string -- bools and floats rejected, title not a
+  string). Real SEC rows are uniform, so one such row means the body is not
+  the table we expect;
+- fewer than MIN_USABLE_FRACTION of rows are usable (rows merely missing
+  cik_str/ticker are skipped individually, but a table that is mostly such
+  rows is corrupt);
+- no row is usable at all (EMPTY_MESSAGE).
+
+Class shares are keyed "BRK-B" by SEC but written "BRK.B" by the pipeline
+(ingest.SYMBOL_RE) and "BRK/B" in some press; lookups accept any of them.
 """
 
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -22,6 +38,8 @@ import httpx
 
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 TTL_SECONDS = 24 * 3600
+MAX_ENTRIES = 200_000  # the real file has ~10k rows
+MIN_USABLE_FRACTION = 0.75
 
 
 @dataclass(frozen=True)
@@ -37,23 +55,78 @@ _cache: tuple[float, dict[str, TickerInfo]] | None = None
 _load_lock = threading.Lock()
 
 
-def _parse(raw: dict) -> dict[str, TickerInfo]:
-    if not isinstance(raw, dict):
+# Deliberately loose (any real SEC ticker such as "BRK-B", "GAB-PG" must pass:
+# one bad row rejects the whole table); it only catches non-ticker junk.
+_TICKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-/]{0,19}$")
+# What a usable ticker looks like: letters first, optional class/series suffix.
+# A string that passes _TICKER_RE but not this ("123") is skipped, not fatal.
+_USABLE_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{0,9}(?:[.-][A-Z0-9]{1,4})?$")
+_CLASS_SEP = re.compile(r"[./]")
+
+
+class _Corrupt(Exception):
+    pass
+
+
+def _cik(value) -> int:
+    if isinstance(value, bool):
+        raise _Corrupt
+    if isinstance(value, int):
+        cik = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        cik = int(value)
+    else:
+        raise _Corrupt
+    if cik <= 0:
+        raise _Corrupt
+    return cik
+
+
+def _row(entry) -> tuple[str, TickerInfo] | None:
+    """(ticker, info) for a usable row, None for a row merely missing a
+    field; raises _Corrupt for a row that is structurally wrong."""
+    if not isinstance(entry, dict):
+        raise _Corrupt
+    ticker, title = entry.get("ticker"), entry.get("title", "")
+    if "ticker" in entry:  # null / number / "  " / markup is corruption, not a ticker
+        if not isinstance(ticker, str) or not _TICKER_RE.match(ticker.strip()):
+            raise _Corrupt
+        ticker = ticker.strip().upper()
+    if not isinstance(title, str):
+        raise _Corrupt
+    cik = _cik(entry["cik_str"]) if "cik_str" in entry else None
+    if ticker is None or cik is None or not _USABLE_TICKER_RE.match(ticker):
+        return None
+    return ticker, TickerInfo(cik, title)
+
+
+def _parse(raw) -> dict[str, TickerInfo]:
+    if not isinstance(raw, dict) or len(raw) > MAX_ENTRIES:
         raise ValueError(MALFORMED_MESSAGE)
     table: dict[str, TickerInfo] = {}
+    usable = 0
+    corrupt = False
     for entry in raw.values():
-        if not isinstance(entry, dict):
+        try:
+            row = _row(entry)
+        except _Corrupt:
+            corrupt = True
             continue
-        ticker = str(entry.get("ticker", "")).upper()
-        if ticker and "cik_str" in entry:
-            try:
-                cik = int(entry["cik_str"])
-            except (TypeError, ValueError):
-                continue
-            table.setdefault(ticker, TickerInfo(cik, str(entry.get("title", ""))))
+        if row is not None:
+            usable += 1
+            table.setdefault(*row)
     if not table:  # a 200 with {} (or only junk) is an outage, not "no tickers exist"
         raise ValueError(EMPTY_MESSAGE)
+    if corrupt or usable < MIN_USABLE_FRACTION * len(raw):
+        raise ValueError(MALFORMED_MESSAGE)
     return table
+
+
+def _get(table: dict[str, TickerInfo], symbol: str) -> TickerInfo | None:
+    """Exact ticker, else the same class share with SEC's "-" separator."""
+    symbol = symbol.strip().upper()
+    return table.get(symbol) or table.get(_CLASS_SEP.sub("-", symbol)) \
+        or table.get(symbol.replace("-", ".").replace("/", "."))
 
 
 def _fresh() -> dict[str, TickerInfo] | None:
@@ -74,6 +147,9 @@ def load(client: httpx.Client) -> dict[str, TickerInfo]:
             return table
         resp = client.get(TICKERS_URL)
         resp.raise_for_status()
+        headers = getattr(resp, "headers", None) or {}
+        if "html" in str(headers.get("content-type", "")).lower():
+            raise ValueError(MALFORMED_MESSAGE)  # an error page, whatever it contains
         try:
             raw = resp.json()
         except ValueError:
@@ -84,7 +160,7 @@ def load(client: httpx.Client) -> dict[str, TickerInfo]:
 
 
 def lookup(symbol: str, client: httpx.Client) -> TickerInfo | None:
-    return load(client).get(symbol.upper())
+    return _get(load(client), symbol)
 
 
 def cached_title(symbol: str) -> str | None:
@@ -93,5 +169,5 @@ def cached_title(symbol: str) -> str | None:
     cached = _cache
     if cached is None:
         return None
-    info = cached[1].get(symbol.upper())
+    info = _get(cached[1], symbol)
     return info.title if info else None
