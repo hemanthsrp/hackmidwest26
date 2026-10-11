@@ -104,7 +104,7 @@ def rank_industry(slug: str, scorer: Scorer | None) -> dict[str, Any]:
         "universe_as_of": UNIVERSE_AS_OF,
         "stocks_per_industry": STOCKS_PER_INDUSTRY,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "scoring": {"status": "unavailable" if unavailable and not scored else "available",
+        "scoring": {"status": "unavailable" if unavailable else "available",
                     "scored": scored, "total": len(rows), "horizon": HORIZON, "risk_profile": RISK_PROFILE},
         "ranking_basis": BASIS,
         "stocks": rows,

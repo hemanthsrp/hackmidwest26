@@ -122,6 +122,27 @@ def test_results_are_cached_but_an_outage_is_not(monkeypatch) -> None:
     assert recommendations.recommended_stocks("energy")["scoring"]["status"] == "available"
 
 
+def test_partial_store_outage_is_not_labeled_available_or_cached(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def score_then_outage(symbol: str):
+        calls.append(symbol)
+        if len(calls) == 1:
+            return 72, "buy", "scored"
+        return None, None, "unavailable"
+
+    monkeypatch.setattr(recommendations.assessment, "get_scoring_maker", lambda: object())
+    monkeypatch.setattr(recommendations, "make_scorer", lambda maker: score_then_outage)
+
+    first = recommendations.recommended_stocks("energy")
+    calls_after_first = len(calls)
+    second = recommendations.recommended_stocks("energy")
+
+    assert first["scoring"]["status"] == "unavailable"
+    assert first is not second
+    assert len(calls) > calls_after_first
+
+
 def test_a_scoring_maker_is_built_without_the_model_even_when_inference_is_configured() -> None:
     from research_api import assessment
 

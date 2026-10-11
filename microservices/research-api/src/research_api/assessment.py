@@ -127,7 +127,7 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_onl
         agent_factory=agent_factory,
         agent_model=chat_model,
         use_agent_tools=environ.get("DECISION_AGENT_TOOLS", "false").strip().lower() == "true",
-        article_judge=JevDecisionAdapter(jev) if jev else None,
+        article_judge=JevDecisionAdapter(jev) if jev and not scoring_only else None,
         explanation_checker=JevExplanationAdapter(jev) if jev and not scoring_only else None,
         companies=COMPANY_NAMES,
         stale_after_seconds=int(environ.get("DECISION_STALE_AFTER_SECONDS", "86400")),
