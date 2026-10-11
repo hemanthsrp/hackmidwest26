@@ -87,6 +87,26 @@ def stock(symbol: str, uid=Depends(user_id)):
     if not re.fullmatch('[A-Z]{1,5}',symbol): raise HTTPException(400,'Invalid symbol')
     return assess(symbol)
 
+HISTORY_RANGES = ('1W','1M','3M','1Y')
+
+@router.get('/stocks/{symbol}/history')
+def stock_history(symbol: str, range: str = '1M', uid=Depends(user_id)):
+    symbol = symbol.upper()
+    if not re.fullmatch('[A-Z]{1,5}',symbol): raise HTTPException(400,'Invalid symbol')
+    if range not in HISTORY_RANGES: raise HTTPException(400,'Invalid range')
+    base = os.getenv('SCRAPER_API_URL')
+    if not base: raise HTTPException(503, 'Live research sources are not configured')
+    try:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(f'{base}/price-history', params={'symbol':symbol,'range':range})
+            response.raise_for_status()
+            body = response.json()
+    except (httpx.HTTPError, ValueError): raise HTTPException(503, 'Price history unavailable')
+    points = [p for p in body.get('points',[]) if isinstance(p.get('close'),(int,float)) and p.get('t')]
+    if len(points) < 2: raise HTTPException(503, 'Price history unavailable')
+    # Real closes only: nothing is interpolated, padded or substituted.
+    return envelope({'symbol':symbol,'range':range,'interval':body.get('interval'),'price_field':body.get('price_field'),'source':body.get('source'),'as_of':body.get('as_of'),'points':points},'live')
+
 @router.get('/portfolio')
 def portfolio(uid=Depends(user_id)):
     snapshots=storage.read(uid,'portfolio')

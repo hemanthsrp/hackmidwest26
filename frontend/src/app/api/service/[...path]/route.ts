@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { sameOrigin } from "@/lib/security";
 import { failure, service } from "@/lib/server";
 const allowed =
-  /^(portfolio(\/refresh)?|home-feed|trending|industries(\/[a-z]+)?|stocks\/[A-Z]{1,5}|broker-connections(\/robinhood(\/(start|callback))?|\/[a-f0-9-]+)?|chat-memories|notifications(\/[a-f0-9-]+\/read)?|notification-preferences)$/;
+  /^(portfolio(\/refresh)?|home-feed|trending|industries(\/[a-z]+)?|stocks\/[A-Z]{1,5}(\/history)?|broker-connections(\/robinhood(\/(start|callback))?|\/[a-f0-9-]+)?|chat-memories|notifications(\/[a-f0-9-]+\/read)?|notification-preferences)$/;
 async function proxy(
   r: Request,
   { params }: { params: Promise<{ path: string[] }> },
