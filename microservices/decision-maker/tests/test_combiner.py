@@ -138,3 +138,14 @@ def test_a_held_label_still_carries_the_score() -> None:
 
     assert decision.label == "hold"
     assert decision.score == 50
+
+
+def test_a_held_back_label_does_not_show_a_buy_looking_score() -> None:
+    from decision_maker.combiner import score_from_net
+
+    # Price and options lean strongly bullish, but no evidence leg agrees, so the label is held.
+    decision = combine(legs(insider=0.1, price_dir=1.0), NO_QUANT, has_evidence=True)
+
+    assert decision.label == "hold" and decision.held_because
+    assert decision.net_direction > decision.threshold
+    assert score_from_net(-decision.threshold) < decision.score < score_from_net(decision.threshold)

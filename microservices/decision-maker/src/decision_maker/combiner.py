@@ -129,11 +129,16 @@ def combine(legs: dict[str, Leg], quant: QuantReading, *, has_evidence: bool) ->
         if not agrees:
             label = "hold"
             held_because.append("no_evidence_leg_agrees")
+    score = score_from_net(net)
+    if label == "hold":
+        # A hold must read as a hold: a net direction past the threshold that was held back
+        # (or one that rounds onto the line) must not show a buy-looking number.
+        score = min(max(score, score_from_net(-threshold) + 1), score_from_net(threshold) - 1)
     return Decision(
         label=label,
         reason_codes=_reason_codes(label, usable, legs, quant, raised_by),
         net_direction=round(net, 4),
-        score=score_from_net(net),
+        score=score,
         threshold=threshold,
         threshold_raised_by=raised_by,
         held_because=held_because,
