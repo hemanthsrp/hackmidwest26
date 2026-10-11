@@ -94,7 +94,7 @@ def get_company_fundamentals(symbol: str, mode: str = "live") -> dict[str, Any]:
         return _error("invalid_symbol", "symbol must contain 1 to 5 uppercase letters", False)
     if mode != "live":
         return _error("invalid_mode", "company fundamentals are available only in live mode", False)
-    if os.getenv("YAHOO_FINANCE_FUNDAMENTALS_ENABLED", "true").lower() != "true":
+    if os.getenv("YAHOO_FINANCE_FUNDAMENTALS_ENABLED", "false").lower() != "true":
         return _error(
             "source_policy_not_approved",
             "company fundamentals are disabled pending source-policy approval",
@@ -138,6 +138,12 @@ def _live_signal(
 ) -> dict[str, Any]:
     if history.empty or price_column not in history:
         raise RuntimeError("no usable Yahoo Finance price history")
+    if not start_date:
+        latest_observation = history[price_column].dropna()
+        if latest_observation.empty:
+            raise RuntimeError("no usable Yahoo Finance price history")
+        window_start = latest_observation.index[-1] - pd.Timedelta(days=_DEFAULT_WINDOW_DAYS)
+        history = history.loc[history.index >= window_start]
     prices = history[price_column].dropna()
     if len(prices) < 2 or float(prices.iloc[0]) == 0:
         raise RuntimeError("insufficient price history")
