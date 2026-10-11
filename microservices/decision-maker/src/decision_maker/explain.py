@@ -62,6 +62,9 @@ MAX_CITED_PER_POINT = 5
 # The hosted model's output length varies a lot run to run (458 to 868 tokens for
 # the same request in live runs); lower caps ended some replies mid-way.
 MAX_OUTPUT_TOKENS = 1500
+# Claude on Bedrock exceeded 1500 on a real explanation (MaxTokensReachedException); it also
+# spends tokens reasoning before it answers, so it gets a larger cap than the Akamai model.
+BEDROCK_MAX_OUTPUT_TOKENS = 6000
 MODEL_TIMEOUT_SECONDS = 60.0
 
 RAISED_BY_TEXT = {
@@ -509,7 +512,7 @@ def bedrock_agent_factory(
             boto_session=session,
             # The workshop IAM role allows InvokeModel but not InvokeModelWithResponseStream.
             streaming=False,
-            max_tokens=MAX_OUTPUT_TOKENS,
+            max_tokens=BEDROCK_MAX_OUTPUT_TOKENS,
         )
         retries = ModelRetryStrategy(max_attempts=2, initial_delay=2, max_delay=4)
         return Agent(model=model, system_prompt=system_prompt, tools=tools, callback_handler=None, retry_strategy=retries)
