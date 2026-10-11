@@ -372,7 +372,9 @@ def _mark_same_story(judged: list[Evidence], tool) -> None:
         # Per pair, like the judgments: one bad pair must not drop the rest.
         try:
             a, b, same = _field(pair, "a"), _field(pair, "b"), _field(pair, "same")
-            if (a, b) not in asked or not _is_number(same) or same < SAME_STORY_THRESHOLD:
+            # A same-story score is a probability: finite and inside [0, 1], else ignored
+            # (an out-of-range value like 9.0 must not create a link that alters grading).
+            if (a, b) not in asked or not _is_number(same) or not 0.0 <= same <= 1.0 or same < SAME_STORY_THRESHOLD:
                 continue
             first, second = judged[a], judged[b]
             if first.id == second.id:

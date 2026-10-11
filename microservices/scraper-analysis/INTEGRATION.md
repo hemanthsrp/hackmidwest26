@@ -122,7 +122,7 @@ With `JEV_ENABLED=true` and `TYPESAFE_API_KEY` set (and the shared package insta
 | `sensational` | 0 to 1: the text is written as hype, alarm or clickbait |
 | `usable_content` | 0 to 1: real content, as opposed to a paywall notice, error page or cookie prompt |
 | `materiality` | 0 to 2: 0 routine or promotional, 1 notable, 2 major |
-| `same_story_as` | Present only when found: ids of other records **from this same run and a different outlet** that Jev judged to report the same event. A marker only; dedup and the corroboration score are unchanged. Stored as distinct string ids, never the record's own; readers ignore anything else in it (non-list, non-string, nested, unknown or self ids) rather than fail |
+| `same_story_as` | Present only when found: ids of other records **from this same run and a different outlet** that Jev judged to report the same event (a pair score must be a finite number in [0, 1] and at least `SAME_STORY_THRESHOLD`; anything else creates no link). A marker only; dedup and the corroboration score are unchanged. Stored as distinct string ids, never the record's own; readers ignore anything else in it (non-list, non-string, nested, unknown or self ids) rather than fail |
 | `filled_sentiment` | Present and `true` only when the opt-in below wrote `sentiment` |
 | `*_confidence` | 0 to 1: how peaked Jev's answer was; treat low-confidence answers as unknown |
 
