@@ -66,12 +66,9 @@ def build_surface(
     # Market feeds can contain both call and put IVs for the same strike and
     # expiry. scipy.griddata does not define how duplicate coordinates are
     # resolved, so take the deterministic median before interpolating.
-    points = (
-        df[["strike", "T", "iv"]]
-        .dropna()
-        .groupby(["strike", "T"], as_index=False, sort=True)["iv"]
-        .median()
-    )
+    points = df[["strike", "T", "iv"]].dropna()
+    points = points.loc[np.isfinite(points.to_numpy(dtype=float)).all(axis=1)]
+    points = points.groupby(["strike", "T"], as_index=False, sort=True)["iv"].median()
     if points.empty:
         raise ValueError("at least one finite strike, maturity, and IV point is required")
 

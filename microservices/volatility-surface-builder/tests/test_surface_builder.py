@@ -87,6 +87,16 @@ class TestBuildSurface:
         assert surface.shape == (3, 5)
         assert np.isfinite(surface).all()
 
+    def test_nonfinite_quotes_are_excluded_before_interpolation(self):
+        points = pd.DataFrame(
+            [(90.0, 0.20, np.inf), (100.0, 0.30, 0.25), (110.0, 0.40, 0.20)],
+            columns=["strike", "T", "iv"],
+        )
+
+        _, _, _, _, surface = build_surface(points, n_k=5, n_t=3)
+
+        assert np.isfinite(surface).all()
+
 
 class TestExtractSlices:
 
