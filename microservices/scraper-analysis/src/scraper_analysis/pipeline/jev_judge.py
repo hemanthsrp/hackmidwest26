@@ -148,7 +148,14 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
             evidence.details["jev"] = _unavailable(STATUS_FAILED, "jev call failed")
         return items
 
-    for evidence, result in _match_results(targets, judgments):
+    pairs, ambiguous = _match_results(targets, judgments)
+    for evidence in ambiguous:
+        # More than one result for one record: we cannot know which is right, so attach none.
+        evidence.details["jev"] = {
+            **_unavailable(STATUS_MISSING, "more than one judgment returned for this record"),
+            "reason": "duplicate_results",
+        }
+    for evidence, result in pairs:
         # Each record on its own: one bad result can never stop the others being attached.
         try:
             evidence.details["jev"] = _read_result(result)
@@ -189,18 +196,21 @@ def _is_result(result) -> bool:
     return isinstance(result, Mapping) or hasattr(result, "engine")
 
 
-def _match_results(targets: list[Evidence], results: list) -> list[tuple[Evidence, object]]:
+def _match_results(targets: list[Evidence], results: list) -> tuple[list[tuple[Evidence, object]], list[Evidence]]:
     """Pair each result with the record it is about, by ``evidence_id`` only.
 
     jev-tool always echoes the payload ``id`` back as ``evidence_id`` (and we always send
     one), so there is no positional fallback: a list that is short, reordered, or mixes
     identified and unidentified results would otherwise hand a judgment to the wrong
-    record. A result with no id, an id that is not a non-empty string, an id we did not
-    send, or a second result for an already-matched record is dropped (and counted);
-    the record it might have belonged to is then marked ``missing``.
+    record. A result with no id, an id that is not a non-empty string, or an id we did
+    not send is dropped (and counted); the record it might have belonged to is then
+    marked ``missing``. When MORE THAN ONE result arrives for the same record (identical
+    or conflicting), none of them is attached: the record is returned in the second list
+    (ambiguous) and marked ``missing`` with ``reason: "duplicate_results"``.
     """
     by_id = {e.id: e for e in targets}
     matched: dict[str, tuple[Evidence, object]] = {}
+    duplicated: set[str] = set()
     dropped = 0
     for index, result in enumerate(results):
         try:
@@ -211,16 +221,20 @@ def _match_results(targets: list[Evidence], results: list) -> list[tuple[Evidenc
         if not isinstance(key, str) or key not in by_id:
             dropped += 1
             continue
-        if key in matched:
-            logger.warning("duplicate jev result for %s; keeping the first", key)
-            dropped += 1
+        if key in duplicated or key in matched:
+            matched.pop(key, None)
+            duplicated.add(key)
             continue
         matched[key] = (by_id[key], result)
     if dropped:
         logger.warning(
-            "dropped %d jev result(s) without a usable evidence_id (none, invalid, not sent, or duplicate)", dropped
+            "dropped %d jev result(s) without a usable evidence_id (none, invalid, or not sent)", dropped
         )
-    return list(matched.values())
+    if duplicated:
+        logger.warning(
+            "more than one jev result for %d record(s); attached none of them (marked missing)", len(duplicated)
+        )
+    return list(matched.values()), [by_id[key] for key in by_id if key in duplicated]
 
 
 def _read_result(result) -> dict:

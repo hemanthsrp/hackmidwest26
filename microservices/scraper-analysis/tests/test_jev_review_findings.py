@@ -124,11 +124,13 @@ def test_a_result_for_an_unknown_id_is_not_attached_to_someone_else():
     assert status(items[1]) == "ok"
 
 
-def test_a_duplicate_result_does_not_overwrite_the_first():
+def test_duplicate_results_for_one_record_attach_neither():
+    # Two results for one evidence_id are ambiguous: neither is attached (PR #19 re-review).
     items = [article("a"), article("b")]
     jev_judge.judge_evidence(items, tool=Tool([judgment(evidence_id="a", direction="positive"),
                                                judgment(evidence_id="a", direction="negative")]))
-    assert items[0].details["jev"]["direction"] == "positive"
+    assert status(items[0]) == "missing" and "direction" not in items[0].details["jev"]
+    assert items[0].details["jev"]["reason"] == "duplicate_results"
     assert status(items[1]) == "missing"
 
 
