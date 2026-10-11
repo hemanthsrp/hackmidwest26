@@ -188,34 +188,36 @@ def _is_result(result) -> bool:
 
 
 def _match_results(targets: list[Evidence], results: list) -> list[tuple[Evidence, object]]:
-    """Pair each result with the record it is about.
+    """Pair each result with the record it is about, by ``evidence_id`` only.
 
-    jev-tool echoes the payload ``id`` as ``evidence_id``, so match on that; a result
-    without one falls back to its position (the tool returns results in order). Results
-    naming an id we did not send, and second results for an already-matched record,
-    are dropped -- never attached to some other record.
+    jev-tool always echoes the payload ``id`` back as ``evidence_id`` (and we always send
+    one), so there is no positional fallback: a list that is short, reordered, or mixes
+    identified and unidentified results would otherwise hand a judgment to the wrong
+    record. A result with no id, an id that is not a non-empty string, an id we did not
+    send, or a second result for an already-matched record is dropped (and counted);
+    the record it might have belonged to is then marked ``missing``.
     """
     by_id = {e.id: e for e in targets}
     matched: dict[str, tuple[Evidence, object]] = {}
-    positional = []
+    dropped = 0
     for index, result in enumerate(results):
         try:
             key = _field(result, "evidence_id") if _is_result(result) else None
         except Exception:
             logger.warning("could not read evidence_id from jev result %d", index, exc_info=True)
             key = None
-        if key is None:
-            positional.append((index, result))
-        elif isinstance(key, str) and key in by_id:
-            if key in matched:
-                logger.warning("duplicate jev result for %s; keeping the first", key)
-            else:
-                matched[key] = (by_id[key], result)
-        else:
-            logger.warning("jev result for an id that was not sent (%r); dropping it", key)
-    for index, result in positional:
-        if index < len(targets) and targets[index].id not in matched:
-            matched[targets[index].id] = (targets[index], result)
+        if not isinstance(key, str) or key not in by_id:
+            dropped += 1
+            continue
+        if key in matched:
+            logger.warning("duplicate jev result for %s; keeping the first", key)
+            dropped += 1
+            continue
+        matched[key] = (by_id[key], result)
+    if dropped:
+        logger.warning(
+            "dropped %d jev result(s) without a usable evidence_id (none, invalid, not sent, or duplicate)", dropped
+        )
     return list(matched.values())
 
 
@@ -276,7 +278,9 @@ def _string(value) -> str | None:
 def valid_judgment(judgment) -> bool:
     """True for a stored judgment grading can use as one: engine "jev" and every
     number it multiplies or compares finite and in range. Re-checked at read time
-    because records written by older code were never validated."""
+    because records written by older code were never validated. ``same_story_as`` is
+    not part of this check: a malformed link list is ignored (see same_story_ids), it
+    never discards an otherwise valid judgment."""
     if not isinstance(judgment, Mapping) or judgment.get("engine") != "jev":
         return False
     if any(_number(judgment.get(name), name) is None for name in REQUIRED_NUMERIC_FIELDS):
@@ -284,10 +288,27 @@ def valid_judgment(judgment) -> bool:
     confidence = judgment.get("direction_confidence")
     if confidence is not None and _number(confidence, "direction_confidence") is None:
         return False
-    if not all(_string(judgment.get(name)) is not None or judgment.get(name) is None for name in _STRING_FIELDS):
-        return False
-    same = judgment.get("same_story_as", [])
-    return isinstance(same, list)
+    return all(_string(judgment.get(name)) is not None or judgment.get(name) is None for name in _STRING_FIELDS)
+
+
+def same_story_ids(judgment, self_id: str | None = None, known_ids=None) -> list[str]:
+    """The usable ids in a judgment's ``same_story_as``: non-empty strings only, without
+    the record itself, without duplicates, and (when ``known_ids`` is given) only ids in
+    that set. Anything else -- not a list, None, numbers, nested lists, dicts -- is
+    ignored, so a malformed stored link list can never raise in a reader."""
+    if not isinstance(judgment, Mapping):
+        return []
+    raw = judgment.get("same_story_as")
+    if not isinstance(raw, (list, tuple)):
+        return []
+    ids: list[str] = []
+    for value in raw:
+        if not isinstance(value, str) or not value or value == self_id or value in ids:
+            continue
+        if known_ids is not None and value not in known_ids:
+            continue
+        ids.append(value)
+    return ids
 
 
 def _fill_sentiment(evidence: Evidence) -> None:
@@ -338,7 +359,18 @@ def _mark_same_story(judged: list[Evidence], tool) -> None:
             if (a, b) not in asked or not _is_number(same) or same < SAME_STORY_THRESHOLD:
                 continue
             first, second = judged[a], judged[b]
-            first.details["jev"].setdefault("same_story_as", []).append(second.id)
-            second.details["jev"].setdefault("same_story_as", []).append(first.id)
+            if first.id == second.id:
+                continue
+            _link(first, second.id)
+            _link(second, first.id)
         except Exception:
             logger.warning("skipping an unreadable same-story pair", exc_info=True)
+
+
+
+def _link(evidence: Evidence, other_id: str) -> None:
+    """Add one same-story link, written already sanitised: a list of distinct string ids."""
+    links = same_story_ids(evidence.details["jev"], self_id=evidence.id)
+    if other_id not in links:
+        links.append(other_id)
+    evidence.details["jev"]["same_story_as"] = links

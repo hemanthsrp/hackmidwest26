@@ -1,3 +1,4 @@
+import math
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query
@@ -97,6 +98,19 @@ def ingest_run(
     }
 
 
+def _json_safe(value):
+    """Replace non-finite floats (NaN, +-inf) with None, recursively. Stored rows written
+    by older code may hold them, and strict JSON cannot encode them: without this one
+    legacy value turns the whole response into a 500."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 @app.get("/evidence")
 def get_evidence(
     symbol: str = Query(...),
@@ -120,7 +134,7 @@ def get_evidence(
         shown = [e for e in items if not grade.is_gated(e)] if relevant_only else items
         if ranked:
             shown = grade.rank(shown)
-        return {
+        return _json_safe({
             "symbol": validated,
             "status": "ok" if shown else "insufficient_data",
             "evidence": [
@@ -128,12 +142,12 @@ def get_evidence(
             ],
             "hidden_as_off_topic": len(items) - len(shown),
             "news_tone": grade.news_tone(items),
-        }
-    return {
+        })
+    return _json_safe({
         "symbol": validated,
         "status": "ok" if items else "insufficient_data",
         "evidence": [e.model_dump(mode="json") for e in items],
-    }
+    })
 
 
 @app.get("/signals")

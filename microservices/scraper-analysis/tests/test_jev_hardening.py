@@ -43,12 +43,23 @@ def judgment(**over):
     return SimpleNamespace(**base)
 
 
+def echo_ids(items, results):
+    """Like jev_tool's judge_evidence_items, echo each payload id back as evidence_id
+    (the real tool always does) unless the test set one explicitly."""
+    for item, result in zip(items, results):
+        if isinstance(result, SimpleNamespace) and getattr(result, "evidence_id", None) is None:
+            result.evidence_id = item["id"]
+        elif isinstance(result, dict) and result.get("evidence_id") is None:
+            result["evidence_id"] = item["id"]
+    return results
+
+
 class Tool:
     def __init__(self, judgments, pairs=None):
         self.judgments, self.pairs = judgments, pairs or []
 
     def judge_evidence_items(self, items, companies):
-        return self.judgments
+        return echo_ids(items, self.judgments)
 
     def same_story(self, items, pairs):
         return SimpleNamespace(engine="jev", pairs=self.pairs)
@@ -105,7 +116,7 @@ def test_grade_evidence_isolates_one_bad_record():
 def test_grade_evidence_still_isolates_a_record_that_raises(monkeypatch):
     good, bad = article("good"), article("bad")
     real = grade.grade_record
-    monkeypatch.setattr(grade, "grade_record", lambda e, gate: 1 / 0 if e.id == "bad" else real(e, gate))
+    monkeypatch.setattr(grade, "grade_record", lambda e, gate, *rest: 1 / 0 if e.id == "bad" else real(e, gate, *rest))
     grade.grade_evidence([bad, good])
     assert "grade" in good.details and "grade" not in bad.details
 

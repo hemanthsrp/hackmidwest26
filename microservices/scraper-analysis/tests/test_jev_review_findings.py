@@ -59,12 +59,23 @@ def judgment(**over):
     return SimpleNamespace(**fields(**over))
 
 
+def echo_ids(items, results):
+    """Like jev_tool's judge_evidence_items, echo each payload id back as evidence_id
+    (the real tool always does) unless the test set one explicitly."""
+    for item, result in zip(items, results):
+        if isinstance(result, SimpleNamespace) and getattr(result, "evidence_id", None) is None:
+            result.evidence_id = item["id"]
+        elif isinstance(result, dict) and result.get("evidence_id") is None:
+            result["evidence_id"] = item["id"]
+    return results
+
+
 class Tool:
     def __init__(self, judgments, pairs=None):
         self.judgments, self.pairs = judgments, pairs or []
 
     def judge_evidence_items(self, items, companies):
-        return self.judgments
+        return echo_ids(items, self.judgments)
 
     def same_story(self, items, pairs):
         return SimpleNamespace(engine="jev", pairs=self.pairs)
@@ -81,7 +92,9 @@ def status(e: Evidence):
 def test_a_non_judgment_result_does_not_stop_later_results(bad):
     items = [article("a"), article("b"), article("c")]
     jev_judge.judge_evidence(items, tool=Tool([bad, judgment(), judgment()]))
-    assert status(items[0]) == "malformed" and items[0].details["jev"]["engine"] == "unavailable"
+    # A non-result carries no evidence_id, so it can't be tied to any record (no positional
+    # guessing since the round-3 review): its record is "missing", the others still attach.
+    assert status(items[0]) == "missing" and items[0].details["jev"]["engine"] == "unavailable"
     assert [status(e) for e in items[1:]] == ["ok", "ok"]
     assert all(e.details["jev"]["engine"] == "jev" for e in items[1:])
 
@@ -142,7 +155,7 @@ def test_a_result_object_whose_attributes_raise_is_isolated():
 
     items = [article("a"), article("b")]
     jev_judge.judge_evidence(items, tool=Tool([Exploding(), judgment()]))
-    assert (status(items[0]), status(items[1])) == ("malformed", "ok")
+    assert (status(items[0]), status(items[1])) == ("missing", "ok")  # its id is unreadable
 
 
 @pytest.mark.parametrize("results", [None, 7, iter(())], ids=["none", "int", "empty-iter"])

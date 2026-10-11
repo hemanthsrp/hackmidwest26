@@ -58,7 +58,8 @@ class FakeJev:
     def judge_evidence_items(self, items, companies):
         self.calls.append((items, companies))
         if self.engine != "jev":
-            return [SimpleNamespace(engine="unavailable", error="Jev timed out api_key=SECRET") for _ in items]
+            return [SimpleNamespace(engine="unavailable", error="Jev timed out api_key=SECRET", evidence_id=item["id"])
+                    for item in items]
         return [
             SimpleNamespace(
                 engine="jev",
@@ -78,8 +79,9 @@ class FakeJev:
                 usable_content=0.97,
                 materiality=1.9,
                 materiality_confidence=0.8,
+                evidence_id=item["id"],  # jev-tool echoes the payload id
             )
-            for _ in items
+            for item in items
         ]
 
 
