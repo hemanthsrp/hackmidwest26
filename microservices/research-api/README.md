@@ -36,6 +36,15 @@ The safety boundary remains unchanged:
 - `sample` and `failure` remain deterministic demo/test modes.
 - Live inference is not wired to sources, embeddings storage, database tables, or the assessment route until Cai/Gate 0 defines the permitted source and evidence contract.
 
+## Jev adapter seams (not wired to the route yet)
+
+`research_api.decision` wraps the shared `microservices/jev-tool` package without importing it; inject a `JevTool` (see `microservices/jev-tool/AGENT_GUIDE.md`).
+
+- `JevDecisionAdapter.judge_article(...)` returns `direction` and `materiality` as before, plus the rest of Jev's judgment (`relevant`, `content_type`, `event_type`, `upcoming_event`, confidences, `model`, `request_id`) when the tool supplies it.
+- `JevDecisionAdapter.judge_evidence(evidence, company=...)` uses the judgment `scraper-analysis` stores on a record (`details.jev`) when there is one, and only calls Jev otherwise. `from_stored(...)` reads one without any call.
+- `JevExplanationAdapter.review(explanation=..., evidence=...)` reports sentences the evidence does not back and whether the text reads as advice or a promised outcome. Advisory only.
+- In every case a disabled or failed Jev comes back as `status: "unavailable"`; nothing is substituted.
+
 ## Local checks
 
 ```bash

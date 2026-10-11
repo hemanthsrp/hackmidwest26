@@ -8,6 +8,8 @@ from .core import (
     EvaluateResult,
     ExplanationCheck,
     JevTool,
+    PairCheck,
+    SameStoryResult,
     ScoreResult,
     default_tool,
 )
@@ -23,6 +25,8 @@ __all__ = [
     "EvaluateResult",
     "ExplanationCheck",
     "JevTool",
+    "PairCheck",
+    "SameStoryResult",
     "ScoreResult",
     "default_tool",
     "load_env",

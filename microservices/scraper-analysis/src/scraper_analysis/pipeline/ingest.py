@@ -20,6 +20,8 @@ from ..sources.reddit_unofficial import RedditUnofficialAdapter
 from ..sources.sec_edgar import SecEdgarAdapter
 from ..storage.store import get_store
 from .dedup import assign_stable_ids, dedup_evidence
+from .grade import grade_evidence
+from .jev_judge import judge_evidence
 from .normalize import normalize
 from .router import filter_records
 from .scoring import apply_credibility
@@ -117,6 +119,8 @@ def ingest_evidence(
     apply_credibility(deduped)
     store = get_store()
     new_items = store.filter_new_evidence(deduped)
+    # Optional Jev judgment and grade (details["jev"], details["grade"]); a no-op unless JEV_ENABLED.
+    new_items = grade_evidence(judge_evidence(new_items))
     if tag:
         new_items = [tag_evidence(e) for e in new_items]
     # Last stop check before the write: once should_stop() is true no NEW

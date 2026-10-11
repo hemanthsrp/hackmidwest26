@@ -10,7 +10,9 @@ from typesafe_sdk import Choice, Noul, Score
 
 import re
 
-ARTICLE_QUESTION_SET_VERSION = "article-v3"
+ARTICLE_QUESTION_SET_VERSION = "article-v4"
+SAME_STORY_QUESTION_SET_VERSION = "same-story-v1"
+MAX_PAIRS = 40
 EXPLANATION_QUESTION_SET_VERSION = "explanation-v1"
 MAX_CLAIMS = 12
 
@@ -102,6 +104,26 @@ def article_questions(direction_order: Sequence[str] | None = None) -> dict:
                 "false": "It only describes things that have already happened, or gives no planned event.",
             },
         ),
+        "sensational": Noul(
+            instructions="Is the text in `article` written in a sensational or exaggerated style?",
+            criteria={
+                "true": (
+                    "It uses hype, alarm, clickbait phrasing, shouting capitals or promises of "
+                    "dramatic outcomes."
+                ),
+                "false": "It is written in a plain, factual or measured tone.",
+            },
+        ),
+        "usable_content": Noul(
+            instructions="Does the text in `article` contain real content about some subject?",
+            criteria={
+                "true": "It is an article, post, report or announcement that says something.",
+                "false": (
+                    "It is a paywall or subscription notice, an error page, a cookie or login "
+                    "prompt, an advertising placeholder, or otherwise has no real content."
+                ),
+            },
+        ),
         "materiality": Score(
             instructions="How significant is the event reported in `article` for the company's business?",
             criteria=MATERIALITY_LEVELS,
@@ -160,3 +182,26 @@ def explanation_questions(n_claims: int) -> dict:
         },
     )
     return questions
+
+
+def same_story_state(items: Sequence[Mapping]) -> dict:
+    return {"items": [{"title": item.get("title"), "summary": item.get("summary")} for item in items]}
+
+
+def same_story_questions(pairs: Sequence[tuple[int, int]]) -> dict:
+    return {
+        f"pair_{n}": Noul(
+            instructions=f"Do `items[{a}]` and `items[{b}]` report the same specific news event?",
+            criteria={
+                "true": (
+                    "Both are about the same event or announcement, even if worded differently "
+                    "or published by different outlets."
+                ),
+                "false": (
+                    "They are about different events, even if they concern the same company or "
+                    "the same general topic."
+                ),
+            },
+        )
+        for n, (a, b) in enumerate(pairs)
+    }

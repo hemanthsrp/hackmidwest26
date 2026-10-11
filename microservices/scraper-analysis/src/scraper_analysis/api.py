@@ -87,13 +87,20 @@ def ingest_run(
         "Pass false to refuse fixtures: failed sources are omitted and reported as 'unavailable'.",
     ),
     tag: bool = Query(True, description="Run the Strands/Bedrock tagging agent on each record"),
+    judge: bool = Query(
+        True,
+        description="Add a Jev judgment (details.jev) to new news/social records. No-op unless JEV_ENABLED.",
+    ),
 ):
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
+    from .pipeline import jev_judge
+
+    with jev_judge.for_request(judge):
+        result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
     # Adapters already sanitize via sources.base.resolve(); repeat it at the
     # API boundary so no future source path can return raw upstream text.
     sources = [
@@ -132,13 +139,37 @@ def ingest_run(
 
 
 @app.get("/evidence")
-def get_evidence(symbol: str = Query(...)) -> dict:
+def get_evidence(
+    symbol: str = Query(...),
+    ranked: bool = Query(
+        False,
+        description="Sort by graded strength (freshness applied) and add strength_now plus a news_tone summary. "
+        "Only meaningful for records graded with JEV_ENABLED.",
+    ),
+    relevant_only: bool = Query(False, description="Leave out records graded off-topic or unusable for the symbol."),
+) -> dict:
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     items = get_store().query_evidence(validated)
+    if ranked or relevant_only:
+        # Opt-in views over the stored grade; the default response below is unchanged.
+        from .pipeline import grade
+
+        shown = [e for e in items if not grade.is_gated(e)] if relevant_only else items
+        if ranked:
+            shown = grade.rank(shown)
+        return {
+            "symbol": validated,
+            "status": "ok" if shown else "insufficient_data",
+            "evidence": [
+                {**e.model_dump(mode="json"), "strength_now": grade.current_strength(e)} for e in shown
+            ],
+            "hidden_as_off_topic": len(items) - len(shown),
+            "news_tone": grade.news_tone(items),
+        }
     return {
         "symbol": validated,
         "status": "ok" if items else "insufficient_data",
