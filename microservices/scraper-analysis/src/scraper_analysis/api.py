@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from .agents import synthesis_agent
 from .config import get_settings
+from .pipeline import divergence
 from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
 from .scheduler import Scheduler
 from .sources.base import sanitize_error
@@ -152,3 +153,22 @@ def get_signals(symbol: str = Query(...)) -> dict:
         "status": "ok" if items else "insufficient_data",
         "signals": [s.model_dump(mode="json") for s in items],
     }
+
+
+@app.get("/divergence")
+def get_divergence(symbol: str = Query(...)) -> dict:
+    """Where independent source types disagree (price vs insiders vs Senate
+    vs news). Deterministic and rule-based; thresholds are in the response.
+    Only live records inside the recency window around the price signal can
+    contribute to a flag; fixtures never do (see pipeline/divergence.py)."""
+    try:
+        validated = validate_symbol(symbol)
+    except InvalidSymbolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store = get_store()
+    evidence, signals = synthesis_agent.select_briefing_records(
+        store.query_evidence(validated), store.query_signals(validated)
+    )
+    result = divergence.analyze(validated, evidence, signals)
+    result["data_modes"] = sorted({e.data_mode for e in evidence} | {s.data_mode for s in signals})
+    return result
