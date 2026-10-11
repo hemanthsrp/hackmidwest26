@@ -1,0 +1,180 @@
+{
+  "note": "Fixture inputs for sample mode. Every record is invented for testing and demos, is served with data_mode 'sample', and describes no real company or event. Times are offsets from the moment of the request so the records stay inside the recency window. '{symbol}' is replaced by the requested ticker.",
+  "evidence": [
+    {
+      "id": "sample-news-001",
+      "title": "Sample: {symbol} raises full-year revenue outlook after strong quarter",
+      "summary": "Fixture article. The company lifted its full-year revenue outlook and reported quarterly sales above its prior guidance.",
+      "source_name": "Fixture Newswire",
+      "source_type": "general_news",
+      "source_url": "https://example.invalid/fixtures/news-001",
+      "published_hours_ago": 20,
+      "credibility": {"overall_score": 0.8, "source_reliability_weight": 0.8, "verified_filing": false},
+      "details": {
+        "jev": {
+          "engine": "fixture", "relevant": 0.97, "direction": "positive", "direction_confidence": 0.9,
+          "content_type": "news_report", "event_type": "earnings_or_guidance", "upcoming_event": 0.05,
+          "sensational": 0.05, "usable_content": 0.97, "materiality": 1.8, "same_story_as": ["sample-news-002"]
+        }
+      }
+    },
+    {
+      "id": "sample-news-002",
+      "title": "Sample: {symbol} lifts guidance as demand holds up",
+      "summary": "Fixture article from a second outlet reporting the same raised outlook.",
+      "source_name": "Fixture Business Daily",
+      "source_type": "general_news",
+      "source_url": "https://example.invalid/fixtures/news-002",
+      "published_hours_ago": 19,
+      "credibility": {"overall_score": 0.7, "source_reliability_weight": 0.7, "verified_filing": false},
+      "details": {
+        "jev": {
+          "engine": "fixture", "relevant": 0.95, "direction": "positive", "direction_confidence": 0.85,
+          "content_type": "news_report", "event_type": "earnings_or_guidance", "upcoming_event": 0.05,
+          "sensational": 0.1, "usable_content": 0.96, "materiality": 1.6, "same_story_as": ["sample-news-001"]
+        }
+      }
+    },
+    {
+      "id": "sample-news-003",
+      "title": "Sample: {symbol} wins multi-year supply agreement with a large customer",
+      "summary": "Fixture article. The company announced a multi-year agreement to supply a large customer.",
+      "source_name": "Fixture Newswire",
+      "source_type": "general_news",
+      "source_url": "https://example.invalid/fixtures/news-003",
+      "published_hours_ago": 44,
+      "credibility": {"overall_score": 0.8, "source_reliability_weight": 0.8, "verified_filing": false},
+      "details": {
+        "jev": {
+          "engine": "fixture", "relevant": 0.93, "direction": "positive", "direction_confidence": 0.8,
+          "content_type": "news_report", "event_type": "deal_or_partnership", "upcoming_event": 0.05,
+          "sensational": 0.08, "usable_content": 0.97, "materiality": 1.3
+        }
+      }
+    },
+    {
+      "id": "sample-news-004",
+      "title": "Sample: Regulator opens inquiry into {symbol} sales practices",
+      "summary": "Fixture article. A regulator said it has opened an inquiry into the company's sales practices. No findings have been announced.",
+      "source_name": "Fixture Business Daily",
+      "source_type": "general_news",
+      "source_url": "https://example.invalid/fixtures/news-004",
+      "published_hours_ago": 30,
+      "credibility": {"overall_score": 0.7, "source_reliability_weight": 0.7, "verified_filing": false},
+      "details": {
+        "jev": {
+          "engine": "fixture", "relevant": 0.9, "direction": "negative", "direction_confidence": 0.8,
+          "content_type": "news_report", "event_type": "legal_or_regulatory", "upcoming_event": 0.1,
+          "sensational": 0.15, "usable_content": 0.96, "materiality": 1.2
+        }
+      }
+    },
+    {
+      "id": "sample-news-005",
+      "title": "Sample: {symbol} to report quarterly results next week",
+      "summary": "Fixture article. The company confirmed the date of its next quarterly earnings report, due next week.",
+      "source_name": "Fixture Newswire",
+      "source_type": "general_news",
+      "source_url": "https://example.invalid/fixtures/news-005",
+      "published_hours_ago": 10,
+      "credibility": {"overall_score": 0.8, "source_reliability_weight": 0.8, "verified_filing": false},
+      "details": {
+        "jev": {
+          "engine": "fixture", "relevant": 0.94, "direction": "neutral", "direction_confidence": 0.85,
+          "content_type": "news_report", "event_type": "earnings_or_guidance", "upcoming_event": 0.93,
+          "sensational": 0.03, "usable_content": 0.97, "materiality": 0.6
+        }
+      }
+    },
+    {
+      "id": "sample-news-006",
+      "title": "Sample: Ten stocks everyone is talking about this week",
+      "summary": "Fixture listicle that mentions the ticker once among many others.",
+      "source_name": "Fixture Aggregator",
+      "source_type": "general_news",
+      "source_url": "https://example.invalid/fixtures/news-006",
+      "published_hours_ago": 8,
+      "credibility": {"overall_score": 0.4, "source_reliability_weight": 0.4, "verified_filing": false},
+      "details": {
+        "jev": {
+          "engine": "fixture", "relevant": 0.12, "direction": "positive", "direction_confidence": 0.4,
+          "content_type": "opinion_or_analysis", "event_type": "stock_or_valuation_view", "upcoming_event": 0.02,
+          "sensational": 0.85, "usable_content": 0.9, "materiality": 0.2
+        }
+      }
+    },
+    {
+      "id": "sample-form4-001",
+      "title": "Sample: Officer sold 9,000 shares (open market, ~$1,260,000) of {symbol} -- Form 4",
+      "summary": null,
+      "source_name": "Fixture Filings",
+      "source_type": "sec_filing",
+      "source_url": "https://example.invalid/fixtures/form4-001",
+      "published_hours_ago": 70,
+      "observed_hours_ago": 118,
+      "credibility": {"overall_score": 1.0, "source_reliability_weight": 1.0, "verified_filing": true},
+      "details": {"insider": "Sample Officer", "is_10b5_1": false, "buy_shares": 0.0, "buy_value_usd": 0.0, "sell_shares": 9000.0, "sell_value_usd": 1260000.0}
+    },
+    {
+      "id": "sample-form4-002",
+      "title": "Sample: Director sold 2,000 shares (open market, ~$280,000) of {symbol} -- Form 4 [pre-scheduled 10b5-1 plan]",
+      "summary": null,
+      "source_name": "Fixture Filings",
+      "source_type": "sec_filing",
+      "source_url": "https://example.invalid/fixtures/form4-002",
+      "published_hours_ago": 90,
+      "observed_hours_ago": 140,
+      "credibility": {"overall_score": 1.0, "source_reliability_weight": 1.0, "verified_filing": true},
+      "details": {"insider": "Sample Director", "is_10b5_1": true, "buy_shares": 0.0, "buy_value_usd": 0.0, "sell_shares": 2000.0, "sell_value_usd": 280000.0}
+    },
+    {
+      "id": "sample-senate-001",
+      "title": "Sample: Senator disclosed a purchase of {symbol} ($15,001 - $50,000)",
+      "summary": null,
+      "source_name": "Fixture Disclosures",
+      "source_type": "congressional_disclosure",
+      "source_url": "https://example.invalid/fixtures/senate-001",
+      "published_hours_ago": 96,
+      "observed_hours_ago": 600,
+      "credibility": {"overall_score": 1.0, "source_reliability_weight": 1.0, "verified_filing": true},
+      "details": {"transaction_type": "Purchase", "amount_range": "$15,001 - $50,000"}
+    }
+  ],
+  "signals": [
+    {
+      "id": "sample-signal-001",
+      "name": "30-day price change",
+      "value": 6.2,
+      "unit": "percent",
+      "window": "30d",
+      "as_of_hours_ago": 6,
+      "source": "Fixture Market Data"
+    }
+  ],
+  "vol_surface": {
+    "spot": 140.0,
+    "as_of_hours_ago": 6,
+    "source": "Fixture Options Data",
+    "n_points": 412,
+    "n_expiries": 8,
+    "atm_iv_mean": 0.31,
+    "skew_25d_proxy": 0.045,
+    "iv_range": [0.22, 0.61],
+    "T_range": [0.02, 1.0],
+    "strike_range": [105.0, 175.0],
+    "atm_iv_by_expiry": [
+      {"T": 0.02, "iv": 0.38},
+      {"T": 0.08, "iv": 0.34},
+      {"T": 0.25, "iv": 0.31},
+      {"T": 0.5, "iv": 0.3},
+      {"T": 1.0, "iv": 0.29}
+    ],
+    "svi_fits": [
+      {"T": 0.02, "rmse": 0.011, "converged": true},
+      {"T": 0.08, "rmse": 0.008, "converged": true},
+      {"T": 0.25, "rmse": 0.006, "converged": true},
+      {"T": 0.5, "rmse": 0.006, "converged": true},
+      {"T": 1.0, "rmse": 0.007, "converged": true}
+    ]
+  }
+}
