@@ -1,5 +1,14 @@
 # Four-agent task board
 
+## 2026-10-11 frontend implementation update
+
+Hemanth authorized the expanded Next.js/account/research application in the active
+workspace. The desktop demo and account/research service surfaces are implemented;
+see `FRONTEND_IMPLEMENTATION.md` and `../frontend/README.md` for exact status.
+C2 is **implemented locally, awaiting integration review**. Public-beta readiness
+and Robinhood live connection are not complete. Earlier unclaimed/planning labels
+below are historical and do not describe these new files.
+
 **Status:** Mixed. Several discovery and implementation branches have landed, while Gate 0 and the full product contract remain open. Confirm human ownership and the MVP with the team. Each remaining implementation task requires a branch/worktree, acceptance checks and an integration review under `AGENTS.md`.
 
 ## Gates and dependency order

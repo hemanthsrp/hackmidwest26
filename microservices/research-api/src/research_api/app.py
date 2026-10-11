@@ -40,6 +40,24 @@ class AssessmentPreferences(BaseModel):
     horizon: Literal["7d", "30d", "90d"] = "30d"
     risk_profile: Literal["conservative", "balanced", "growth"] = "balanced"
 
+from .v1 import router as v1_router
+app.include_router(v1_router)
+
+from fastapi import HTTPException, Request
+from sqlalchemy.exc import SQLAlchemyError
+
+@app.exception_handler(HTTPException)
+async def http_error(request: Request, exc: HTTPException):
+    return JSONResponse(status_code=exc.status_code, content={"error":{"code":"request_failed","message":str(exc.detail),"retryable":exc.status_code >= 500}})
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error(request: Request, exc: SQLAlchemyError):
+    return JSONResponse(status_code=503, content={"error":{"code":"storage_unavailable","message":"Account storage is unavailable.","retryable":True}})
+
+@app.exception_handler(RuntimeError)
+async def configuration_error(request: Request, exc: RuntimeError):
+    return JSONResponse(status_code=503, content={"error":{"code":"service_unavailable","message":"This service is not configured yet.","retryable":True}})
+
 
 class ResearchAssessmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
