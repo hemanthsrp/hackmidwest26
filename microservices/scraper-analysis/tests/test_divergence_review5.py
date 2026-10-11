@@ -115,3 +115,31 @@ def test_published_within_skew_still_counts(frozen_clock):
     r = dv.analyze("AAPL", [filing], [price(CLOCK - timedelta(hours=2))])
     assert r["excluded"]["future_dated"] == 0
     assert r["legs"]["insider"]["direction"] == "selling"
+
+
+# --- 3. no hindsight: a filing not yet public at the historical as_of ------------
+
+def test_historical_as_of_ignores_a_filing_published_after_it(store):
+    """hbot on a57796b: Form 4 trade 2010-01-28, filed 2010-03-17, as_of 2010-01-31
+    returned insiders_selling_into_rally with zero exclusions."""
+    trade = datetime(2010, 1, 28, tzinfo=timezone.utc)
+    filed = datetime(2010, 3, 17, tzinfo=timezone.utc)
+    as_of = datetime(2010, 1, 31, tzinfo=timezone.utc)
+    store.save_signals([price(as_of - timedelta(days=1))])
+    store.save_evidence([form4(trade, published=filed)])
+    body = client.get("/divergence", params={"symbol": "AAPL", "as_of": as_of.isoformat()}).json()
+    assert body["window"]["historical"] is True
+    assert body["flags"] == [] and body["legs"]["insider"]["direction"] is None
+    assert body["excluded"]["future_dated"] == 1  # not yet published at as_of
+    assert any("future" in w.lower() for w in body["warnings"])
+
+
+def test_historical_as_of_still_counts_a_filing_public_by_then(store):
+    trade = datetime(2010, 1, 20, tzinfo=timezone.utc)
+    as_of = datetime(2010, 1, 31, tzinfo=timezone.utc)
+    store.save_signals([price(as_of - timedelta(days=1))])
+    store.save_evidence([form4(trade, published=datetime(2010, 1, 22, tzinfo=timezone.utc))])
+    body = client.get("/divergence", params={"symbol": "AAPL", "as_of": as_of.isoformat()}).json()
+    assert body["window"]["historical"] is True
+    assert {f["id"] for f in body["flags"]} == {"insiders_selling_into_rally"}
+    assert body["excluded"]["future_dated"] == 0
