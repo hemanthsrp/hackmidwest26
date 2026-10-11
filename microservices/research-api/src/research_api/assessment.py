@@ -83,6 +83,40 @@ def _jev_tool() -> Any:
     return tool if tool.enabled else None
 
 
+EXPLANATION_PROVIDERS = ("bedrock", "akamai")
+DEFAULT_EXPLANATION_MODEL = "us.anthropic.claude-sonnet-5"
+
+
+def _explanation_agent(environ: Mapping[str, str], settings: InferenceSettings | None) -> tuple[Any, str | None]:
+    """Who writes the explanation: Claude on Bedrock by default, Akamai's hosted model when
+    ``EXPLANATION_PROVIDER=akamai`` or when no AWS credentials are set. (agent_factory, model name)."""
+    from decision_maker import bedrock_agent_factory, openai_compatible_agent_factory
+
+    provider = environ.get("EXPLANATION_PROVIDER", "bedrock").strip().lower()
+    if provider not in EXPLANATION_PROVIDERS:
+        logger.warning("EXPLANATION_PROVIDER=%r is not one of %s; using bedrock", provider, EXPLANATION_PROVIDERS)
+        provider = "bedrock"
+    key, secret = environ.get("AWS_ACCESS_KEY_ID", "").strip(), environ.get("AWS_SECRET_ACCESS_KEY", "").strip()
+    if provider == "bedrock" and key and secret:
+        model = environ.get("EXPLANATION_MODEL_ID", DEFAULT_EXPLANATION_MODEL).strip() or DEFAULT_EXPLANATION_MODEL
+        factory = bedrock_agent_factory(
+            model_id=model,
+            region=environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            access_key_id=key,
+            secret_access_key=secret,
+            session_token=environ.get("AWS_SESSION_TOKEN") or None,
+        )
+        return factory, model
+    if provider == "bedrock":
+        logger.warning("EXPLANATION_PROVIDER is bedrock but no AWS credentials are set; trying Akamai inference")
+    if settings is not None:
+        factory = openai_compatible_agent_factory(
+            base_url=settings.base_url, api_key=settings.api_key, model_id=settings.chat_model
+        )
+        return factory, settings.chat_model
+    return None, None
+
+
 def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_only: bool = False) -> Any:
     """The live decision maker, or None when it cannot be built.
 
@@ -93,7 +127,7 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_onl
     if not database_url:
         return None
     try:
-        from decision_maker import DecisionMaker, PgEvidenceSource, openai_compatible_agent_factory
+        from decision_maker import DecisionMaker, PgEvidenceSource
     except ImportError:
         logger.warning("DATABASE_URL is set but decision-maker is not installed; live assessments stay unavailable")
         return None
@@ -109,12 +143,11 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_onl
                 ", ".join(error.missing_names),
             )
     if settings is not None:
+        # Akamai always serves the embeddings (semantic search of the user's question).
         client = AkamaiInferenceClient(settings, httpx_transport)
         embedder = lambda text: client.embedding(text)["data"][0]["embedding"]  # noqa: E731
-        agent_factory = openai_compatible_agent_factory(
-            base_url=settings.base_url, api_key=settings.api_key, model_id=settings.chat_model
-        )
-        chat_model = settings.chat_model
+    if not scoring_only:
+        agent_factory, chat_model = _explanation_agent(environ, settings)
 
     jev = _jev_tool()
     try:

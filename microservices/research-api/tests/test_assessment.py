@@ -171,3 +171,65 @@ def test_transport_returns_status_and_json_body(monkeypatch) -> None:
     response = assessment.httpx_transport("https://inference.example.invalid/v1/embeddings", {}, {}, 1.0)
 
     assert (response.status_code, response.body) == (429, {"error": "slow down"})
+
+
+AKAMAI = {
+    "OPENAI_BASE_URL": "https://example.invalid/v1",
+    "OPENAI_API_KEY": "k",
+    "CHAT_MODEL": "hackathon-chat",
+    "EMBEDDING_MODEL": "hackathon-embedding",
+}
+AWS = {"AWS_ACCESS_KEY_ID": "a", "AWS_SECRET_ACCESS_KEY": "b", "AWS_SESSION_TOKEN": "c"}
+
+
+def _explanation(env):
+    from research_api.assessment import _explanation_agent
+    from research_api.inference import InferenceConfigurationError, InferenceSettings
+
+    try:
+        settings = InferenceSettings.from_environ(env)
+    except InferenceConfigurationError:
+        settings = None
+    return _explanation_agent(env, settings)
+
+
+def test_explanation_uses_claude_on_bedrock_by_default_when_aws_credentials_exist() -> None:
+    factory, model = _explanation({**AKAMAI, **AWS})
+
+    assert factory is not None and model == "us.anthropic.claude-sonnet-5"
+
+
+def test_explanation_model_can_be_overridden() -> None:
+    _, model = _explanation({**AWS, "EXPLANATION_MODEL_ID": "us.anthropic.claude-opus-5"})
+
+    assert model == "us.anthropic.claude-opus-5"
+
+
+def test_explanation_can_be_pinned_to_akamai() -> None:
+    factory, model = _explanation({**AKAMAI, **AWS, "EXPLANATION_PROVIDER": "akamai"})
+
+    assert factory is not None and model == "hackathon-chat"
+
+
+def test_explanation_falls_back_to_akamai_without_aws_credentials() -> None:
+    factory, model = _explanation(AKAMAI)
+
+    assert factory is not None and model == "hackathon-chat"
+
+
+def test_explanation_is_a_template_when_neither_provider_is_configured() -> None:
+    assert _explanation({}) == (None, None)
+
+
+def test_unknown_explanation_provider_is_treated_as_bedrock() -> None:
+    _, model = _explanation({**AWS, "EXPLANATION_PROVIDER": "nonsense"})
+
+    assert model == "us.anthropic.claude-sonnet-5"
+
+
+def test_the_decision_maker_reports_the_explanation_model_it_was_built_with(monkeypatch) -> None:
+    env = {"DATABASE_URL": "postgresql://user:secret@localhost:5432/db", **AKAMAI, **AWS}
+
+    maker = assessment.build_decision_maker(env)
+
+    assert maker._agent_model == "us.anthropic.claude-sonnet-5" and maker._agent_factory is not None
