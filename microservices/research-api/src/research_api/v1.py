@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -53,15 +54,19 @@ def fresh(record):
         return 0 <= age <= max_age and record.get('data_mode') in {'live','cached'}
     except (ValueError, TypeError, AttributeError): return False
 
+_http = httpx.Client(timeout=10, limits=httpx.Limits(max_connections=32, max_keepalive_connections=16))
+_fetch_pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix='v1-fetch')
+
 def source_records(symbol):
+    """Evidence and signals for one symbol, fetched concurrently over a shared keep-alive client."""
     base = os.getenv('SCRAPER_API_URL')
     if not base: raise HTTPException(503, 'Live research sources are not configured')
     try:
-        with httpx.Client(timeout=10) as client:
-            evidence = client.get(f'{base}/evidence', params={'symbol':symbol})
-            signals = client.get(f'{base}/signals', params={'symbol':symbol})
-            evidence.raise_for_status(); signals.raise_for_status()
-            return evidence.json().get('evidence',[]), signals.json().get('signals',[])
+        signals = _fetch_pool.submit(_http.get, f'{base}/signals', params={'symbol':symbol})
+        evidence = _http.get(f'{base}/evidence', params={'symbol':symbol})
+        signals = signals.result()
+        evidence.raise_for_status(); signals.raise_for_status()
+        return evidence.json().get('evidence',[]), signals.json().get('signals',[])
     except (httpx.HTTPError, ValueError): raise HTTPException(503, 'Research source unavailable')
 
 def assess(symbol):
@@ -81,11 +86,37 @@ def assess(symbol):
     mode = 'cached' if any(x.get('data_mode') == 'cached' for x in evidence + signals) else 'live'
     return {'symbol':symbol,'data_mode':mode,'snapshot':{'as_of':max([x.get('as_of') or x.get('observed_at') or x.get('retrieved_at') for x in evidence + signals],default=datetime.now(timezone.utc).isoformat())},'evidence':evidence,'signals':signals,'assessment':{'label':label,'explanation':'Not enough fresh, attributable evidence and signals are available.' if label=='insufficient_data' else f'The current evidence has a {"positive" if mean>.5 else "negative" if mean<-.5 else "mixed"} direction. Review the cited sources and market indicators together.','uncertainty':'A current evidence heuristic, not a probability of price movement or an evaluated forecast.','reason_codes':[x['id'] for x in evidence],'horizon':'current','data_mode':mode,'decision_engine':{'name':'evidence_direction_v1','status':'used' if directions else 'not_run'}},'warnings':[{'code':'excluded_stale_or_sample','message':'Stale, undated, and sample records are excluded from live research.','retryable':False}] if len(evidence)!=len(raw_evidence) or len(signals)!=len(raw_signals) else []}
 
+_assess_cache = {}
+_assess_locks = {}
+_assess_guard = threading.Lock()
+
+def assess_cache_seconds():
+    try: return max(0, min(int(os.getenv('V1_ASSESS_CACHE_SECONDS','30')), 300))
+    except ValueError: return 30
+
+def clear_assess_cache():
+    with _assess_guard: _assess_cache.clear(); _assess_locks.clear()
+
+def assess_cached(symbol):
+    """assess() behind a short TTL cache. Concurrent misses for one symbol share a single fetch;
+    failures are never cached. Stored data is only re-read when the entry expires."""
+    ttl = assess_cache_seconds()
+    if not ttl: return assess(symbol)
+    hit = _assess_cache.get(symbol)
+    if hit and hit[0] > time.monotonic(): return hit[1]
+    with _assess_guard: lock = _assess_locks.setdefault(symbol, threading.Lock())
+    with lock:
+        hit = _assess_cache.get(symbol)
+        if hit and hit[0] > time.monotonic(): return hit[1]
+        result = assess(symbol)
+        _assess_cache[symbol] = (time.monotonic() + ttl, result)
+        return result
+
 @router.get('/stocks/{symbol}')
 def stock(symbol: str, uid=Depends(user_id)):
     symbol = symbol.upper()
     if not re.fullmatch('[A-Z]{1,5}',symbol): raise HTTPException(400,'Invalid symbol')
-    return assess(symbol)
+    return assess_cached(symbol)
 
 HISTORY_RANGES = ('1W','1M','3M','1Y')
 
@@ -160,8 +191,8 @@ def ranked(category=None, stance=None):
     candidates=[(symbol,name,industry) for symbol,(name,industry) in UNIVERSE.items() if not category or industry==category or category=='technology' and industry=='ai']
     def get(candidate):
         symbol,name,industry=candidate
-        return symbol,name,industry,assess(symbol)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+        return symbol,name,industry,assess_cached(symbol)
+    with ThreadPoolExecutor(max_workers=max(1,len(candidates))) as pool:
         snapshots=list(pool.map(get,candidates))
     for symbol,name,industry,snapshot in snapshots:
         if snapshot['assessment']['label']=='insufficient_data': continue
@@ -200,15 +231,16 @@ def home_feed(uid=Depends(user_id)):
         industry_values[sector]=industry_values.get(sector,0)+h.get('price',0)*h.get('shares',0)
     concentrated={k for k,v in industry_values.items() if value and v/value>.4}
     output.sort(key=lambda x:(x['symbol'] not in symbols,x['industry'] not in followed,-x['evidence_count'],-x['market_activity'],x['symbol']))
+    from .notifications import publish_research_change
+    previous={r['key']:r['value'] for r in storage.read(uid,'last_assessment')}
     for item in output:
         relation='Related to a current holding' if item['symbol'] in symbols else 'Matches a followed industry' if item['industry'] in followed else 'Broader market research'
         item['rank_reason']=relation+('. Your portfolio is concentrated in this industry.' if item['industry'] in concentrated else '')
-        from .notifications import publish_research_change
-        previous={r['key']:r['value'] for r in storage.read(uid,'last_assessment')}
         old=previous.get(item['symbol'])
+        label=item['assessment']['label']
         if old is not None and (item['symbol'] in symbols or item['industry'] in followed):
             publish_research_change(uid,item['symbol'],item['assessment'],old,preferences)
-        storage.write(uid,'last_assessment',item['symbol'],item['assessment']['label'])
+        if old != label: storage.write(uid,'last_assessment',item['symbol'],label)
     return envelope(output)
 
 @router.patch('/me/preferences')
