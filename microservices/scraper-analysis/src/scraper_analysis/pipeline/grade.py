@@ -25,11 +25,14 @@ Freshness is deliberately not stored, because it changes by the hour:
 enabled, so with JEV_ENABLED unset records are unchanged.
 """
 
+import logging
 from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..models.evidence import Evidence
 from .jev_judge import request_enabled
+
+logger = logging.getLogger(__name__)
 
 GRADE_VERSION = "grade-v1"
 
@@ -107,7 +110,13 @@ def grade_evidence(items: list[Evidence]) -> list[Evidence]:
     if not request_enabled() or not settings.jev_configured:
         return items
     for evidence in items:
-        evidence.details["grade"] = grade_record(evidence, settings.jev_relevance_gate)
+        try:
+            evidence.details["grade"] = grade_record(evidence, settings.jev_relevance_gate)
+        except Exception:
+            # Grading is optional. One record that can't be graded stays ungraded
+            # (readers already treat that as "no grade"); it must never abort the
+            # ingest and lose the whole batch.
+            logger.warning("could not grade record %s; leaving it ungraded", evidence.id, exc_info=True)
     return items
 
 
@@ -164,7 +173,10 @@ def news_tone(items: list[Evidence], as_of: datetime | None = None) -> dict:
     it. A heuristic summary of reported tone, never a forecast.
     """
     judged = [e for e in items if _jev(e) and "grade" in e.details]
-    usable = [e for e in judged if not is_gated(e)]
+    # A judgment may carry no direction (or one outside TONE_VALUE); such a record can't
+    # vote on tone, but is still reported, not silently dropped or allowed to raise.
+    gated = [e for e in judged if is_gated(e)]
+    usable = [e for e in judged if not is_gated(e) and e.details["jev"].get("direction") in TONE_VALUE]
     by_id = {e.id: e for e in usable}
     seen: set[str] = set()
     stories: list[Evidence] = []
@@ -179,7 +191,8 @@ def news_tone(items: list[Evidence], as_of: datetime | None = None) -> dict:
     result = {
         "version": GRADE_VERSION,
         "records_judged": len(judged),
-        "records_gated": len(judged) - len(usable),
+        "records_gated": len(gated),
+        "records_without_direction": len(judged) - len(gated) - len(usable),
         "stories_used": len(stories),
         "by_direction": {},
         "tone": None,

@@ -33,6 +33,7 @@ _SECRET_SETTINGS = (
     "aws_secret_access_key",
     "aws_session_token",
     "database_url",
+    "typesafe_api_key",
 )
 MAX_ERROR_CHARS = 300
 

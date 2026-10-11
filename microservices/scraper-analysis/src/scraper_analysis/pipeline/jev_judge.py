@@ -20,6 +20,7 @@ none of the values is a probability that a price will move.
 """
 
 import logging
+import math
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -32,6 +33,11 @@ from .symbol_match import SYMBOL_NAME_HINTS
 logger = logging.getLogger(__name__)
 
 JUDGED_SOURCE_TYPES = frozenset({"general_news", "social_media"})
+
+# grade.py multiplies/compares these, so a judgment is only stored as a real one
+# when all are present numbers. (direction and the confidences may legitimately be
+# empty, e.g. for an off-topic item, and every reader tolerates that.)
+REQUIRED_NUMERIC_FIELDS = ("relevant", "sensational", "usable_content", "materiality")
 
 _JUDGMENT_FIELDS = (
     "relevant",
@@ -120,23 +126,44 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
         logger.warning("jev judgment failed; leaving %d record(s) unjudged", len(targets), exc_info=True)
         return items
 
-    for evidence, judgment in zip(targets, judgments):
-        if judgment.engine != "jev":
+    try:
+        for evidence, judgment in zip(targets, judgments):
+            if judgment.engine != "jev":
+                evidence.details["jev"] = {
+                    "engine": "unavailable",
+                    "error": sanitize_error(judgment.error) if judgment.error else None,
+                }
+                continue
+            incomplete = _incomplete_fields(judgment)
+            if incomplete:
+                # The tool's result type allows None for every field. Grading multiplies
+                # these, so a half-filled judgment must not be stored as a real one.
+                evidence.details["jev"] = {
+                    "engine": "unavailable",
+                    "error": f"incomplete judgment (missing or non-numeric: {', '.join(incomplete)})",
+                }
+                continue
             evidence.details["jev"] = {
-                "engine": "unavailable",
-                "error": sanitize_error(judgment.error) if judgment.error else None,
+                "engine": "jev",
+                "model": judgment.model,
+                "question_set_version": judgment.question_set_version,
+                "request_id": judgment.request_id,
+                **{name: getattr(judgment, name) for name in _JUDGMENT_FIELDS},
             }
-            continue
-        evidence.details["jev"] = {
-            "engine": "jev",
-            "model": judgment.model,
-            "question_set_version": judgment.question_set_version,
-            "request_id": judgment.request_id,
-            **{name: getattr(judgment, name) for name in _JUDGMENT_FIELDS},
-        }
-        _fill_sentiment(evidence, judgment)
-    _mark_same_story([e for e in targets if e.details.get("jev", {}).get("engine") == "jev"], tool)
+            _fill_sentiment(evidence, judgment)
+        _mark_same_story([e for e in targets if e.details.get("jev", {}).get("engine") == "jev"], tool)
+    except Exception:
+        # Optional and additive: whatever went wrong, the records still get stored.
+        logger.warning("jev post-processing failed; keeping records as they are", exc_info=True)
     return items
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _incomplete_fields(judgment) -> list[str]:
+    return [name for name in REQUIRED_NUMERIC_FIELDS if not _is_number(getattr(judgment, name, None))]
 
 
 def _fill_sentiment(evidence: Evidence, judgment) -> None:
@@ -151,9 +178,10 @@ def _fill_sentiment(evidence: Evidence, judgment) -> None:
     confidence = judgment.direction_confidence or 0.0
     if confidence < FILL_SENTIMENT_MIN_CONFIDENCE:
         return
-    evidence.sentiment = Sentiment(
-        direction=_SENTIMENT_FROM_DIRECTION[judgment.direction], score=round(confidence, 4)
-    )
+    mapped = _SENTIMENT_FROM_DIRECTION.get(judgment.direction)
+    if mapped is None:  # no direction (or one we don't know): leave sentiment empty rather than guess
+        return
+    evidence.sentiment = Sentiment(direction=mapped, score=round(confidence, 4))
     evidence.details["jev"]["filled_sentiment"] = True
 
 
