@@ -47,5 +47,8 @@ services:
       AUTH_TRUST_HOST: "true"
       RESEARCH_API_URL: http://research-api:8000
       ALLOW_REGISTRATION: "false"
+      # This bypasses email verification only when AUTH_URL is a loopback host;
+      # identity/route.ts rejects it for any deployed origin.
+      LOCAL_ACCOUNT_AUTH: ${LOCAL_ACCOUNT_AUTH:-true}
     ports: ["127.0.0.1:3000:3000"]
     depends_on: [research-api]
