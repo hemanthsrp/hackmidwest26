@@ -44,6 +44,8 @@ Settings come from environment variables. For local work, copy `.env.example` to
 | `JEV_MAX_RETRIES` | `2` | Retries with backoff |
 | `JEV_MAX_CONCURRENCY` | `8` | Threads used by batch calls |
 
+A service that keeps its own settings object (and does not export them to the process environment) can pass them in instead: `JevTool(enabled=True, api_key=settings.typesafe_api_key, model=...)`. `scraper-analysis` does this in `pipeline/jev_judge.py`.
+
 ## 3. The five rules
 
 1. **Check `engine` on every result.** `"jev"` means a real answer. `"unavailable"` means there is no answer: answer fields are `None` and `error` says why.
@@ -91,6 +93,8 @@ Fields on the result (an `ArticleJudgment`):
 | `event_type` | `earnings_or_guidance`, `legal_or_regulatory`, `product_or_service`, `deal_or_partnership`, `management_or_workforce`, `operations_or_supply`, `market_or_macro`, `stock_or_valuation_view` or `other` |
 | `event_type_probabilities`, `event_type_confidence` | As above |
 | `upcoming_event` | 0 to 1: how likely the item names a scheduled event still to come (an earnings date, a launch, a vote, a ruling). Jev only spots the mention; work out dates in code. |
+| `sensational` | 0 to 1: the text is written as hype, alarm or clickbait |
+| `usable_content` | 0 to 1: real content, as opposed to a paywall notice, error page or cookie prompt |
 | `materiality` | 0 to 2: 0 routine or promotional, 1 notable, 2 major. A weighted average, so it can be 1.4. |
 | `materiality_confidence` | 0 to 1 |
 | `model`, `request_id`, `question_set_version`, `input_tokens` | For logs and cache keys |
@@ -121,6 +125,16 @@ How to read a judgment:
 - Use `materiality` for ranking and thresholds, not as an exact quantity.
 - `event_type` and `upcoming_event` are for explaining and for widening uncertainty ("there is an earnings report ahead"). They say nothing about direction.
 - None of these numbers is a chance that the stock moves. Never display them as one.
+
+### Find items that report the same event
+
+```python
+result = jev.same_story(items, [(0, 1), (0, 2)])    # items need title and summary; pairs are positions
+for pair in result.pairs:
+    pair.a, pair.b, pair.same                       # same: 0 to 1
+```
+
+Choose the candidate pairs in code first (for example by word overlap between different outlets); do not ask about every possible pair. Only the first 40 pairs in a call are checked (`pairs_truncated`). A market-reaction piece about an event tends to score as the same story as the event itself (0.76 in testing), so decide whether that counts for your use. Python only; there is no MCP tool for this one.
 
 ### Check a written explanation
 
@@ -231,11 +245,12 @@ Coordinate with Jet before changing existing wording: other services cache and t
 ## 8. What is known about how well it works
 
 - Real calls take about half a second per article and cost well under a hundredth of a cent.
-- On 32 hand-written samples (news, blog posts, social posts), relevance, direction, event type and upcoming event agreed with the answer key every time; content type missed two press-release style samples; materiality was always within one level. The key was written by the same person who wrote the samples, accepts more than one answer for judgment calls, and was loosened after a first run.
+- On 38 hand-written samples (news, blog posts, social posts, hype pieces, junk pages), relevance, direction, event type, upcoming event, sensational style and usable content agreed with the answer key every time; content type missed two press-release style samples; materiality was always within one level. The key was written by the same person who wrote the samples, accepts more than one answer for judgment calls, and was loosened after a first run.
 - On 12 hand-written explanations, every unsupported or contradicted sentence was caught, every supported one passed, and advice and promised outcomes were flagged correctly after one wording fix.
-- Both sets show the questions are workable. Neither is an accuracy figure and neither may be quoted as one.
+- On 12 hand-written pairs, the same-story question matched the key on all 11 scored pairs.
+- These show the questions are workable. None is an accuracy figure and none may be quoted as one.
 - One call out of roughly a hundred failed with a connection error and timed out. Callers saw `unavailable`. Expect this occasionally.
-- Details and request ids: `evals/report-2026-10-10-article-v3.json`, `evals/report-2026-10-10-explanation-v1.json` and the research doc §12.
+- Details and request ids: `evals/report-2026-10-10-article-v4.json`, `-explanation-v1.json`, `-same-story-v1.json` and the research doc §12.
 
 ## 9. Where things are
 
@@ -246,6 +261,6 @@ Coordinate with Jet before changing existing wording: other services cache and t
 | `src/jev_tool/server.py` | MCP server |
 | `src/jev_tool/strands_mcp.py` | `mcp_client()` |
 | `src/jev_tool/env.py` | `.env` loading |
-| `src/jev_tool/evals.py`, `src/jev_tool/evals_explanation.py`, `evals/` | Wording checks and saved reports |
+| `src/jev_tool/evals.py`, `evals_explanation.py`, `evals_pairs.py`, `evals/` | Wording checks and saved reports |
 | `README.md` | Setup and human-oriented notes |
 | `../../docs/jev-integration-research.md` | Background, limits, planned uses, sources |

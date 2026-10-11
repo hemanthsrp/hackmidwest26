@@ -9,7 +9,7 @@ Shared tool for quick, cheap decisions using Jev (TypeSafe AI's System One model
 
 Background, limits and the list of where Jev should and should not be used: [docs/jev-integration-research.md](../../docs/jev-integration-research.md).
 
-> **Status:** tested offline against a mock HTTP transport, and against the real TypeSafe API on 2026-10-10 (direct call, MCP round trip, and the wording quiz below). Question wording in `presets.py` has had one sanity pass on 27 samples; it is not tuned.
+> **Status:** tested offline against a mock HTTP transport, and against the real TypeSafe API on 2026-10-10 (direct call, MCP round trip, and the wording quiz below). Question wording in `presets.py` has had sanity passes on small hand-written sample sets (38 articles, 12 explanations, 12 story pairs); it is not tuned.
 
 ## Setup
 
@@ -65,7 +65,7 @@ jev.judge_articles([{"symbol": ..., "company": ..., "title": ..., "summary": ...
 
 `jev.evaluate(state, questions)` sends several questions in one request, using the API's own question shape.
 
-`judge_article` also returns `event_type` and `upcoming_event`. `jev.check_explanation(text, evidence_items)` checks a written explanation sentence by sentence against its evidence and flags advice or promised outcomes. Field lists are in [AGENT_GUIDE.md](AGENT_GUIDE.md).
+`judge_article` also returns `event_type`, `upcoming_event`, `sensational` and `usable_content`. `jev.same_story(items, pairs)` says how likely pairs of items report the same event. `jev.check_explanation(text, evidence_items)` checks a written explanation sentence by sentence against its evidence and flags advice or promised outcomes. Field lists are in [AGENT_GUIDE.md](AGENT_GUIDE.md).
 
 ## MCP use from Strands
 
@@ -113,7 +113,7 @@ Makes one real call through the MCP server, using the key from `.env`. The defau
 
 ## Checking the question wording
 
-`evals/article_quiz.json` holds 27 hand-labelled **samples** for AAPL, NVDA and TSLA: news items, blog posts, social posts and press-release style items (written for testing, not real content) in the evidence shape proposed in `docs/api-contract-v0.md`. The harness runs each through the `judge_article` questions, then again with the direction options reversed, and compares with the answer key:
+`evals/article_quiz.json` holds 38 hand-labelled **samples** for AAPL, NVDA and TSLA: news items, blog posts, social posts, press-release style items, hype pieces and junk pages (written for testing, not real content) in the evidence shape proposed in `docs/api-contract-v0.md`. The harness runs each through the `judge_article` questions, then again with the direction options reversed, and compares with the answer key:
 
 ```sh
 .venv/Scripts/python -m jev_tool.evals --out report.json
@@ -123,7 +123,7 @@ Where a call is a matter of judgment, the answer key lists more than one accepte
 
 Results from 2026-10-10 are saved in `evals/report-2026-10-10-article-v1.json` and `-v2.json` and summarised in the research doc (§12). Short version: relevance and direction agreed on every sample in the second run, content type missed the two press-release style samples, and the only answers that changed when options were reordered were the two lowest-confidence ones.
 
-The explanation questions have their own check: `.venv/Scripts/python -m jev_tool.evals_explanation` runs 12 hand-labelled explanations from `evals/explanation_quiz.json`. The article quiz now has 32 samples and also scores event type and upcoming event; latest reports are `evals/report-2026-10-10-article-v3.json` and `-explanation-v1.json`.
+The explanation questions have their own check: `.venv/Scripts/python -m jev_tool.evals_explanation` runs 12 hand-labelled explanations from `evals/explanation_quiz.json`. The article quiz now has 38 samples and also scores event type, upcoming event, sensational style and usable content. `python -m jev_tool.evals_pairs` runs 12 same-story pairs. Latest reports are `evals/report-2026-10-10-article-v4.json`, `-explanation-v1.json` and `-same-story-v1.json`.
 
 ## Don't use Jev for
 

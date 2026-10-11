@@ -237,6 +237,13 @@ def generate_briefing(
     if not kept:
         return {"symbol": symbol, "status": "insufficient_data", "briefing": None, "warnings": warnings}
 
+    # Optional second opinion on the text (None unless JEV_ENABLED); never edits the briefing.
+    from . import jev_guard
+
+    jev_review = jev_guard.review_briefing(briefing, evidence)
+    if jev_review:
+        warnings.extend(jev_review.pop("warnings", []))
+
     return {
         "symbol": symbol,
         "status": "ok",
@@ -247,6 +254,7 @@ def generate_briefing(
             "evidence_count": len(evidence),
             "signal_count": len(signals),
             "data_modes": modes,
+            "jev_review": jev_review,
         },
         "warnings": warnings,
     }

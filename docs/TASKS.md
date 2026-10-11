@@ -39,6 +39,14 @@
 - **For A2/A3:** call `check_explanation` from the backend adapter once an explanation step exists; see `microservices/jev-tool/AGENT_GUIDE.md`. Thresholds and what to do on a hit are the caller's decision.
 - **Done when:** offline tests pass (done: 34 passed) and both wording checks are run against real Jev with reports saved (done; reports in `microservices/jev-tool/evals/`).
 
+**A-J4 — Jev judgment at ingestion in `scraper-analysis`** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-scraper-judgment`; built, **awaiting Cai's review before merge**)
+- Cross-lane, additive only. New `microservices/scraper-analysis/src/scraper_analysis/pipeline/jev_judge.py` and `tests/test_jev_judge.py`. Small edits to Cai's files: `config.py` (three settings), `pipeline/ingest.py` (one optional step after tagging), `api.py` (`judge` flag), `.env.example`, `INTEGRATION.md` (new section). `jev-tool`: `JevTool` accepts an explicit `api_key`.
+- With `JEV_ENABLED=true`, new news/social evidence gains `details.jev`. Off by default; tagging, credibility, dedup, storage schema and the briefing prompt are unchanged.
+- Also on this branch: `same_story_as` marking; opt-in `JEV_FILL_SENTIMENT`; advisory briefing review in new `agents/jev_guard.py` (four added lines at the end of `generate_briefing` in `synthesis_agent.py`, reported in `meta.jev_review` and `warnings`). `jev-tool`: `sensational` and `usable_content` on `judge_article` (`article-v4`), new `same_story` (`same-story-v1`).
+- `research-api` (Hermes's lane, additive): `decision.py` result carries Jev's full judgment, `judge_evidence` / `from_stored` reuse a judgment stored on an evidence record, and a new `JevExplanationAdapter` seam. Not wired into the route; existing fields and tests unchanged (29 passed, 22 before plus 7 new).
+- Checked to merge cleanly with the open `achen/scraper-divergence`, `achen/scraper-house` and `achen/scraper-scheduler` branches as of 2026-10-10.
+- **Done when:** scraper tests pass with Jev off (done: 153 passed, 132 before plus 21 new) and one real run over the fixtures returns judgments and a briefing review (done); the scraper's owner accepts the change (not done).
+
 ## Agent B — evidence and quant (Cai lane)
 
 **B1 — Source/data feasibility** (unclaimed; independent discovery)

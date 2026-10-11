@@ -236,8 +236,8 @@ Priority: **MVP** = part of the first vertical slice; **Next** = worthwhile once
 | S2 | What does the article report about the company's outlook? | choice: negative / neutral / positive / mixed | Same | Attaches `direction` and its probabilities to the evidence item | MVP |
 | S3 | How significant is the reported event? | score: routine or promotional / notable / major | Same | Attaches `materiality` | MVP |
 | S4 | Which topic tags apply? (DUMP: "the agent may add additional tags") | one noul per candidate tag, or a choice for a single primary category | Title and summary; tag list with one-line descriptions | Stores tags for search and display | Next |
-| S5 | Is this usable content, or a paywall stub, error page, ad or empty scrape? | choice | Scraped text | Discards junk before anything else runs | Next |
-| S6 | Do these two items describe the same story? | noul or score per candidate pair | Two titles and summaries | De-duplicates. Generate candidate pairs in code first (same symbol, close in time) so the pair count stays small. | Next |
+| S5 | Is this usable content, or a paywall stub, error page, ad or empty scrape? | noul | Title and summary | Flags junk; the caller decides whether to discard. **Built** into `judge_article` as `usable_content` (`article-v4`), alongside `sensational`. | Next |
+| S6 | Do these two items describe the same story? | noul per candidate pair | Titles and summaries | Marks duplicates across outlets. Generate candidate pairs in code first so the pair count stays small. **Built** as `same_story` (`same-story-v1`). | Next |
 | S7 | What kind of content is this: company announcement, news report, opinion or analysis, social media post, other? | choice | Title and summary | Lets the combiner weigh a company's own promotion or a single social post less than independent reporting. **Built** into `judge_article` as `content_type` (question set `article-v2`). | MVP |
 | S8 | What kind of event is this: earnings or guidance, legal or regulatory, product or service, deal or partnership, management or workforce, operations or supply, market or macro, stock or valuation view, other? | choice | Title and summary | Lets `decision-maker` connect news to what the options market is pricing (see the quant section below). **Built** into `judge_article` as `event_type` (`article-v3`). | MVP |
 | S9 | Does the article describe an upcoming scheduled event (for example an earnings date, a ruling, a launch)? | noul | Title and summary | Flags a known catalyst ahead; code widens the uncertainty statement. Jev only spots the mention; any date maths stays in code. **Built** as `upcoming_event` (`article-v3`). | MVP |
@@ -698,9 +698,11 @@ First real calls to Jev, made from a developer laptop with a direct TypeSafe key
 | Quiz, `article-v1` questions, 19 news samples | relevance 19/19, direction 12/15, materiality exact 11/15 and always within one level, no answer changed when options were reversed |
 | Quiz, `article-v2` questions (adds content type), 27 samples including blog posts, social posts and press-release style items | relevance 27/27, direction 22/22 against the widened key, content type 25/27, materiality exact 19/22 and always within one level, 2 of 27 direction answers changed when options were reversed |
 | Quiz, `article-v3` questions (adds event type and upcoming event), 32 samples | relevance 32/32, direction 27/27 against the widened key, event type 27/27, upcoming event 23/23, content type 30/32 (the same two press-release style samples), materiality exact 23/27 and always within one level, 1 of 32 direction answers changed when options were reversed |
+| Quiz, `article-v4` questions (adds sensational style and usable content), 38 samples including hype pieces and junk pages | all earlier answers unchanged in outcome; sensational 34/34 and usable content 38/38 against the key; content type 36/38 (the same two press-release style samples) |
+| Same-story check, `same-story-v1`, 12 hand-written pairs | 11/11 scored pairs correct (three same-event pairs at 0.97, eight different-event pairs at 0.05 or below); one unscored market-reaction pair came out at 0.76 |
 | Explanation check, `explanation-v1`, 12 hand-written explanations with 16 scored sentences | unsupported or contradicted sentences caught 6/6, supported sentences passed 10/10, personal advice 12/12 and promised outcome 11/11 after one wording fix (before it, the label "Assessment: hold." scored 0.51 for advice; after, 0.20) |
 | Mean latency per article request | about 0.46 to 0.48 s in the first two runs; about 0.12 to 0.15 s in later runs the same evening |
-| Mean input tokens per article request | 580 with three questions, 773 with four, 1,157 with six |
+| Mean input tokens per article request | 580 with three questions, 773 with four, 1,157 with six, 1,307 with eight |
 
 What this showed:
 
@@ -855,3 +857,18 @@ Limits of this evidence: 27 samples written by the same author who wrote the key
 - Send live source content to TypeSafe before lane B confirms the source's terms allow it.
 
 **When you learn something that contradicts this document,** fix the relevant section, date the change, and say what evidence you observed. Do not leave a stale claim in place.
+
+## 17. Where Jev is wired in (added 2026-10-10)
+
+Sections 6 and 7 are the plan; this is what exists in code. Every item is additive and does nothing unless `JEV_ENABLED=true`.
+
+| Service | What | Code | State |
+|---|---|---|---|
+| `scraper-analysis` | One Jev call per new news or social record at ingestion; result stored under `details.jev` (relevance, direction, content type, event type, upcoming event, sensational, usable content, materiality). Filings and congressional disclosures are skipped. | `pipeline/jev_judge.py`, hooked after tagging in `pipeline/ingest.py` | Built; run end to end with real Jev on the service's fixtures |
+| `scraper-analysis` | `same_story_as`: other new records from a different outlet reporting the same event | `pipeline/jev_judge.py` | Built; marker only, dedup and corroboration unchanged |
+| `scraper-analysis` | Opt-in `JEV_FILL_SENTIMENT`: fill `sentiment` only where Bedrock tagging left it empty | `pipeline/jev_judge.py` | Built; off by default |
+| `scraper-analysis` | Advisory review of `/briefing` text: per-point support against cited evidence, advice and promised-outcome flags, reported in `meta.jev_review` and `warnings` | `agents/jev_guard.py`, hooked at the end of `generate_briefing` | Built; never edits or drops a point |
+| `research-api` | Decision adapter carries Jev's full judgment and can read a stored `details.jev`; explanation-check seam | `decision.py` | Built as unwired seams; the API's live path does not exist yet |
+| `decision-maker`, `volatility-surface-builder`, `frontend` | Nothing | n/a | Empty services |
+
+The scraper's sentiment, entity tagging, credibility formula, dedup, storage schema and briefing prompt are unchanged. Design choice worth knowing: articles are judged once, where they are ingested, and the judgment travels with the evidence record, so downstream services do not need to call Jev per article.
