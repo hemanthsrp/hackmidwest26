@@ -56,7 +56,7 @@ Superset of the v0 contract in `docs/api-contract-v0.md`: every field there is p
 - **IDs are deterministic**: the same item keeps the same ID across runs, so `reason_codes` can reference them safely. SEC filings hash the filing URL only (one row per accession number), so Form 4 enrichment, which rewrites the title and moves `observed_at` to the trade date, never mints a second ID; a stored copy is replaced only by a strictly better one (live beats sample, then parsed Form 4 details beat metadata-only), so a persisted fixture never blocks its live filing and a later fixture or metadata-only copy never downgrades it. Other records hash source URL + title + observed date. Stores populated before this rule: run `python -m scraper_analysis.storage.migrations` (dry run), then `--apply`, to re-key old SEC rows and delete their duplicates; it is idempotent.
 - **Form 4 dates:** `observed_at` is the earliest actual `transactionDate` in the filing, not `periodOfReport`. `details.transaction_dates` lists every trade date (the title shows the range when there are several) and `details.period_of_report` keeps the filing's reporting period.
 - **Three timestamps, never invented:** `published_at` (filing/article time), `observed_at` (when the underlying event happened, e.g. the trade date), `retrieved_at` (when we fetched it). Either of the first two can be `null` if the source doesn't give it.
-- **Extras beyond v0:** `source_type`, `reporting_lag_days`, `details`, `entities`, `sentiment`, `credibility`. `details` holds structured, source-specific facts (Form 4 buy/sell totals, Senate transaction type and amount range) and, when Jev is enabled, `details.jev` on news and social records. `entities`/`sentiment` are only filled when `tag=true` and Bedrock is reachable.
+- **Extras beyond v0:** `source_type`, `reporting_lag_days`, `details`, `entities`, `sentiment`, `credibility`. `details` holds structured, source-specific facts (Form 4 buy/sell totals, Senate transaction type and amount range). `entities`/`sentiment` are only filled when `tag=true` and Bedrock is reachable.
 - **`source_type`** is one of `sec_filing`, `congressional_disclosure`, `general_news`, `social_media`.
 - **`credibility.overall_score`** is a heuristic (outlet prior + cross-source corroboration, see `pipeline/scoring.py`), not a validated measure. Official filings are `1.0` by definition.
 
@@ -100,11 +100,13 @@ With `JEV_ENABLED=true` and `TYPESAFE_API_KEY` set (and the shared package insta
 
 ```json
 "details": {"jev": {
-  "engine": "jev", "model": "jev-1.13.0", "question_set_version": "article-v3", "request_id": "req_...",
+  "engine": "jev", "model": "jev-1.13.0", "question_set_version": "article-v4", "request_id": "req_...",
   "relevant": 0.98, "direction": "positive", "direction_confidence": 0.91,
   "content_type": "news_report", "content_type_confidence": 0.95,
   "event_type": "earnings_or_guidance", "event_type_confidence": 0.9,
-  "upcoming_event": 0.05, "materiality": 1.9, "materiality_confidence": 0.8}}
+  "upcoming_event": 0.05, "sensational": 0.06, "usable_content": 0.97,
+  "materiality": 1.9, "materiality_confidence": 0.8,
+  "same_story_as": ["<id of another new record>"]}}
 ```
 
 | Field | Meaning |
@@ -114,10 +116,15 @@ With `JEV_ENABLED=true` and `TYPESAFE_API_KEY` set (and the shared package insta
 | `content_type` | `company_announcement`, `news_report`, `opinion_or_analysis`, `social_media_post`, `other` |
 | `event_type` | `earnings_or_guidance`, `legal_or_regulatory`, `product_or_service`, `deal_or_partnership`, `management_or_workforce`, `operations_or_supply`, `market_or_macro`, `stock_or_valuation_view`, `other` |
 | `upcoming_event` | 0 to 1: the item names a scheduled event still to come |
+| `sensational` | 0 to 1: the text is written as hype, alarm or clickbait |
+| `usable_content` | 0 to 1: real content, as opposed to a paywall notice, error page or cookie prompt |
 | `materiality` | 0 to 2: 0 routine or promotional, 1 notable, 2 major |
+| `same_story_as` | Present only when found: ids of other records **from this same run and a different outlet** that Jev judged to report the same event. A marker only; dedup and the corroboration score are unchanged |
+| `filled_sentiment` | Present and `true` only when the opt-in below wrote `sentiment` |
 | `*_confidence` | 0 to 1: how peaked Jev's answer was; treat low-confidence answers as unknown |
 
 - **Additive only.** Nothing is filtered or dropped, and `sentiment`, `entities` and `credibility` are not touched. With Jev off (the default) records are byte-for-byte what they were before.
+- **One opt-in exception: `JEV_FILL_SENTIMENT=true`.** Where the tagging agent left `sentiment.direction` empty (Bedrock off or failed) and Jev's direction confidence is at least 0.5, `sentiment` is filled: positive → `Bullish`, negative → `Bearish`, neutral and mixed → `Neutral`, with `score` set to Jev's confidence. A value written by the tagging agent is never overwritten. Off by default.
 - **`engine` must be checked.** If Jev was enabled but did not answer, the record carries `{"engine": "unavailable", "error": "..."}` and no judgment fields. A record with no `details.jev` at all was not sent to Jev.
 - **Filings are skipped.** `sec_filing` and `congressional_disclosure` records are never sent: they are parsed deterministically here, and Jev is unreliable with numbers and dates.
 - **Judged once.** Only newly stored records are judged, so a repeat run costs nothing. A record stored while Jev was off or unavailable is not judged later.
@@ -125,7 +132,23 @@ With `JEV_ENABLED=true` and `TYPESAFE_API_KEY` set (and the shared package insta
 - **Heuristic, not validated.** These are model judgments checked only on a small hand-written sample (`microservices/jev-tool/evals/`). None is a probability that a price will move.
 - **The briefing sees it.** `/briefing` already passes `details` to the synthesis agent, so judged records reach it with their Jev judgment attached.
 
-Code: `src/scraper_analysis/pipeline/jev_judge.py`. Caller rules for Jev: `microservices/jev-tool/AGENT_GUIDE.md`.
+### Briefing review
+
+With Jev enabled, `POST /briefing` also runs an advisory check of the generated text and reports it in `meta.jev_review` (it is `null` when Jev is off):
+
+```json
+"jev_review": {"engine": "jev", "model": "jev-1.13.0", "question_set_version": "explanation-v1",
+  "points": [{"index": 0, "status": "checked", "supported": 0.93, "evidence_checked": 1},
+             {"index": 1, "status": "not_checked", "reason": "cites only quantitative signals"}],
+  "personal_advice": 0.03, "promises_outcome": 0.05,
+  "thresholds": {"supported_below": 0.5, "flag_at_or_above": 0.5}}
+```
+
+- `supported` is how likely the point's text is backed by the `title` and `summary` of the evidence it cites (the weakest sentence in the point). `personal_advice` and `promises_outcome` cover the whole briefing.
+- Anything past a threshold is added to the response's `warnings`, prefixed `jev:`. **Nothing is edited or dropped**; the citation check above still decides what is kept.
+- A point resting on `details` (Form 4 totals) or on signals can score low while being correct, because only titles and summaries are compared. Signal-only points are not checked.
+
+Code: `src/scraper_analysis/pipeline/jev_judge.py`, `src/scraper_analysis/agents/jev_guard.py`. Caller rules for Jev: `microservices/jev-tool/AGENT_GUIDE.md`.
 
 ## Briefing
 

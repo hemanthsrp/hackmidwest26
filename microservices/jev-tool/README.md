@@ -65,7 +65,7 @@ jev.judge_articles([{"symbol": ..., "company": ..., "title": ..., "summary": ...
 
 `jev.evaluate(state, questions)` sends several questions in one request, using the API's own question shape.
 
-`judge_article` also returns `event_type` and `upcoming_event`. `jev.check_explanation(text, evidence_items)` checks a written explanation sentence by sentence against its evidence and flags advice or promised outcomes. Field lists are in [AGENT_GUIDE.md](AGENT_GUIDE.md).
+`judge_article` also returns `event_type`, `upcoming_event`, `sensational` and `usable_content`. `jev.same_story(items, pairs)` says how likely pairs of items report the same event. `jev.check_explanation(text, evidence_items)` checks a written explanation sentence by sentence against its evidence and flags advice or promised outcomes. Field lists are in [AGENT_GUIDE.md](AGENT_GUIDE.md).
 
 ## MCP use from Strands
 
@@ -123,7 +123,7 @@ Where a call is a matter of judgment, the answer key lists more than one accepte
 
 Results from 2026-10-10 are saved in `evals/report-2026-10-10-article-v1.json` and `-v2.json` and summarised in the research doc (§12). Short version: relevance and direction agreed on every sample in the second run, content type missed the two press-release style samples, and the only answers that changed when options were reordered were the two lowest-confidence ones.
 
-The explanation questions have their own check: `.venv/Scripts/python -m jev_tool.evals_explanation` runs 12 hand-labelled explanations from `evals/explanation_quiz.json`. The article quiz now has 32 samples and also scores event type and upcoming event; latest reports are `evals/report-2026-10-10-article-v3.json` and `-explanation-v1.json`.
+The explanation questions have their own check: `.venv/Scripts/python -m jev_tool.evals_explanation` runs 12 hand-labelled explanations from `evals/explanation_quiz.json`. The article quiz now has 38 samples and also scores event type, upcoming event, sensational style and usable content. `python -m jev_tool.evals_pairs` runs 12 same-story pairs. Latest reports are `evals/report-2026-10-10-article-v4.json`, `-explanation-v1.json` and `-same-story-v1.json`.
 
 ## Don't use Jev for
 

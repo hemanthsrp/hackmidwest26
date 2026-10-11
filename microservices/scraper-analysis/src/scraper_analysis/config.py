@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     jev_enabled: bool = False
     typesafe_api_key: str | None = None
     jev_model: str = "jev-1.13.0"
+    # Opt-in on top of JEV_ENABLED: when the tagging agent left sentiment
+    # empty (Bedrock off or failed), fill it from Jev's direction.
+    jev_fill_sentiment: bool = False
 
     enable_x_scraper: bool = False
     # Unofficial public .json scraping (no OAuth) -- off by default, see

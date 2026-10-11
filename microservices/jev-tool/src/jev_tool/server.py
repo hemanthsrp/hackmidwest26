@@ -86,7 +86,9 @@ def judge_article(symbol: str, company: str, title: str, summary: str) -> Articl
     other), `event_type` (earnings_or_guidance, legal_or_regulatory, product_or_service,
     deal_or_partnership, management_or_workforce, operations_or_supply, market_or_macro,
     stock_or_valuation_view, other), `upcoming_event` (probability it names a scheduled
-    event still to come), and `materiality` (0 = routine or promotional, 1 = notable,
+    event still to come), `sensational` (probability the style is hype or clickbait),
+    `usable_content` (probability it is real content, not a paywall or error page),
+    and `materiality` (0 = routine or promotional, 1 = notable,
     2 = major).
     Weigh direction together with content_type and materiality: a company's own
     promotion or a single social post is weaker evidence than independent reporting.

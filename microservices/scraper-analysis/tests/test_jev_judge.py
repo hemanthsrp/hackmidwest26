@@ -42,9 +42,18 @@ def make_evidence(source_type="general_news", **overrides) -> Evidence:
 class FakeJev:
     """Stands in for jev_tool.JevTool.judge_evidence_items."""
 
-    def __init__(self, engine="jev"):
+    def __init__(self, engine="jev", same=0.9, direction_confidence=0.9):
         self.engine = engine
+        self.same = same
+        self.direction_confidence = direction_confidence
         self.calls = []
+        self.pair_calls = []
+
+    def same_story(self, items, pairs):
+        self.pair_calls.append((items, list(pairs)))
+        return SimpleNamespace(
+            engine="jev", pairs=[SimpleNamespace(a=a, b=b, same=self.same) for a, b in pairs]
+        )
 
     def judge_evidence_items(self, items, companies):
         self.calls.append((items, companies))
@@ -59,12 +68,14 @@ class FakeJev:
                 request_id="req_test",
                 relevant=0.98,
                 direction="positive",
-                direction_confidence=0.9,
+                direction_confidence=self.direction_confidence,
                 content_type="news_report",
                 content_type_confidence=0.95,
                 event_type="earnings_or_guidance",
                 event_type_confidence=0.9,
                 upcoming_event=0.05,
+                sensational=0.04,
+                usable_content=0.97,
                 materiality=1.9,
                 materiality_confidence=0.8,
             )
@@ -182,3 +193,58 @@ def test_ingest_endpoint_judge_false_skips_jev(monkeypatch):
 
     assert body["count"] >= 1 and fake.calls == []
     assert all("jev" not in i["details"] for i in body["evidence"])
+
+
+# --- opt-in sentiment fill ----------------------------------------------------
+
+def test_sentiment_is_left_alone_unless_opted_in(monkeypatch):
+    monkeypatch.setattr(get_settings(), "jev_fill_sentiment", False)
+    untagged = make_evidence(sentiment=Sentiment())
+    jev_judge.judge_evidence([untagged], tool=FakeJev())
+    assert untagged.sentiment.direction is None
+    assert "filled_sentiment" not in untagged.details["jev"]
+
+
+def test_sentiment_fill_only_touches_empty_sentiment(monkeypatch):
+    monkeypatch.setattr(get_settings(), "jev_fill_sentiment", True)
+    untagged = make_evidence(id="u", sentiment=Sentiment())
+    tagged = make_evidence(id="t", sentiment=Sentiment(direction="Bearish", score=0.6))
+
+    jev_judge.judge_evidence([untagged, tagged], tool=FakeJev())
+
+    assert (untagged.sentiment.direction, untagged.sentiment.score) == ("Bullish", 0.9)
+    assert untagged.details["jev"]["filled_sentiment"] is True
+    assert (tagged.sentiment.direction, tagged.sentiment.score) == ("Bearish", 0.6)  # the agent's value wins
+    assert "filled_sentiment" not in tagged.details["jev"]
+
+
+def test_sentiment_fill_skips_low_confidence(monkeypatch):
+    monkeypatch.setattr(get_settings(), "jev_fill_sentiment", True)
+    untagged = make_evidence(sentiment=Sentiment())
+    jev_judge.judge_evidence([untagged], tool=FakeJev(direction_confidence=0.3))
+    assert untagged.sentiment.direction is None
+
+
+# --- same-story marking --------------------------------------------------------
+
+def test_same_story_marks_overlapping_items_from_different_outlets():
+    a = make_evidence(id="a", source_name="CNBC", title="Apple supplier warns of tighter chip capacity")
+    b = make_evidence(id="b", source_name="MarketWatch", title="Apple supplier flags tighter chip capacity")
+    same_outlet = make_evidence(id="c", source_name="CNBC", title="Apple supplier warns of tighter chip capacity again")
+    unrelated = make_evidence(id="d", source_name="Yahoo", title="Tesla opens showroom", summary="Unrelated.")
+    fake = FakeJev()
+
+    jev_judge.judge_evidence([a, b, same_outlet, unrelated], tool=fake)
+
+    asked = fake.pair_calls[0][1]
+    assert (0, 1) in asked and (0, 2) not in asked  # same outlet is never a candidate
+    assert all(3 not in pair for pair in asked)  # no word overlap, never asked
+    assert "b" in a.details["jev"]["same_story_as"] and "a" in b.details["jev"]["same_story_as"]
+    assert "same_story_as" not in unrelated.details["jev"]
+
+
+def test_same_story_below_threshold_marks_nothing():
+    a = make_evidence(id="a", source_name="CNBC")
+    b = make_evidence(id="b", source_name="MarketWatch")
+    jev_judge.judge_evidence([a, b], tool=FakeJev(same=0.1))
+    assert "same_story_as" not in a.details["jev"] and "same_story_as" not in b.details["jev"]

@@ -83,6 +83,8 @@ class ArticleJudgment(_Result):
     event_type_probabilities: dict[str, float] = {}
     event_type_confidence: float | None = None
     upcoming_event: float | None = None
+    sensational: float | None = None
+    usable_content: float | None = None
     materiality: float | None = None
     materiality_levels: list[str] = presets.MATERIALITY_LEVELS
     materiality_confidence: float | None = None
@@ -101,6 +103,20 @@ class ExplanationCheck(_Result):
     claims_truncated: bool = False
     personal_advice: float | None = None
     promises_outcome: float | None = None
+
+
+class PairCheck(BaseModel):
+    a: int
+    b: int
+    same: float
+
+
+class SameStoryResult(_Result):
+    """`same` is 0 to 1 for each requested pair of item positions."""
+
+    question_set_version: str = presets.SAME_STORY_QUESTION_SET_VERSION
+    pairs: list[PairCheck] = []
+    pairs_truncated: bool = False
 
 
 def _env_flag(name: str) -> bool:
@@ -247,6 +263,8 @@ class JevTool:
             event_type_probabilities=event_type.probabilities,
             event_type_confidence=event_type.confidence,
             upcoming_event=response.nouls["upcoming_event"].noul,
+            sensational=response.nouls["sensational"].noul,
+            usable_content=response.nouls["usable_content"].noul,
             materiality=materiality.score,
             materiality_confidence=materiality.confidence,
             **meta,
@@ -304,6 +322,32 @@ class JevTool:
             claims_truncated=truncated,
             personal_advice=response.nouls["personal_advice"].noul,
             promises_outcome=response.nouls["promises_outcome"].noul,
+            **meta,
+        )
+
+    def same_story(
+        self, items: Sequence[Mapping[str, Any]], pairs: Sequence[tuple[int, int]]
+    ) -> SameStoryResult:
+        """For each (i, j) in `pairs`, how likely items i and j report the same news event.
+
+        `items` need `title` and `summary`. Choose the candidate pairs in code (for example by
+        word overlap); only the first 40 pairs are checked (`pairs_truncated`).
+        """
+        kept = [tuple(pair) for pair in pairs][: presets.MAX_PAIRS]
+        truncated = len(pairs) > len(kept)
+        if not kept:
+            return SameStoryResult(engine="jev" if self.enabled else "unavailable")
+        response, meta = self._call(
+            presets.same_story_state(items), presets.same_story_questions(kept)
+        )
+        if response is None:
+            return SameStoryResult(pairs_truncated=truncated, **meta)
+        return SameStoryResult(
+            pairs=[
+                PairCheck(a=a, b=b, same=response.nouls[f"pair_{n}"].noul)
+                for n, (a, b) in enumerate(kept)
+            ],
+            pairs_truncated=truncated,
             **meta,
         )
 
