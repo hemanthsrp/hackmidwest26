@@ -4,7 +4,8 @@ COPY microservices/research-api/pyproject.toml /app/research-api/pyproject.toml
 COPY microservices/research-api/src /app/research-api/src
 COPY microservices/decision-maker/pyproject.toml /app/decision-maker/pyproject.toml
 COPY microservices/decision-maker/src /app/decision-maker/src
-RUN pip install --no-cache-dir "/app/research-api" "/app/decision-maker[pg,agent]" \
+COPY microservices/jev-tool /app/jev-tool
+RUN pip install --no-cache-dir "/app/research-api" "/app/decision-maker[pg,agent]" /app/jev-tool \
     && useradd --system --uid 10001 app
 USER app
 EXPOSE 8000

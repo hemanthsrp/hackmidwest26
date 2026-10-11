@@ -1,0 +1,50 @@
+services:
+  volatility:
+    build:
+      context: .
+      dockerfile: microservices/volatility-surface-builder/Dockerfile
+    ports: ["127.0.0.1:8002:8002"]
+
+  scraper:
+    build:
+      context: .
+      dockerfile: microservices/scraper-analysis/Dockerfile
+    env_file:
+      - .env
+      - microservices/jev-tool/.env
+      - microservices/agentic-search/.env
+    environment:
+      AKAMAI_INFERENCE_BASE_URL: ${OPENAI_BASE_URL}
+      AKAMAI_INFERENCE_API_KEY: ${OPENAI_API_KEY}
+      AKAMAI_EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      AKAMAI_CHAT_MODEL: ${CHAT_MODEL}
+      ENABLE_EXA_SEARCH: "true"
+      EXA_LOOKBACK_DAYS: "7"
+      EXA_ALLOWED_DOMAINS: reuters.com,apnews.com,sec.gov
+    ports: ["127.0.0.1:8001:8001"]
+
+  research-api:
+    build:
+      context: .
+      dockerfile: microservices/research-api/Dockerfile
+    env_file:
+      - .env
+      - microservices/jev-tool/.env
+    environment:
+      SCRAPER_ANALYSIS_URL: http://scraper:8001
+      VOL_SURFACE_URL: http://volatility:8002
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on: [scraper, volatility]
+
+  frontend:
+    build: ./frontend
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_SECRET: ${AUTH_SECRET:?Set a local AUTH_SECRET before starting the stack}
+      AUTH_URL: http://127.0.0.1:3000
+      AUTH_TRUST_HOST: "true"
+      RESEARCH_API_URL: http://research-api:8000
+      ALLOW_REGISTRATION: "false"
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [research-api]
