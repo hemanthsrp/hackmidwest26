@@ -14,8 +14,11 @@ English word (`WORD_TICKERS`: ON, ALL, NOW, CAT, OPEN, ...).
   UPPERCASE cashtag counts (`$ON`, not `$on`), and not as a currency amount
   (`$A 50`).
 - Exchange-qualified forms always match: "NYSE: F", "(NASDAQ:ON)".
-- Parenthesized "(AAPL)" matches; for ambiguous tickers it must follow a
-  capitalized, non-enumerator word ("ServiceNow (NOW)", but not "option (A)").
+- Parenthesized "(AAPL)" matches; for ambiguous tickers it is only trusted
+  when it directly follows that company's own name, written as a proper noun
+  (optionally with a legal suffix): "Ford Motor Co. (F)", "AT&T (T)",
+  "ON Semiconductor (ON)" match; "Plan (A)", "Section (F)", "Model (T)",
+  "Exhibit (ON)" and "Microsoft (T)" do not.
 - Bare tickers must be UPPERCASE and 3+ letters ("AAPL moves" matches,
   "aapl" does not, 1-2 letter bare tokens never do). For WORD tickers a bare
   uppercase token additionally needs stock context, because uppercase words
@@ -27,12 +30,19 @@ English word (`WORD_TICKERS`: ON, ALL, NOW, CAT, OPEN, ...).
 
 Company-name rules:
 - Names come from a small curated override table (distinctive short forms
-  such as "Alphabet") and, when the SEC ticker file is already cached by the
-  SEC adapter, from its company titles with legal suffixes stripped
-  ("Apple Inc." -> "Apple"). This module never triggers a download.
-- Single-word names that are also ordinary English ("Target", "Visa",
-  "Block", "General") are NOT used as names: they would match unrelated
-  headlines, so those stocks match by ticker form only.
+  such as "Alphabet", plus aliases like "Ford Motor") and, when the SEC
+  ticker file is already cached by the SEC adapter, from its company titles.
+  This module never triggers a download.
+- An SEC title is reduced ONLY by dropping trailing legal suffixes ("Inc",
+  "Corp", "Co", "Ltd", "plc", "Holdings", "Group", "Class B"), EDGAR state /
+  "/NEW/" annotations ("/DE/", "/MN") and one leading "The". Nothing else is
+  stripped from the front, so the remaining name is matched in full, words in
+  order: "New York Times Co" needs "New York Times" (not "York Times"),
+  "General Motors Co" needs "General Motors" (not "Motors").
+- Names made only of ordinary English / generic business words ("Target",
+  "Visa", "News", "Popular", "General", "First National") are NOT used as
+  names: they would match unrelated headlines, so those stocks match by
+  ticker form only.
 - A name must appear capitalized as a proper noun (every word starting with
   an uppercase letter, or exactly as written in the table): "Big Lots" and
   "BIG LOTS" match BIG, "big lots of people" and "an apple a day" do not.
@@ -57,6 +67,19 @@ SYMBOL_NAME_HINTS: dict[str, str] = {
     "JPM": "JPMorgan",
     "F": "Ford",
     "ON": "ON Semiconductor",
+    # ambiguous (1-2 letter) tickers: the name is what verifies "(X)"
+    "A": "Agilent",
+    "T": "AT&T",
+    "IT": "Gartner",
+    "O": "Realty Income",
+    "NOW": "ServiceNow",
+}
+
+# Extra curated names (longer official forms) accepted alongside the hint.
+SYMBOL_NAME_ALIASES: dict[str, tuple[str, ...]] = {
+    "F": ("Ford Motor",),
+    "A": ("Agilent Technologies",),
+    "ON": ("onsemi",),
 }
 
 # Tickers that are also everyday English words. Bare uppercase use of these is
@@ -75,18 +98,26 @@ _STOCK_WORDS = {
     "stock", "stocks", "share", "shares", "earnings", "options", "calls", "puts", "price",
     "dividend", "dividends", "guidance", "revenue", "results",
 }
-_ENUMERATOR_WORDS = {
-    "option", "options", "step", "figure", "fig", "part", "section", "answer", "choice", "item", "note",
-    "table", "appendix", "exhibit", "class", "series", "type", "plan", "grade", "case", "group", "list",
-    "point", "question", "and", "or", "the", "of",
-}
 
+# Stripped from the END of an SEC title only (never from the front).
 _LEGAL_SUFFIXES = {
-    "inc", "incorporated", "corp", "corporation", "co", "company", "ltd", "limited", "plc", "llc",
-    "lp", "holdings", "holding", "group", "the", "de", "sa", "nv", "ag", "com", "class", "new",
+    "inc", "incorporated", "corp", "corporation", "co", "company", "cos", "companies", "ltd", "limited",
+    "plc", "llc", "lp", "llp", "holdings", "holding", "group", "sa", "nv", "ag", "se", "com",
+}
+# Words that are generic on their own; a name made ONLY of these (or of the
+# words below) is never used, e.g. "First National", "American Financial".
+_GENERIC_NAME_WORDS = {
+    "bank", "banc", "bancorp", "bancshares", "financial", "trust", "industries",
+    "systems", "technologies", "technology", "solutions", "services", "resources", "partners", "brands",
+    "foods", "entertainment", "media", "communications", "networks", "pharmaceuticals", "therapeutics",
+    "sciences", "realty", "properties", "insurance", "mortgage", "investment", "investments", "investors",
+    "equity", "income", "fund", "news", "popular", "progressive", "interactive", "new", "of", "and", "&",
+    "america", "usa", "us", "north", "south", "east", "west", "mutual", "savings", "federal", "state",
+    "standard", "general", "american", "united", "first", "national", "union", "royal", "great",
 }
 # One-word names that are everyday words; matching them as names is noise.
-_AMBIGUOUS_NAMES = {
+_AMBIGUOUS_NAMES = _GENERIC_NAME_WORDS | {
+    "motor", "motors",
     "target", "visa", "block", "gap", "general", "american", "united", "first", "national", "southern",
     "western", "eastern", "global", "international", "digital", "energy", "financial", "health", "medical",
     "capital", "public", "community", "home", "central", "atlas", "cardinal", "genuine", "continental",
@@ -98,20 +129,37 @@ MIN_NAME_LENGTH = 4
 _EXCHANGES = r"(?:NASDAQ|NYSE|NYSEARCA|NYSEAMERICAN|AMEX|OTC|TSX)"
 
 
+def _title_tokens(title: str | None) -> list[str]:
+    """SEC title -> name tokens with only legal suffixes, EDGAR annotations and
+    a leading "The" removed. Nothing else is ever stripped from the front."""
+    if not title:
+        return []
+    title = re.sub(r"/[A-Za-z]{1,4}/?", " ", title)  # "/DE/", "/NEW/", "Company/MN"
+    tokens = re.findall(r"[A-Za-z0-9&'-]+", title)
+    while tokens:
+        last = tokens[-1].lower()
+        if last in _LEGAL_SUFFIXES or last in {"&", "and"}:
+            tokens.pop()
+        elif len(tokens) >= 2 and tokens[-2].lower() == "class" and len(tokens[-1]) == 1:
+            del tokens[-2:]  # "Class B"
+        else:
+            break
+    if len(tokens) > 1 and tokens[0].lower() == "the":
+        tokens.pop(0)
+    return tokens
+
+
 def distinctive_name(title: str | None) -> str | None:
     """'Apple Inc.' -> 'Apple'; 'Berkshire Hathaway Inc.' -> 'Berkshire Hathaway';
-    ambiguous or too-short names -> None."""
-    if not title:
-        return None
-    tokens = re.findall(r"[A-Za-z0-9&'-]+", title)
-    while tokens and tokens[-1].lower() in _LEGAL_SUFFIXES:
-        tokens.pop()
-    while tokens and tokens[0].lower() in _LEGAL_SUFFIXES:
-        tokens.pop(0)
+    'New York Times Co' -> 'New York Times'; ambiguous, generic or too-short
+    names -> None."""
+    tokens = _title_tokens(title)
     name = " ".join(tokens)
     if len(name) < MIN_NAME_LENGTH:
         return None
     if len(tokens) == 1 and name.lower() in _AMBIGUOUS_NAMES:
+        return None
+    if all(t.lower() in _GENERIC_NAME_WORDS or t.isdigit() for t in tokens):
         return None
     return name
 
@@ -119,6 +167,22 @@ def distinctive_name(title: str | None) -> str | None:
 def company_name(symbol: str) -> str | None:
     hint = SYMBOL_NAME_HINTS.get(symbol.upper())
     return hint or distinctive_name(sec_tickers.cached_title(symbol))
+
+
+def company_names(symbol: str) -> tuple[str, ...]:
+    """Every name that counts as a mention of the company: curated hint and
+    aliases, plus the SEC-derived distinctive name when the table is cached."""
+    symbol = symbol.upper()
+    names = [SYMBOL_NAME_HINTS.get(symbol), *SYMBOL_NAME_ALIASES.get(symbol, ()),
+             distinctive_name(sec_tickers.cached_title(symbol))]
+    return tuple(dict.fromkeys(n for n in names if n))
+
+
+def _verifying_names(symbol: str) -> tuple[str, ...]:
+    """Names that may verify an adjacent "(X)". Right next to the ticker even
+    a generic SEC name ("Visa (V)") is strong evidence, so it is allowed here."""
+    sec_name = " ".join(_title_tokens(sec_tickers.cached_title(symbol)))
+    return tuple(dict.fromkeys(n for n in (*company_names(symbol), sec_name) if len(n) >= 2))
 
 
 def is_ambiguous_ticker(symbol: str) -> bool:
@@ -183,14 +247,22 @@ def _word_after(text: str, pos: int) -> str | None:
     return m.group()
 
 
-def _paren_ok(text: str, m: re.Match, ambiguous: bool) -> bool:
+_TRAILING_SUFFIX = re.compile(r"[\s,]*(?<![A-Za-z0-9])([A-Za-z]+)\.?$")
+
+
+def _paren_ok(text: str, m: re.Match, symbol: str, ambiguous: bool) -> bool:
     if not ambiguous:
         return True
-    prev = _words_before(text, m.start(), 1)
-    if not prev or text[:m.start()].rstrip()[-1:] in ".!?:;":
-        return False
-    word = prev[0]
-    return word[0].isupper() and word.lower().strip(".") not in _ENUMERATOR_WORDS
+    # Ambiguous "(X)" is only trusted right after the company's own name:
+    # "Ford Motor Co. (F)" yes, "Plan (A)" / "Model (T)" / "Exhibit (ON)" no.
+    before = text[:m.start()].rstrip()
+    while (suffix := _TRAILING_SUFFIX.search(before)) and suffix.group(1).lower() in _LEGAL_SUFFIXES:
+        before = before[:suffix.start()].rstrip(" ,")
+    for name in _verifying_names(symbol):
+        found = re.search(rf"(?<![A-Za-z0-9&]){re.escape(name)}$", before, re.IGNORECASE)
+        if found and _proper_noun(found.group(), name):
+            return True
+    return False
 
 
 def _bare_ok(text: str, m: re.Match, symbol: str) -> bool:
@@ -230,9 +302,9 @@ def matches_symbol(text: str, symbol: str) -> bool:
     if any(p.search(text) for p in _ticker_patterns(symbol)):
         return True
     ambiguous = is_ambiguous_ticker(symbol)
-    if any(_paren_ok(text, m, ambiguous) for m in _paren_pattern(symbol).finditer(text)):
+    if any(_paren_ok(text, m, symbol, ambiguous) for m in _paren_pattern(symbol).finditer(text)):
         return True
     if any(_bare_ok(text, m, symbol) for m in _bare_pattern(symbol).finditer(text)):
         return True
-    name = company_name(symbol)
-    return bool(name and any(_proper_noun(m.group(), name) for m in _name_pattern(name).finditer(text)))
+    return any(_proper_noun(m.group(), name)
+               for name in company_names(symbol) for m in _name_pattern(name).finditer(text))

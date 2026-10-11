@@ -8,9 +8,10 @@ sources that aren't scoped to one symbol (pipeline/symbol_match.py), which
 only ever READS the cache and never triggers a download itself.
 
 Loading is single-flight: concurrent cold lookups (e.g. parallel ingests)
-share one download instead of each fetching the file. A failed or malformed
-download is not cached, so the next lookup retries; a malformed table raises
-a fixed ValueError message (never the response body).
+share one download instead of each fetching the file. A failed, malformed or
+empty download (no usable ticker entries) is not cached, so the next lookup
+retries instead of serving an empty table for a whole TTL; malformed and
+empty tables raise fixed ValueError messages (never the response body).
 """
 
 import threading
@@ -30,6 +31,7 @@ class TickerInfo:
 
 
 MALFORMED_MESSAGE = "SEC company_tickers.json was malformed"
+EMPTY_MESSAGE = "SEC company_tickers.json had no usable entries"
 
 _cache: tuple[float, dict[str, TickerInfo]] | None = None
 _load_lock = threading.Lock()
@@ -49,6 +51,8 @@ def _parse(raw: dict) -> dict[str, TickerInfo]:
             except (TypeError, ValueError):
                 continue
             table.setdefault(ticker, TickerInfo(cik, str(entry.get("title", ""))))
+    if not table:  # a 200 with {} (or only junk) is an outage, not "no tickers exist"
+        raise ValueError(EMPTY_MESSAGE)
     return table
 
 

@@ -209,3 +209,140 @@ def test_ticker_followed_by_dot_letter_is_a_different_symbol(text, symbol):
 ])
 def test_sentence_final_period_still_matches(text, symbol):
     assert matches_symbol(text, symbol) is True
+
+
+# --- PR #18 review (hbot): unverified "(X)" must not match ambiguous tickers --
+
+@pytest.mark.parametrize("text,symbol", [
+    ("Plan (A)", "A"),
+    ("See Plan (A) for details", "A"),
+    ("Section (F) applies", "F"),
+    ("Model (T) review", "T"),
+    ("Exhibit (ON)", "ON"),
+    ("Appendix (C) lists them", "C"),
+    ("Vitamin (C) levels", "C"),
+    ("Schedule (O) attached", "O"),
+    ("Category (IT) budget", "IT"),
+    ("Form (A) filed late", "A"),
+    ("Henry (F) wrote", "F"),
+    ("Tier (ALL) access", "ALL"),
+    ("Mode (NOW) enabled", "NOW"),
+    ("Microsoft (T) and Apple", "T"),  # a real company, but not this ticker's company
+    ("Ford Motor (T) review", "T"),
+])
+def test_parenthesized_ambiguous_ticker_needs_the_company_name(text, symbol):
+    assert matches_symbol(text, symbol) is False
+
+
+@pytest.mark.parametrize("text,symbol", [
+    ("Ford (F) recalls trucks", "F"),
+    ("Ford Motor (F) recalls trucks", "F"),
+    ("Ford Motor Co. (F) recalls trucks", "F"),
+    ("Ford Motor Company (F) recalls trucks", "F"),
+    ("AT&T (T) adds subscribers", "T"),
+    ("AT&T Inc. (T) adds subscribers", "T"),
+    ("ON Semiconductor (ON) beats", "ON"),
+    ("ServiceNow (NOW) climbs", "NOW"),
+    ("Agilent Technologies (A) beats estimates", "A"),
+    ("Gartner (IT) raises outlook", "IT"),
+    ("Realty Income (O) raises its dividend", "O"),
+])
+def test_parenthesized_ambiguous_ticker_after_its_company_name_matches(text, symbol):
+    assert matches_symbol(text, symbol) is True
+
+
+def test_parenthesized_ambiguous_ticker_verified_by_sec_title(monkeypatch):
+    import time
+    table = {"V": sec_tickers.TickerInfo(1403161, "Visa Inc."),
+             "C": sec_tickers.TickerInfo(831001, "Citigroup Inc")}
+    monkeypatch.setattr(sec_tickers, "_cache", (time.monotonic(), table))
+    assert matches_symbol("Visa (V) beats", "V") is True  # generic name is fine right next to the ticker
+    assert matches_symbol("Citigroup Inc. (C) beats", "C") is True
+    assert matches_symbol("Vitamin (C) levels", "C") is False
+    assert matches_symbol("New visa (V) rules", "V") is False  # lowercase: not the proper noun
+
+
+def test_parenthesized_non_ambiguous_ticker_unchanged():
+    assert matches_symbol("Adobe (ADBE) news", "ADBE") is True
+    assert matches_symbol("see (AAPL)", "AAPL") is True
+
+
+# --- PR #18 review (hbot): names are not front-stripped to a partial name ----
+
+@pytest.mark.parametrize("title,expected", [
+    ("New York Times Co", "New York Times"),
+    ("AG Mortgage Investment Trust, Inc.", "AG Mortgage Investment Trust"),
+    ("New Jersey Resources Corp", "New Jersey Resources"),
+    ("Group 1 Automotive Inc", "Group 1 Automotive"),
+    ("De Beers Group", "De Beers"),
+    ("JPMorgan Chase & Co", "JPMorgan Chase"),
+    ("Charles Schwab Corp /DE/", "Charles Schwab"),
+    ("Lennar Corp /New/", "Lennar"),
+    ("Wells Fargo & Company/MN", "Wells Fargo"),
+    ("The Walt Disney Company", "Walt Disney"),
+    ("General Motors Co", "General Motors"),
+    ("Goldman Sachs Group Inc", "Goldman Sachs"),
+    ("Brown-Forman Corp Class B", "Brown-Forman"),
+    ("The Home Depot, Inc.", "Home Depot"),
+])
+def test_distinctive_name_only_strips_legal_suffixes_and_leading_the(title, expected):
+    assert sm.distinctive_name(title) == expected
+
+
+@pytest.mark.parametrize("title", [
+    "News Corp /New/",       # -> "News"
+    "Popular, Inc.",         # -> "Popular"
+    "Progressive Corp",
+    "First Inc",
+    "United Corp",
+    "General Corp",
+    "American Inc",
+    "Bank Holdings",
+    "Motors Co",
+    "First National Corp",   # every word generic
+    "American Financial Group Inc",
+])
+def test_generic_names_are_never_used(title):
+    assert sm.distinctive_name(title) is None
+
+
+@pytest.fixture
+def partial_name_table(monkeypatch):
+    import time
+    table = {
+        "NYT": sec_tickers.TickerInfo(71691, "New York Times Co"),
+        "MITT": sec_tickers.TickerInfo(1514281, "AG Mortgage Investment Trust, Inc."),
+        "NJR": sec_tickers.TickerInfo(356309, "New Jersey Resources Corp"),
+        "GPI": sec_tickers.TickerInfo(1031203, "Group 1 Automotive Inc"),
+        "NWSA": sec_tickers.TickerInfo(1564708, "News Corp /New/"),
+        "GM": sec_tickers.TickerInfo(1467858, "General Motors Co"),
+        "BPOP": sec_tickers.TickerInfo(763901, "Popular, Inc."),
+        "JPMX": sec_tickers.TickerInfo(19617, "JPMorgan Chase & Co"),
+    }
+    monkeypatch.setattr(sec_tickers, "_cache", (time.monotonic(), table))
+    return table
+
+
+@pytest.mark.parametrize("text,symbol", [
+    ("York Times readers wait", "NYT"),
+    ("Mortgage Investment Trust yields climb", "MITT"),
+    ("Jersey Resources update", "NJR"),
+    ("Top 1 Automotive picks", "GPI"),
+    ("Breaking News today", "NWSA"),
+    ("General Electric beats", "GM"),
+    ("Motors Liquidation update", "GM"),
+    ("Popular Science magazine", "BPOP"),
+])
+def test_incomplete_or_generic_names_do_not_match(partial_name_table, text, symbol):
+    assert matches_symbol(text, symbol) is False
+
+
+@pytest.mark.parametrize("text,symbol", [
+    ("New York Times beats subscriber estimates", "NYT"),
+    ("New Jersey Resources raises dividend", "NJR"),
+    ("Group 1 Automotive posts record quarter", "GPI"),
+    ("General Motors recalls SUVs", "GM"),
+    ("JPMorgan Chase earnings preview", "JPMX"),
+])
+def test_full_company_names_still_match(partial_name_table, text, symbol):
+    assert matches_symbol(text, symbol) is True

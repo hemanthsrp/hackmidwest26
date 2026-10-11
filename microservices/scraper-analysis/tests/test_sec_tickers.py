@@ -187,3 +187,68 @@ def test_sec_adapter_sanitizes_ticker_table_failures(monkeypatch):
         SecEdgarAdapter().fetch_live("AAPL")
     assert str(ei.value) == sec_tickers.MALFORMED_MESSAGE  # no response body echoed
     assert sec_tickers._cache is None
+
+
+# --- PR #18 review (hbot): an empty table must not be cached for 24h ---------
+
+def _json_client(*bodies):
+    """A client whose successive downloads return the given JSON bodies."""
+    queue = list(bodies)
+
+    class SeqClient(FakeClient):
+        def get(self, url):
+            self.calls += 1
+            raw = queue.pop(0) if len(queue) > 1 else queue[0]
+
+            class R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return raw
+
+            return R()
+
+    return SeqClient()
+
+
+@pytest.mark.parametrize("raw", [
+    {},
+    {"0": {"ticker": "X"}},  # no cik_str
+    {"0": "junk", "1": ["also junk"]},
+    {"0": {"cik_str": "not-a-number", "ticker": "AAPL", "title": "Apple Inc."}},
+])
+def test_table_without_usable_entries_is_a_failed_load_and_not_cached(raw):
+    c = _json_client(raw)
+    with pytest.raises(ValueError) as ei:
+        sec_tickers.load(c)
+    assert str(ei.value) == sec_tickers.EMPTY_MESSAGE  # fixed text, no body echoed
+    assert sec_tickers._cache is None
+    assert sec_tickers.cached_title("AAPL") is None
+    with pytest.raises(ValueError):
+        sec_tickers.load(c)  # next call retries instead of serving a cached empty table
+    assert c.calls == 2
+
+
+def test_empty_table_then_good_table_recovers():
+    c = _json_client({}, RAW)
+    with pytest.raises(ValueError):
+        sec_tickers.lookup("AAPL", c)
+    assert sec_tickers.lookup("AAPL", c).cik == 320193
+    assert sec_tickers.lookup("MSFT", c).cik == 789019
+    assert c.calls == 2
+
+
+def test_sec_adapter_sanitizes_empty_ticker_table(monkeypatch):
+    from scraper_analysis.sources import sec_edgar
+    from scraper_analysis.sources.base import SourceUnavailableError
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        sec_edgar.httpx, "Client",
+        lambda **kw: real_client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})), **kw),
+    )
+    with pytest.raises(SourceUnavailableError) as ei:
+        SecEdgarAdapter().fetch_live("AAPL")
+    assert str(ei.value) == sec_tickers.EMPTY_MESSAGE
+    assert sec_tickers._cache is None
