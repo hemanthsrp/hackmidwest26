@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +11,9 @@ from scraper_analysis.models.signal import Signal
 from scraper_analysis.pipeline import divergence as dv
 from scraper_analysis.storage import store as store_module
 
-NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
+# Price freshness is checked against the request time, so fixtures are dated
+# relative to today (midnight UTC, like a real daily close) to stay current.
+NOW = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def price(value, mode="live"):
@@ -111,19 +113,19 @@ def test_fewer_than_two_legs_is_insufficient_data():
 
 def test_deterministic_and_reports_thresholds():
     ev, sig = [form4(sell=500_000)], [price(9.0)]
-    a, b = dv.analyze("AAPL", ev, sig), dv.analyze("AAPL", ev, sig)
+    a, b = dv.analyze("AAPL", ev, sig, as_of=NOW), dv.analyze("AAPL", ev, sig, as_of=NOW)
     assert a == b
     assert a["thresholds"]["price_move_pct"] == dv.PRICE_MOVE_PCT
     assert "Not a prediction" in a["disclaimer"]
 
 
 def test_latest_live_price_wins_and_fixture_never_counts():
-    old = price(9.0)
-    live_new = Signal(symbol="AAPL", name="30-day price change", value=-7.0, unit="percent", window="30d",
-                      as_of=datetime(2026, 10, 11, tzinfo=timezone.utc), source="yf", data_mode="live")
+    old = Signal(symbol="AAPL", name="30-day price change", value=9.0, unit="percent", window="30d",
+                 as_of=NOW - timedelta(days=1), source="yf", data_mode="live")
+    live_new = price(-7.0)
     fixture = price(50.0, mode="sample")
-    assert dv._price_leg([old, live_new, fixture]).direction == "down"
-    assert dv._price_leg([fixture]).direction is None  # fixtures never fill the price leg
+    assert dv._price_leg([old, live_new, fixture], NOW)[0].direction == "down"
+    assert dv._price_leg([fixture], NOW)[0].direction is None  # fixtures never fill the price leg
 
 
 @pytest.fixture
