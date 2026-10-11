@@ -1,0 +1,16 @@
+[
+  {
+    "symbol": "AAPL",
+    "chamber": "House",
+    "filer_name": "Sample Representative",
+    "owner": "Spouse",
+    "ticker": "AAPL",
+    "asset_name": "Apple Inc. - Common Stock",
+    "asset_type": "ST",
+    "transaction_type": "Sale (Partial)",
+    "amount_range": "$1,001 - $15,000",
+    "url": "https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2026/00000000.pdf",
+    "published_at": "2026-10-01T00:00:00Z",
+    "observed_at": "2026-09-22T00:00:00Z"
+  }
+]

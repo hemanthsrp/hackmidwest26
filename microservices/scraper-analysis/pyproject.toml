@@ -15,7 +15,9 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pgvector>=0.3",
     "yfinance>=0.2",
+    "pdfplumber>=0.11",
     "python-dateutil>=2.9",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

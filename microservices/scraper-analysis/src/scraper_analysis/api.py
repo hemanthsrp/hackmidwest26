@@ -1,15 +1,56 @@
 import math
+from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from .agents import synthesis_agent
+from .config import get_settings
+from .pipeline import divergence
 from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
+from .scheduler import Scheduler, build_owner_lock
 from .sources.base import sanitize_error
 from .storage.store import get_store
 
-app = FastAPI(title="scraper-analysis", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    app.state.scheduler = None
+    if settings.enable_scheduler:
+        scheduler = Scheduler(
+            # Scheduler normalizes, validates and de-duplicates these.
+            symbols=[s for s in settings.scheduler_symbols.split(",") if s.strip()],
+            interval_minutes=settings.scheduler_interval_minutes,
+            offhours_factor=settings.scheduler_offhours_factor,
+            tag=settings.scheduler_tag,
+            # With DATABASE_URL set: a per-run factory of Postgres advisory
+            # locks (own connection per run) so only one process/replica can
+            # own the scheduler. None = in-process only.
+            owner_lock=build_owner_lock(settings),
+        )
+        # start() refuses (start_error in /scheduler/status) if another
+        # scheduler run owns this process (incl. one still stopping/draining), or
+        # another process holds the advisory lock; it never runs two at once.
+        scheduler.start()
+        app.state.scheduler = scheduler
+    try:
+        yield
+    finally:
+        if app.state.scheduler is not None:
+            await app.state.scheduler.stop()
+
+
+app = FastAPI(title="scraper-analysis", version="0.1.0", lifespan=lifespan)
+
+
+@app.get("/scheduler/status")
+def scheduler_status() -> dict:
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler is None:
+        return {"enabled": False}
+    return scheduler.status()
 
 
 @app.post("/briefing")
@@ -94,6 +135,13 @@ def ingest_run(
             + f" ({s['error']})"
             for s in sources
             if s["status"] in ("fallback", "unavailable")
+        ]
+        + [
+            # Live but incomplete (e.g. some House PTR PDFs unreadable): the
+            # data is real, but coverage is partial and must not look complete.
+            f"{s['name']}: live source returned partial coverage ({s['error']})"
+            for s in sources
+            if s["status"] == "live" and s["error"]
         ],
     }
 
@@ -163,3 +211,30 @@ def get_signals(symbol: str = Query(...)) -> dict:
         "status": "ok" if items else "insufficient_data",
         "signals": [s.model_dump(mode="json") for s in items],
     }
+
+
+@app.get("/divergence")
+def get_divergence(
+    symbol: str = Query(...),
+    as_of: datetime | None = Query(
+        None,
+        description="Request time (ISO 8601, default now). Must not be in the future (400). A past as_of is "
+        "historical analysis and is labelled window.historical=true with a warning.",
+    ),
+) -> dict:
+    """Where independent source types disagree (price vs insiders vs
+    congressional trades vs news). Deterministic and rule-based; thresholds
+    are in the response. Only live records (never sample or cached), never
+    future-dated, inside the price signal's window, with a fresh price, can
+    contribute to a flag (see pipeline/divergence.py). Raw stored records are
+    passed so `excluded` counts every dropped record."""
+    try:
+        validated = validate_symbol(symbol)
+    except InvalidSymbolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store = get_store()
+    try:
+        return divergence.analyze(validated, store.query_evidence(validated), store.query_signals(validated),
+                                  as_of=as_of)
+    except divergence.FutureAsOfError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

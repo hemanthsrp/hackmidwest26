@@ -18,6 +18,11 @@ when the trades happened, and one Form 4 can cover trades on several days.
 from); `transaction_dates` lists every distinct trade date, and
 `last_transaction_date` the latest. `periodOfReport` is used only when no
 transaction carries a date, and is always kept as `period_of_report`.
+
+`transactions` is the per-trade breakdown of the directional (P/S)
+non-derivative rows, in document order: {date, code, shares, price,
+value_usd}. Consumers that window by date (e.g. the divergence engine) must
+value only the trades inside their window, not the filing totals.
 """
 
 from xml.etree import ElementTree
@@ -56,6 +61,7 @@ def parse_form4(xml_text: str) -> dict:
     buy_shares = sell_shares = buy_value = sell_value = 0.0
     other: dict[str, float] = {}
     dates: set[str] = set()
+    transactions: list[dict] = []
     for tx in root.findall("nonDerivativeTable/nonDerivativeTransaction"):
         tx_date = _date(_text(tx, "transactionDate/value"))
         if tx_date:
@@ -63,6 +69,9 @@ def parse_form4(xml_text: str) -> dict:
         code = _text(tx, "transactionCoding/transactionCode") or "?"
         shares = _num(_text(tx, "transactionAmounts/transactionShares/value"))
         price = _num(_text(tx, "transactionAmounts/transactionPricePerShare/value"))
+        if code in ("P", "S"):
+            transactions.append({"date": tx_date, "code": code, "shares": shares, "price": price,
+                                 "value_usd": round(shares * price, 2)})
         if code == "P":
             buy_shares += shares
             buy_value += shares * price
@@ -87,4 +96,5 @@ def parse_form4(xml_text: str) -> dict:
         "sell_shares": sell_shares,
         "sell_value_usd": round(sell_value, 2),
         "other_codes": other,
+        "transactions": transactions,
     }

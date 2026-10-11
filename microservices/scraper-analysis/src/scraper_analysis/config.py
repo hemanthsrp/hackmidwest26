@@ -1,3 +1,4 @@
+import math
 from urllib.parse import parse_qs, urlparse
 
 from pydantic import field_validator
@@ -66,6 +67,22 @@ class Settings(BaseSettings):
     # Unofficial public .json scraping (no OAuth) -- off by default, see
     # sources/reddit_unofficial.py docstring for the accepted risk tradeoff.
     enable_reddit_scraper: bool = False
+
+    # Background ingestion (scheduler.py). Off by default: it writes to the
+    # configured database unattended. Always strict (never persists fixtures).
+    enable_scheduler: bool = False
+    scheduler_symbols: str = "AAPL"  # comma-separated
+    scheduler_interval_minutes: float = 30
+    scheduler_offhours_factor: float = 4
+    scheduler_tag: bool = True  # run the Bedrock tagging agent on new items
+
+    @field_validator("scheduler_interval_minutes", "scheduler_offhours_factor")
+    @classmethod
+    def _finite_positive(cls, v: float) -> float:
+        # nan/inf would break the loop's sleep/timestamp math; <=0 would spin it.
+        if not math.isfinite(v) or v <= 0:
+            raise ValueError(f"must be a finite number greater than 0 (got {v!r})")
+        return v
 
     @property
     def akamai_db_configured(self) -> bool:
