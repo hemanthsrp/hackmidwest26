@@ -9,6 +9,13 @@ def _normalize_title(title: str) -> str:
 
 
 def _fingerprint(evidence: Evidence) -> str:
+    if evidence.source_type == "sec_filing" and evidence.source_url:
+        # One SEC filing == one evidence row. The filing URL embeds the
+        # accession number, which is unique and never changes; title and
+        # date do (Form 4 enrichment rewrites the title and moves
+        # observed_at to the trade date), and must not mint a new ID. See
+        # storage/migrations.py for re-keying rows stored under the old scheme.
+        return f"sec_filing::{evidence.source_url.strip().lower()}"
     title = _normalize_title(evidence.title)
     day = evidence.observed_at.date().isoformat() if evidence.observed_at else ""
     if evidence.source_url:
@@ -39,6 +46,14 @@ def dedup_evidence(items: list[Evidence]) -> list[Evidence]:
         seen.add(fp)
         deduped.append(item)
     return deduped
+
+
+def is_enrichment_upgrade(existing_details: dict | None, new_details: dict | None) -> bool:
+    """True when a stored row is metadata-only (e.g. a Form 4 whose XML
+    fetch failed) and the new copy of the SAME record carries the parsed
+    details. Such a row is replaced instead of kept, so a transient XML
+    failure doesn't freeze the record as metadata-only forever."""
+    return "insider" not in (existing_details or {}) and "insider" in (new_details or {})
 
 
 def assign_stable_ids(items: list[Evidence]) -> None:

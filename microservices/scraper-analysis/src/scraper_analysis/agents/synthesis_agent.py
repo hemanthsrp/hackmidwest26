@@ -87,12 +87,26 @@ def _evidence_row(e: Evidence) -> dict:
 
 
 def prefer_real(items: list) -> list:
-    """Drop fixture ('sample') records whenever any non-sample record exists.
-    A shared database can hold leftover fixtures from tests/demos; they must
-    not compete with live data in a briefing. Sample data is used only when
-    it is all there is (and the briefing then says so)."""
+    """Drop fixture ('sample') records whenever any non-sample record exists
+    in this one list. Prefer select_briefing_records(), which applies the
+    rule across evidence AND signals together."""
     real = [i for i in items if i.data_mode != "sample"]
     return real or items
+
+
+def select_briefing_records(evidence: list, signals: list) -> tuple[list, list]:
+    """One live/sample decision for the whole briefing. A shared database
+    can hold leftover fixtures from tests/demos; if ANY live record exists
+    (evidence or signal), every sample record is dropped from BOTH sets, so
+    a live briefing never sees fixture data -- even when one set has only
+    fixtures. Sample data is used only when nothing live exists at all (and
+    the briefing then says so)."""
+    if any(i.data_mode != "sample" for i in [*evidence, *signals]):
+        return (
+            [e for e in evidence if e.data_mode != "sample"],
+            [s for s in signals if s.data_mode != "sample"],
+        )
+    return list(evidence), list(signals)
 
 
 def build_tools(
@@ -104,8 +118,10 @@ def build_tools(
 ) -> list:
     """Read-only tools bound to one symbol. Every id returned is recorded in
     seen_ids so citations can be verified afterwards."""
-    evidence = prefer_real(store.query_evidence(symbol)) if evidence is None else evidence
-    signals = prefer_real(store.query_signals(symbol)) if signals is None else signals
+    if evidence is None or signals is None:
+        stored_ev, stored_sig = select_briefing_records(store.query_evidence(symbol), store.query_signals(symbol))
+        evidence = stored_ev if evidence is None else evidence
+        signals = stored_sig if signals is None else signals
     allowed_ids = {e.id for e in evidence}
 
     @tool
@@ -161,8 +177,7 @@ def generate_briefing(
     agent_factory=build_bedrock_agent,
 ) -> dict:
     store = store or get_store()
-    evidence = prefer_real(store.query_evidence(symbol))
-    signals = prefer_real(store.query_signals(symbol))
+    evidence, signals = select_briefing_records(store.query_evidence(symbol), store.query_signals(symbol))
     if not evidence and not signals:
         return {
             "symbol": symbol,
@@ -176,7 +191,11 @@ def generate_briefing(
         raise BriefingUnavailableError("Bedrock credentials are not configured")
 
     seen_ids: set[str] = set()
-    agent = agent_factory(SYSTEM_PROMPT, tools=build_tools(store, symbol, seen_ids, evidence, signals))
+    try:
+        agent = agent_factory(SYSTEM_PROMPT, tools=build_tools(store, symbol, seen_ids, evidence, signals))
+    except Exception as exc:  # bad model id, boto/session setup, tool registration...
+        logger.warning("briefing agent setup failed for %s", symbol, exc_info=True)
+        raise BriefingUnavailableError(f"briefing agent setup failed: {type(exc).__name__}") from exc
     today = datetime.now(timezone.utc).date().isoformat()
     prompt = f"Today is {today}. Write the research briefing for {symbol}."
     briefing = None
