@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from .agents import synthesis_agent
 from .config import get_settings
 from .pipeline import divergence
-from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
+from .pipeline.ingest import IngestPartialFailure, IngestResult, InvalidSymbolError, ingest_symbol, validate_symbol
 from .scheduler import Scheduler, build_owner_lock
 from .sources.base import sanitize_error
 from .storage.store import get_store
@@ -100,8 +100,14 @@ def ingest_run(
 
     from .pipeline import jev_judge
 
+    partial_error = None
     with jev_judge.for_request(judge):
-        result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
+        try:
+            result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
+        except IngestPartialFailure as exc:
+            # The evidence is already stored; a bare 500 would claim otherwise.
+            result = IngestResult(exc.evidence, [], exc.reports)
+            partial_error = sanitize_error(str(exc))
     # Adapters already sanitize via sources.base.resolve(); repeat it at the
     # API boundary so no future source path can return raw upstream text.
     sources = [
@@ -129,7 +135,7 @@ def ingest_run(
         "evidence": [e.model_dump(mode="json") for e in result.evidence],
         "signals": [s.model_dump(mode="json") for s in result.signals],
         "sources": sources,
-        "warnings": [
+        "warnings": ([f"signals step failed after the evidence was saved: {partial_error}"] if partial_error else []) + [
             f"{s['name']}: live source failed, "
             + ("fixtures substituted" if s["status"] == "fallback" else "omitted (fixtures refused)")
             + f" ({s['error']})"
