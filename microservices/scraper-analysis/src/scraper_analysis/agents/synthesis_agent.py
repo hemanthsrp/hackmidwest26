@@ -30,6 +30,7 @@ from strands import tool
 from ..config import get_settings
 from ..models.briefing import Briefing
 from ..models.evidence import Evidence
+from ..pipeline import grade
 from ..storage.store import EvidenceStore, get_store
 from .strands_setup import build_bedrock_agent
 from .tagging_agent import _extract_json
@@ -56,6 +57,10 @@ strings the tools returned.
 posts are low credibility. Pre-scheduled 10b5-1 insider sales are weak signals; open-market \
 purchases are stronger than sales. Congressional trades are disclosed with a lag.
 - Note when records have data_mode "sample" (fixture, not live) or are stale.
+- Some records carry "relevance_to_symbol" (0-1), "off_topic_for_symbol" and "strength". A record \
+marked off_topic_for_symbol is mainly about something else: do not treat its sentiment or tags as \
+being about this symbol. Use it only if it states a specific fact about this company, and say so. \
+Prefer higher-strength records. Never report these numbers as a score for the stock.
 - Name genuine conflicts between sources, and list what is missing (data_gaps).
 
 Respond with ONLY a JSON object, no prose, in exactly this shape:
@@ -82,6 +87,7 @@ def _evidence_row(e: Evidence) -> dict:
         "observed_at": e.observed_at.isoformat() if e.observed_at else None,
         "data_mode": e.data_mode,
         "credibility": e.credibility.overall_score,
+        **grade.agent_view(e),  # strength / relevance_to_symbol / off_topic_for_symbol, when graded
         "details": e.details,
     }
 

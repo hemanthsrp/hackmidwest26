@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # Opt-in on top of JEV_ENABLED: when the tagging agent left sentiment
     # empty (Bedrock off or failed), fill it from Jev's direction.
     jev_fill_sentiment: bool = False
+    # Records Jev scores below this for relevance to the symbol are graded
+    # "off_topic" (kept and labelled, never dropped). See pipeline/grade.py.
+    jev_relevance_gate: float = 0.3
 
     enable_x_scraper: bool = False
     # Unofficial public .json scraping (no OAuth) -- off by default, see

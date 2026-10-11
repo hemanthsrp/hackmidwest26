@@ -133,6 +133,36 @@ With `JEV_ENABLED=true` and `TYPESAFE_API_KEY` set (and the shared package insta
 - **Heuristic, not validated.** These are model judgments checked only on a small hand-written sample (`microservices/jev-tool/evals/`). None is a probability that a price will move.
 - **The briefing sees it.** `/briefing` already passes `details` to the synthesis agent, so judged records reach it with their Jev judgment attached.
 
+### Grade: how much weight a record deserves
+
+When Jev is enabled every newly ingested record also gets `details.grade`, computed once at ingestion and stored with it (so it is in Postgres next to the vector):
+
+```json
+"grade": {"version": "grade-v1", "basis": "jev", "strength": 0.3712, "gated": false, "gate_reasons": [],
+  "relevance_gate": 0.3,
+  "factors": {"relevance": 0.99, "credibility": 0.75, "content_type": 1.0, "materiality": 0.7,
+              "direction_confidence": 1.0, "hype": 1.0, "same_story": 1.0}}
+```
+
+- **`strength`** is the product of the listed factors. It is a ranking aid: compare records with it, do not read it as a rating out of 1 (several factors below 1 multiply to a small number; live news records ran from about 0.01 to 0.4). It is not a probability and says nothing about price direction.
+- **`gated` / `gate_reasons`**: `off_topic` when Jev's relevance is below `JEV_RELEVANCE_GATE` (default 0.3), `unusable_content` for paywall or error pages. **Gated records are kept and labelled, never dropped.** The tagging agent still tags them; the label is how a reader knows that sentiment may not be about this symbol. In live runs the per-symbol Yahoo feed was 40 to 90 percent off-topic, and the tagging agent gave about half of those a Bullish or Bearish direction for the symbol.
+- **`basis: "source_only"`**: filings, congressional disclosures and anything Jev did not answer for are graded on `credibility` alone and are never gated.
+- **Factors and weights** are hand-set heuristics in `pipeline/grade.py` (content type: news 1.0, company announcement 0.8, opinion 0.6, social 0.4; materiality 0.4 to 1.0; a 0.7 penalty only when `sensational` is 0.8 or more; a small bonus per other outlet with the same story). Not fitted, not validated.
+- **Freshness is not stored.** It is applied when you ask: `strength_now` halves every 72 hours from `published_at`.
+
+Reading it:
+
+| Call | Result |
+|---|---|
+| `GET /evidence?symbol=AAPL` | Unchanged. Every record, with `details.jev` and `details.grade` inside |
+| `GET /evidence?symbol=AAPL&ranked=true` | Strongest first, each with `strength_now`, plus `news_tone` and `hidden_as_off_topic` |
+| `GET /evidence?symbol=AAPL&relevant_only=true` | Leaves out gated records (they stay stored) |
+| SQL | `(details->'grade'->>'strength')::float`, `(details->'grade'->>'gated')::boolean` |
+
+`news_tone` is the strength-weighted direction of on-topic, Jev-judged records, with same-story records counted once: `{"label": "positive|negative|mixed_or_neutral|insufficient_data", "tone": -1..1, "stories_used", "records_gated", "by_direction", "evidence_ids"}`. It needs at least three stories. A summary of reported tone, never a forecast.
+
+**The briefing agent sees the grade first.** Its tool rows carry `strength`, `relevance_to_symbol` and `off_topic_for_symbol` at the top level, and its prompt tells it not to treat an off-topic record's sentiment as being about the symbol. Nothing is withheld from it. Any aggregate you build over news (tone, counts, the divergence news leg) should skip gated records: `pipeline.grade.is_gated(evidence)`.
+
 ### Briefing review
 
 With Jev enabled, `POST /briefing` also runs an advisory check of the generated text and reports it in `meta.jev_review` (it is `null` when Jev is off):
@@ -140,16 +170,16 @@ With Jev enabled, `POST /briefing` also runs an advisory check of the generated 
 ```json
 "jev_review": {"engine": "jev", "model": "jev-1.13.0", "question_set_version": "explanation-v1",
   "points": [{"index": 0, "status": "checked", "supported": 0.93, "evidence_checked": 1},
-             {"index": 1, "status": "not_checked", "reason": "cites only quantitative signals"}],
+             {"index": 1, "status": "not_checked", "reason": "cites no news or social records"}],
   "personal_advice": 0.03, "promises_outcome": 0.05,
-  "thresholds": {"supported_below": 0.5, "flag_at_or_above": 0.5}}
+  "thresholds": {"supported_below": 0.3, "flag_at_or_above": 0.5}}
 ```
 
-- `supported` is how likely the point's text is backed by the `title` and `summary` of the evidence it cites (the weakest sentence in the point). `personal_advice` and `promises_outcome` cover the whole briefing.
+- Only points that cite news or social records are checked. `supported` is how likely the point's text is backed by the `title` and `summary` of those records (the weakest sentence in the point). `personal_advice` and `promises_outcome` cover the whole briefing.
 - Anything past a threshold is added to the response's `warnings`, prefixed `jev:`. **Nothing is edited or dropped**; the citation check above still decides what is kept.
-- A point resting on `details` (Form 4 totals) or on signals can score low while being correct, because only titles and summaries are compared. Signal-only points are not checked.
+- Points resting on filings, congressional disclosures or signals are `not_checked`: their facts are in structured `details` and numbers, which this comparison cannot see (in live runs it flagged correct filing points almost every time, so they were taken out of scope). A warning is raised only when `supported` is below 0.3.
 
-Code: `src/scraper_analysis/pipeline/jev_judge.py`, `src/scraper_analysis/agents/jev_guard.py`. Caller rules for Jev: `microservices/jev-tool/AGENT_GUIDE.md`.
+Code: `src/scraper_analysis/pipeline/jev_judge.py`, `src/scraper_analysis/pipeline/grade.py`, `src/scraper_analysis/agents/jev_guard.py`. Caller rules for Jev: `microservices/jev-tool/AGENT_GUIDE.md`.
 
 ## Briefing
 

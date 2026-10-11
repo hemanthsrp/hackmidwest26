@@ -867,8 +867,23 @@ Sections 6 and 7 are the plan; this is what exists in code. Every item is additi
 | `scraper-analysis` | One Jev call per new news or social record at ingestion; result stored under `details.jev` (relevance, direction, content type, event type, upcoming event, sensational, usable content, materiality). Filings and congressional disclosures are skipped. | `pipeline/jev_judge.py`, hooked after tagging in `pipeline/ingest.py` | Built; run end to end with real Jev on the service's fixtures |
 | `scraper-analysis` | `same_story_as`: other new records from a different outlet reporting the same event | `pipeline/jev_judge.py` | Built; marker only, dedup and corroboration unchanged |
 | `scraper-analysis` | Opt-in `JEV_FILL_SENTIMENT`: fill `sentiment` only where Bedrock tagging left it empty | `pipeline/jev_judge.py` | Built; off by default |
-| `scraper-analysis` | Advisory review of `/briefing` text: per-point support against cited evidence, advice and promised-outcome flags, reported in `meta.jev_review` and `warnings` | `agents/jev_guard.py`, hooked at the end of `generate_briefing` | Built; never edits or drops a point |
+| `scraper-analysis` | Advisory review of `/briefing` text: per-point support against cited news or social evidence (filing and signal points are out of scope), advice and promised-outcome flags, reported in `meta.jev_review` and `warnings` | `agents/jev_guard.py`, hooked at the end of `generate_briefing` | Built; never edits or drops a point |
+| `scraper-analysis` | Grade stored at ingestion under `details.grade`: one explainable strength per record from relevance, credibility, content type, materiality, confidence, hype and same-story; off-topic records labelled, never dropped. Opt-in ranked and relevant-only views on `/evidence`, a gated `news_tone`, and the grade surfaced to the briefing agent | `pipeline/grade.py`; one line in `ingest.py`, opt-in parameters in `api.py`, one row field and one prompt rule in `synthesis_agent.py` | Built; run live with Bedrock tagging and real briefings |
 | `research-api` | Decision adapter carries Jev's full judgment and can read a stored `details.jev`; explanation-check seam | `decision.py` | Built as unwired seams; the API's live path does not exist yet |
 | `decision-maker`, `volatility-surface-builder`, `frontend` | Nothing | n/a | Empty services |
 
 The scraper's sentiment, entity tagging, credibility formula, dedup, storage schema and briefing prompt are unchanged. Design choice worth knowing: articles are judged once, where they are ingested, and the judgment travels with the evidence record, so downstream services do not need to call Jev per article.
+
+### Live findings with Bedrock tagging on (2026-10-10)
+
+Live data for TSLA, NVDA and AAPL through the scraper, with the Bedrock tagging agent, MarketAux and Yahoo Finance news, and Jev. In-memory store, plus a throwaway local Postgres for the vector path; the shared database was not written to.
+
+- **Speed:** Bedrock tagging about 0.8 s per article; Jev about 0.03 s. A briefing takes 16 to 20 s; Jev's review adds about 1 s.
+- **Off-topic feed items:** Jev scored 40 of 62 news items below 0.3 for relevance to their symbol (21 of 23 for NVDA). The tagging agent gave 21 of those 40 a Bullish or Bearish direction for the symbol and listed the symbol as a ticker on all of them. A plain average of tags over NVDA's 23 articles came to -0.04; over the 2 on-topic ones, +0.50.
+- **Agreement on real company news:** the two matched on 15 of 22 on-topic articles and never gave opposite directions; differences were Jev answering mixed where the tagger answered Bullish or Neutral.
+- **Briefings:** the briefing agent already avoids most off-topic records. Hiding them cost one useful point (an Amazon-financing story about Nvidia chips, relevance 0.11), which is why records are labelled for the agent rather than withheld. With the label surfaced, neither live briefing cited an off-topic record.
+- **Briefing review:** before scoping, 12 of 13 warnings were false alarms on correct filing and congressional points. After limiting it to news and social points with a 0.3 floor: no warnings on the TSLA briefing, one on NVDA (a sentence of the agent's own commentary).
+- **Advice and promised outcomes:** 0.03 to 0.12 on every real briefing.
+- **Vector store:** 22 TSLA records stored in Postgres with vectors and their Jev judgments; ranking by stored fields works in plain SQL; a repeat ingest added nothing.
+
+Not covered: runs against the shared database, the House and scheduler branches, and any measurement of whether grades improve downstream decisions.
