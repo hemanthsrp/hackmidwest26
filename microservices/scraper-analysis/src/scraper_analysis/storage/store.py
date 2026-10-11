@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class EvidenceStore(Protocol):
+    def search_evidence(self, symbol: str, query: str, limit: int = 5) -> list[Evidence]: ...
     def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]: ...
     def save_evidence(self, items: list[Evidence]) -> None: ...
     def query_evidence(self, symbol: str) -> list[Evidence]: ...
@@ -29,6 +30,16 @@ class InMemoryEvidenceStore:
     def __init__(self) -> None:
         self._evidence: dict[str, Evidence] = {}
         self._signals: list[Signal] = []
+
+    def search_evidence(self, symbol: str, query: str, limit: int = 5) -> list[Evidence]:
+        # No embeddings in memory: rank by query-word overlap. Good enough
+        # for tests and local runs; Postgres does real vector search.
+        words = {w for w in query.lower().split() if len(w) > 2}
+        scored = [
+            (sum(w in f"{e.title} {e.summary or ''}".lower() for w in words), e)
+            for e in self.query_evidence(symbol)
+        ]
+        return [e for score, e in sorted(scored, key=lambda t: -t[0]) if score > 0][:limit]
 
     def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]:
         return [i for i in items if i.id not in self._evidence]
@@ -55,6 +66,25 @@ class InMemoryEvidenceStore:
 class PostgresEvidenceStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+
+    def search_evidence(self, symbol: str, query: str, limit: int = 5) -> list[Evidence]:
+        """Semantic search: embed the query via Akamai, rank by pgvector
+        cosine distance. If embedding is unavailable, return nothing rather
+        than silently substituting an unrelated ordering."""
+        vector = get_embedding(query)
+        if vector is None:
+            return []
+        from .db import connect
+
+        with connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM evidence WHERE symbol = %s AND embedding IS NOT NULL "
+                "ORDER BY embedding <=> %s::vector LIMIT %s",
+                (symbol.upper(), vector, limit),
+            )
+            ranked = [str(r[0]) for r in cur.fetchall()]
+        by_id = {e.id: e for e in self.query_evidence(symbol)}
+        return [by_id[i] for i in ranked if i in by_id]
 
     def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]:
         if not items:
