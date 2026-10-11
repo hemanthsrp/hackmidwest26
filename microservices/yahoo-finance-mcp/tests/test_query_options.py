@@ -46,6 +46,19 @@ def test_live_query_supports_price_volume_volatility_and_corporate_actions(monke
     assert result["stock_split_events"] == 1
 
 
+def test_default_live_signal_uses_only_the_labeled_30_day_window(monkeypatch) -> None:
+    history = pd.DataFrame(
+        {"Close": [float(value) for value in range(100, 135)]},
+        index=pd.date_range("2025-01-01", periods=35, freq="D", tz="UTC"),
+    )
+    monkeypatch.setattr("yahoo_finance_mcp.market_data._fetch_live_history", lambda *_: history)
+
+    result = get_market_signal("AAPL", mode="live")
+
+    assert result["window"] == "30d"
+    assert result["value"] == 28.8462
+
+
 def test_date_range_is_capped_before_live_fetch() -> None:
     result = get_market_signal(
         "AAPL",
@@ -79,6 +92,10 @@ def test_fundamentals_can_be_explicitly_disabled(monkeypatch) -> None:
 
 def test_fundamentals_are_disabled_by_default_pending_source_policy(monkeypatch) -> None:
     monkeypatch.delenv("YAHOO_FINANCE_FUNDAMENTALS_ENABLED", raising=False)
+    monkeypatch.setattr(
+        "yahoo_finance_mcp.market_data.yf.Ticker",
+        lambda _: (_ for _ in ()).throw(AssertionError("provider must not be called")),
+    )
 
     result = get_company_fundamentals("AAPL")
 

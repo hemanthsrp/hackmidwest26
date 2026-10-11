@@ -1,4 +1,12 @@
-from yahoo_finance_mcp.strands_mcp import mcp_client
+from yahoo_finance_mcp.strands_mcp import mcp_client, server_parameters
+
+
+def test_server_parameters_preserve_explicit_fundamentals_disable(monkeypatch) -> None:
+    monkeypatch.setenv("YAHOO_FINANCE_FUNDAMENTALS_ENABLED", "false")
+
+    params = server_parameters()
+
+    assert params.env["YAHOO_FINANCE_FUNDAMENTALS_ENABLED"] == "false"
 
 
 def test_mcp_server_lists_and_runs_the_sample_market_signal_tool() -> None:
