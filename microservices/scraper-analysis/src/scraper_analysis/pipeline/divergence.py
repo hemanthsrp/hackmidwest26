@@ -27,19 +27,30 @@ Input hygiene, applied inside analyze() so no caller can bypass it:
     contribute to a flag, even when nothing live exists (status is then
     insufficient_data). Callers should pass the raw stored records so these
     counts are complete;
-  * fresh price -- the price leg is the latest live price signal, usable only
-    if its as_of is at most MAX_PRICE_SIGNAL_AGE_DAYS before the request time
-    (and not more than RECENCY_FORWARD_GRACE_DAYS after it). A stale price
-    leaves the leg unusable, is counted in excluded.stale_price and warned
-    about, and never anchors the window -- old data is never presented as a
-    current flag;
+  * request time -- `as_of` (default: now) is the moment the analysis is
+    for. It may never be in the future: an as_of more than
+    CLOCK_SKEW_TOLERANCE_HOURS after the actual current time raises
+    FutureAsOfError (the endpoint answers 400). A past as_of is allowed for
+    reproducible/back-dated analysis but is always labelled
+    window.historical = true with a warning, so historical flags are never
+    presented as current;
+  * nothing from the future -- any record (price signal or evidence) dated
+    more than CLOCK_SKEW_TOLERANCE_HOURS after the request time (and so,
+    for a current request, after the actual clock) is unusable: it is
+    counted in excluded.future_dated and warned about, and never compared;
+  * fresh price -- the price leg is the latest live, not-future price
+    signal, usable only if its as_of is at most MAX_PRICE_SIGNAL_AGE_DAYS
+    before the request time. A stale price leaves the leg unusable, is
+    counted in excluded.stale_price and warned about, and never anchors the
+    window -- old data is never presented as a current flag;
   * recency -- every evidence record must fall inside the comparison window.
     With a fresh price it is the price signal's own change window
     (`window`, e.g. "30d"; RECENCY_LOOKBACK_DAYS if unparseable) ending at
     its as_of, so every flag pairs the price move with evidence from the
     period that move covers; otherwise it is RECENCY_LOOKBACK_DAYS before
     the request time. RECENCY_FORWARD_GRACE_DAYS after the end absorbs the
-    close being stamped at midnight of the session date. The event date is
+    close being stamped at midnight of the session date, but the window
+    never extends past request time + CLOCK_SKEW_TOLERANCE_HOURS. The event date is
     observed_at (Form 4 / congressional trade date) falling back to
     published_at for other sources (news). Congressional records use the
     trade date only -- never the filing date -- and any record whose parser
@@ -52,7 +63,15 @@ Input hygiene, applied inside analyze() so no caller can bypass it:
     is dropped;
   * insider -- only discretionary open-market P/S counts. A filing that is
     a 10b5-1 plan trade, tax withholding (F), an option exercise (M), a
-    grant, etc. leaves the insider leg unusable (direction None).
+    grant, etc. leaves the insider leg unusable (direction None). One Form 4
+    can cover trades on several days, so only the trades dated inside the
+    window are valued: with the per-transaction breakdown
+    (details.transactions) out-of-window trades are dropped (counted in
+    excluded.out_of_window_transactions); a legacy record without the
+    breakdown is valued at its totals only if every details.transaction_date
+    is inside the window, otherwise it is excluded from the insider leg
+    (excluded.partially_out_of_window) -- out-of-window trades are never
+    valued.
 
 Every exclusion is counted in `excluded` and explained in `warnings`. This is a research aid: a flag says "these sources
 point different ways", never that a price will move, and it is not a score.
@@ -79,6 +98,10 @@ RECENCY_FORWARD_GRACE_DAYS = 1
 # A price signal older than this (relative to the request time) is stale:
 # a weekly ingest plus weekends/holidays fits; a 2010 close never does.
 MAX_PRICE_SIGNAL_AGE_DAYS = 7
+# Tolerated clock difference between our clock and a source's timestamps.
+# Anything dated later than this after the request time (or a request time
+# this far after the actual clock) is future-dated and never used.
+CLOCK_SKEW_TOLERANCE_HOURS = 1
 
 THRESHOLDS = {
     "price_move_pct": PRICE_MOVE_PCT,
@@ -88,9 +111,20 @@ THRESHOLDS = {
     "recency_lookback_days": RECENCY_LOOKBACK_DAYS,
     "recency_forward_grace_days": RECENCY_FORWARD_GRACE_DAYS,
     "max_price_signal_age_days": MAX_PRICE_SIGNAL_AGE_DAYS,
+    "clock_skew_tolerance_hours": CLOCK_SKEW_TOLERANCE_HOURS,
 }
 
 PRICE_SIGNAL = "30-day price change"
+_SKEW = timedelta(hours=CLOCK_SKEW_TOLERANCE_HOURS)
+
+
+class FutureAsOfError(ValueError):
+    """The requested as_of is after the actual current time."""
+
+
+def _clock() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 @dataclass
 class Leg:
@@ -122,23 +156,28 @@ def _window_days(window: str) -> int:
     return RECENCY_LOOKBACK_DAYS
 
 
-def _price_leg(signals: list[Signal], now: datetime) -> tuple[Leg, Signal | None, int]:
-    """Latest live price signal, if fresh relative to `now`. Returns the leg,
-    the chosen signal (also when stale, so its age can be reported) and the
-    number of live price signals rejected as stale/future-dated."""
+def _price_leg(signals: list[Signal], now: datetime) -> tuple[Leg, Signal | None, int, int]:
+    """Latest live price signal, if fresh relative to the request time `now`.
+    Returns the leg, the chosen signal (the latest not-future one, also when
+    stale, so its age can be reported), and the numbers of live price
+    signals rejected as stale and as future-dated (after now + skew)."""
     live = [s for s in signals if s.name == PRICE_SIGNAL and s.data_mode == "live"]
     if not live:
-        return Leg("price", None, "No live price signal available."), None, 0
-    latest_ok = now + timedelta(days=RECENCY_FORWARD_GRACE_DAYS)
+        return Leg("price", None, "No live price signal available."), None, 0, 0
+    latest_ok = now + _SKEW
     oldest_ok = now - timedelta(days=MAX_PRICE_SIGNAL_AGE_DAYS)
-    fresh = [s for s in live if oldest_ok <= _utc(s.as_of) <= latest_ok]
-    rejected = len(live) - len(fresh)
+    past = [s for s in live if _utc(s.as_of) <= latest_ok]
+    future = len(live) - len(past)
+    fresh = [s for s in past if oldest_ok <= _utc(s.as_of)]
+    stale = len(past) - len(fresh)
     if not fresh:
-        past = [s for s in live if _utc(s.as_of) <= latest_ok]
-        s = max(past or live, key=lambda x: _utc(x.as_of))
+        if not past:
+            return Leg("price", None, "Every live price signal is dated after the request time (future-dated); "
+                       "not compared."), None, stale, future
+        s = max(past, key=lambda x: _utc(x.as_of))
         return Leg("price", None, f"Latest live price signal is stale (as of {_utc(s.as_of).date()}, more than "
-                   f"{MAX_PRICE_SIGNAL_AGE_DAYS} days before the request) or future-dated; not compared.",
-                   [], {"as_of": _utc(s.as_of).isoformat()}), s, rejected
+                   f"{MAX_PRICE_SIGNAL_AGE_DAYS} days before the request); not compared.",
+                   [], {"as_of": _utc(s.as_of).isoformat()}), s, stale, future
     s = max(fresh, key=lambda x: _utc(x.as_of))
     if s.value >= PRICE_MOVE_PCT:
         direction = "up"
@@ -149,21 +188,53 @@ def _price_leg(signals: list[Signal], now: datetime) -> tuple[Leg, Signal | None
     return Leg(
         "price", direction, f"{s.value:+.1f}% over {s.window} (as of {_utc(s.as_of).date()}).",
         [s.id], {"change_pct": s.value, "as_of": _utc(s.as_of).isoformat(), "window": s.window},
-    ), s, rejected
+    ), s, stale, future
 
 
-def _insider_leg(evidence: list[Evidence]) -> tuple[Leg, list[str]]:
+@dataclass
+class _Form4Row:
+    """A Form 4 filing as valued inside the window."""
+    evidence: Evidence
+    buy_usd: float
+    sell_usd: float
+
+    @property
+    def active(self) -> bool:
+        return bool(self.buy_usd or self.sell_usd)
+
+
+def _is_form4(e: Evidence) -> bool:
+    return e.source_type == "sec_filing" and "sell_shares" in e.details
+
+
+def _tx_time(value) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value)[:10]).replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _in(t: datetime | None, start: datetime, end: datetime) -> bool:
+    return t is not None and start <= t <= end
+
+
+def _insider_leg(rows: list) -> tuple[Leg, list[str]]:
+    """`rows` are windowed _Form4Row values; bare Evidence is accepted and
+    valued at its totals (the caller has already windowed it)."""
     notes: list[str] = []
-    form4 = [e for e in evidence if e.source_type == "sec_filing" and "sell_shares" in e.details]
+    form4 = [r if isinstance(r, _Form4Row) else
+             _Form4Row(r, float(r.details.get("buy_value_usd") or 0.0), float(r.details.get("sell_value_usd") or 0.0))
+             for r in rows if isinstance(r, _Form4Row) or _is_form4(r)]
     if not form4:
         return Leg("insider", None, "No parsed Form 4 filings available."), notes
 
-    # Only filings with real open-market buying/selling count: a filing that
-    # is purely tax withholding or an option exercise has no direction.
-    active = [e for e in form4 if e.details.get("buy_shares") or e.details.get("sell_shares")]
-    discretionary = [e for e in active if not e.details.get("is_10b5_1")]
-    planned = [e for e in active if e.details.get("is_10b5_1")]
-    planned_sell = sum(e.details.get("sell_value_usd", 0.0) for e in planned)
+    # Only filings with real open-market buying/selling (inside the window)
+    # count: a filing that is purely tax withholding or an option exercise
+    # has no direction.
+    active = [r for r in form4 if r.active]
+    discretionary = [r for r in active if not r.evidence.details.get("is_10b5_1")]
+    planned = [r for r in active if r.evidence.details.get("is_10b5_1")]
+    planned_sell = sum(r.sell_usd for r in planned)
     if planned:
         notes.append(
             f"{len(planned)} pre-scheduled 10b5-1 insider filing(s) (~${planned_sell:,.0f} sold) are excluded "
@@ -175,17 +246,18 @@ def _insider_leg(evidence: list[Evidence]) -> tuple[Leg, list[str]]:
                    "10b5-1 trades, tax withholding, option exercises or grants).",
                    [], {"discretionary_net_usd": 0.0, "planned_sell_usd": planned_sell}), notes
 
-    net = sum(e.details.get("buy_value_usd", 0.0) - e.details.get("sell_value_usd", 0.0) for e in discretionary)
+    net = sum(r.buy_usd - r.sell_usd for r in discretionary)
     if net >= INSIDER_NET_USD:
         direction = "buying"
     elif net <= -INSIDER_NET_USD:
         direction = "selling"
     else:
         direction = "neutral"
-    ids = [e.id for e in discretionary]
+    ids = [r.evidence.id for r in discretionary]
     return Leg(
         "insider", direction,
-        f"Discretionary open-market net ${net:+,.0f} across {len(discretionary)} filing(s).",
+        f"Discretionary open-market net ${net:+,.0f} across {len(discretionary)} filing(s) "
+        "(trades inside the window only).",
         ids, {"discretionary_net_usd": net, "planned_sell_usd": planned_sell},
     ), notes
 
@@ -195,7 +267,7 @@ def _congress_leg(evidence: list[Evidence]) -> Leg:
     buys = [e for e in trades if str(e.details.get("transaction_type", "")).lower().startswith("purchase")]
     sells = [e for e in trades if str(e.details.get("transaction_type", "")).lower().startswith("sale")]
     if not buys and not sells:
-        return Leg("congress", None, "No dated congressional trades in this symbol in the window.")
+        return Leg("congress", None, "No dated congressional (Senate or House) trades in this symbol in the window.")
     if len(buys) > len(sells):
         direction = "buying"
     elif len(sells) > len(buys):
@@ -247,10 +319,10 @@ def _flags(legs: dict[str, Leg]) -> list[Flag]:
         add("bearish_news_rising_price", "Bearish news, rising price",
             f"News tone is bearish ({news.summary}) but price {price.summary}", news, price)
     if congress.direction == "buying" and insider.direction == "selling":
-        add("congress_buying_insiders_selling", "Senate buying while insiders sell",
+        add("congress_buying_insiders_selling", "Members of Congress buying while insiders sell",
             f"{congress.summary} vs {insider.summary}", congress, insider)
     if congress.direction == "selling" and insider.direction == "buying":
-        add("congress_selling_insiders_buying", "Senate selling while insiders buy",
+        add("congress_selling_insiders_buying", "Members of Congress selling while insiders buy",
             f"{congress.summary} vs {insider.summary}", congress, insider)
     return flags
 
@@ -266,13 +338,47 @@ def _event_time(e: Evidence) -> datetime | None:
     return _utc(t) if t is not None else None
 
 
+def _value_form4(e: Evidence, start: datetime, end: datetime) -> tuple[_Form4Row | None, str]:
+    """Value a Form 4 by its in-window trades only. Returns (row, outcome);
+    outcome is "ok", "out_of_window" (nothing in the window) or
+    "partially_out_of_window" (legacy record that cannot be split)."""
+    txs = e.details.get("transactions")
+    if isinstance(txs, list):
+        inside = [x for x in txs if isinstance(x, dict) and _in(_tx_time(x.get("date")), start, end)]
+        if txs and not inside:
+            return None, "out_of_window"
+        if not txs and not _in(_event_time(e), start, end):
+            return None, "out_of_window"
+        buy = sum(float(x.get("value_usd") or 0.0) for x in inside if x.get("code") == "P")
+        sell = sum(float(x.get("value_usd") or 0.0) for x in inside if x.get("code") == "S")
+        return _Form4Row(e, buy, sell), "ok"
+    # Legacy record: totals only, placed by observed_at (earliest trade date).
+    if not _in(_event_time(e), start, end):
+        return None, "out_of_window"
+    dates = e.details.get("transaction_dates") or []
+    if any(not _in(_tx_time(dt), start, end) for dt in dates):
+        return None, "partially_out_of_window"
+    return _Form4Row(e, float(e.details.get("buy_value_usd") or 0.0),
+                     float(e.details.get("sell_value_usd") or 0.0)), "ok"
+
+
 def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of: datetime | None = None) -> dict:
     """Deterministic for fixed inputs when `as_of` (the request time) is
-    passed; defaults to now. Non-live, stale and out-of-window records are
-    dropped here, whatever the caller passes in -- pass the raw stored records
-    so the `excluded` counts are complete."""
+    passed; defaults to now. `as_of` must not be in the future (raises
+    FutureAsOfError); a past `as_of` is labelled window.historical. Non-live,
+    future-dated, stale and out-of-window records are dropped here, whatever
+    the caller passes in -- pass the raw stored records so the `excluded`
+    counts are complete."""
     warnings: list[str] = []
-    now = _utc(as_of) if as_of is not None else datetime.now(timezone.utc)
+    clock = _clock()
+    now = _utc(as_of) if as_of is not None else clock
+    if now > clock + _SKEW:
+        raise FutureAsOfError(f"as_of {now.isoformat()} is in the future (current time {clock.isoformat()}); "
+                              "divergence can only be computed for the present or the past.")
+    historical = now < clock - _SKEW
+    if historical:
+        warnings.append(f"Historical analysis as of {now.isoformat()}: the requested as_of is in the past, so these "
+                        "legs and flags describe that date, not the present.")
     records = [*evidence, *signals]
     sample_count = sum(1 for i in records if i.data_mode == "sample")
     cached_count = sum(1 for i in records if i.data_mode == "cached")
@@ -287,10 +393,13 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
     if cached_count:
         warnings.append(f"{cached_count} cached record(s) ignored; only live data is compared.")
 
-    price, price_signal, stale_price = _price_leg(live_signals, now)
+    price, price_signal, stale_price, future_price = _price_leg(live_signals, now)
     price_age_days = None
     if price_signal is not None:
         price_age_days = round((now - _utc(price_signal.as_of)).total_seconds() / 86400, 2)
+    if future_price:
+        warnings.append(f"{future_price} live price signal(s) are dated after the request time (future-dated, "
+                        f"beyond the {CLOCK_SKEW_TOLERANCE_HOURS}h clock-skew tolerance) and were not used.")
     if price.direction is not None:
         end_anchor = _utc(price_signal.as_of)
         lookback = _window_days(price_signal.window)
@@ -302,10 +411,12 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
                             f"{price_age_days:g} day(s) before the request; limit {MAX_PRICE_SIGNAL_AGE_DAYS}); "
                             "the price leg is not compared and the window is anchored on the request time.")
     start = end_anchor - timedelta(days=lookback)
-    end = end_anchor + timedelta(days=RECENCY_FORWARD_GRACE_DAYS)
+    # Never past the request time (+ skew): nothing from its future counts.
+    end = min(end_anchor + timedelta(days=RECENCY_FORWARD_GRACE_DAYS), now + _SKEW)
 
     in_window: list[Evidence] = []
-    out_of_window = undated = invalid_date = 0
+    form4_rows: list[_Form4Row] = []
+    out_of_window = undated = invalid_date = future_dated = partial = trimmed_tx = 0
     for e in live_evidence:
         if e.details.get("date_issue"):
             invalid_date += 1
@@ -313,13 +424,37 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
         t = _event_time(e)
         if t is None:
             undated += 1
+        elif t > now + _SKEW:
+            future_dated += 1
+        elif _is_form4(e):
+            row, outcome = _value_form4(e, start, end)
+            if outcome == "out_of_window":
+                out_of_window += 1
+            elif outcome == "partially_out_of_window":
+                partial += 1
+            else:
+                form4_rows.append(row)
+                txs = e.details.get("transactions")
+                if isinstance(txs, list):
+                    trimmed_tx += sum(1 for x in txs if not (isinstance(x, dict)
+                                                             and _in(_tx_time(x.get("date")), start, end)))
         elif start <= t <= end:
             in_window.append(e)
         else:
             out_of_window += 1
+    if future_dated:
+        warnings.append(f"{future_dated} live record(s) are dated after the request time (future-dated, beyond the "
+                        f"{CLOCK_SKEW_TOLERANCE_HOURS}h clock-skew tolerance) and were not counted.")
     if out_of_window:
         warnings.append(f"{out_of_window} live record(s) fall outside the comparison window "
                         f"({start.date()} to {end.date()}) and were not counted.")
+    if partial:
+        warnings.append(f"{partial} Form 4 filing(s) without a per-transaction breakdown have trades partially "
+                        "outside the comparison window; they were excluded from the insider leg rather than valued "
+                        "in full.")
+    if trimmed_tx:
+        warnings.append(f"{trimmed_tx} Form 4 transaction(s) dated outside the comparison window were not valued "
+                        "(only the in-window trades of multi-day filings count).")
     if undated:
         warnings.append(f"{undated} live record(s) have no usable event date (trade date for congressional "
                         "records, else observed/published date) and were not counted.")
@@ -327,7 +462,7 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
         warnings.append(f"{invalid_date} live record(s) have an invalid date (details.date_issue) and were not "
                         "counted.")
 
-    insider, notes = _insider_leg(in_window)
+    insider, notes = _insider_leg(form4_rows)
     legs = {
         "price": price,
         "insider": insider,
@@ -348,14 +483,18 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
         "notes": notes + [f"Unavailable -- {u}" for u in unavailable],
         "warnings": warnings,
         "excluded": {"sample": sample_count, "cached": cached_count, "stale_price": stale_price,
-                     "out_of_window": out_of_window, "undated": undated, "invalid_date": invalid_date},
+                     "future_dated": future_price + future_dated, "out_of_window": out_of_window,
+                     "partially_out_of_window": partial, "out_of_window_transactions": trimmed_tx,
+                     "undated": undated, "invalid_date": invalid_date},
         "window": {
             "request_time": now.isoformat(),
+            "historical": historical,
             "anchor": end_anchor.isoformat(),
             "start": start.isoformat(),
             "end": end.isoformat(),
             "lookback_days": lookback,
             "forward_grace_days": RECENCY_FORWARD_GRACE_DAYS,
+            "clock_skew_tolerance_hours": CLOCK_SKEW_TOLERANCE_HOURS,
             "price_as_of": _utc(price_signal.as_of).isoformat() if price_signal is not None else None,
             "price_age_days": price_age_days,
             "max_price_age_days": MAX_PRICE_SIGNAL_AGE_DAYS,

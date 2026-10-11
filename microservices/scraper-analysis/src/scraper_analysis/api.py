@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -161,16 +162,27 @@ def get_signals(symbol: str = Query(...)) -> dict:
 
 
 @app.get("/divergence")
-def get_divergence(symbol: str = Query(...)) -> dict:
-    """Where independent source types disagree (price vs insiders vs Senate
-    vs news). Deterministic and rule-based; thresholds are in the response.
-    Only live records (never sample or cached) inside the price signal's
-    window, with a fresh price, can contribute to a flag (see
-    pipeline/divergence.py). Raw stored records are passed so `excluded`
-    counts every dropped record."""
+def get_divergence(
+    symbol: str = Query(...),
+    as_of: datetime | None = Query(
+        None,
+        description="Request time (ISO 8601, default now). Must not be in the future (400). A past as_of is "
+        "historical analysis and is labelled window.historical=true with a warning.",
+    ),
+) -> dict:
+    """Where independent source types disagree (price vs insiders vs
+    congressional trades vs news). Deterministic and rule-based; thresholds
+    are in the response. Only live records (never sample or cached), never
+    future-dated, inside the price signal's window, with a fresh price, can
+    contribute to a flag (see pipeline/divergence.py). Raw stored records are
+    passed so `excluded` counts every dropped record."""
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = get_store()
-    return divergence.analyze(validated, store.query_evidence(validated), store.query_signals(validated))
+    try:
+        return divergence.analyze(validated, store.query_evidence(validated), store.query_signals(validated),
+                                  as_of=as_of)
+    except divergence.FutureAsOfError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
