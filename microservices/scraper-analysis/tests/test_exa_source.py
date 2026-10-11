@@ -10,6 +10,9 @@ class FakeSearch:
         assert kwargs == {
             "symbol": "AAPL",
             "query": "company news and material events",
+            "start_date": "2026-09-11",
+            "end_date": "2026-10-12",
+            "domains": ["example.com"],
             "max_results": 5,
             "mode": "live",
         }
@@ -31,7 +34,11 @@ class FakeSearch:
 
 
 def test_exa_news_adapter_turns_attributable_results_into_normalized_records():
-    rows = ExaNewsAdapter(search=FakeSearch()).fetch_live("AAPL")
+    rows = ExaNewsAdapter(
+        search=FakeSearch(),
+        allowed_domains=["example.com"],
+        today=lambda: datetime(2026, 10, 11, tzinfo=UTC).date(),
+    ).fetch_live("AAPL")
 
     assert len(rows) == 1
     row = rows[0]

@@ -1,0 +1,4 @@
+# Monorepo test/development environment. Install from this directory:
+# python -m pip install -r requirements-dev-local.txt
+-e ../decision-maker
+-e .[dev]

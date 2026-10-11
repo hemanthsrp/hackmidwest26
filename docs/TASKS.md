@@ -118,7 +118,7 @@
 
 **D5 — Evidence lifecycle and attribution contract** (claimed 2026-10-11: Allen/D; branch `allen/d5-evidence-lifecycle`; integration owner: Jet; pending Cai and Jet contract acknowledgement)
 - Audit the shared evidence store without exposing record text or credentials. Propose explicit article/source provenance, frontend-sortable value-origin and impact categories, and retained-evidence lifecycle fields (fresh, stale, archived and retention deadline).
-- No scraper schema, ingestion, Research API, or decision-maker code changes occur until Cai accepts the storage contract and Jet accepts the response-contract impact.
+- This branch contains an **unmerged implementation draft** of the bounded Exa adapter, strict ingestion trigger, and additive lifecycle SQL. Cai and Jet must accept the storage/response contracts before any merge, migration apply, backfill, scheduler activation, or live-provider enablement.
 - **Done when:** the database audit is recorded without raw article content; accepted schema and migration/backfill path preserve existing records; structural filters precede vector ranking; the frontend receives cited source/date/category/lifecycle metadata; targeted tests and an ordered integration smoke demonstrate ingestion, grounding, quant warning semantics and assessment reads.
 
 ## Integration lead checklist
