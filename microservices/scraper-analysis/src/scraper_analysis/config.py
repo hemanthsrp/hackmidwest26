@@ -1,7 +1,7 @@
 import math
 from urllib.parse import parse_qs, urlparse
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # only by the agentic-search package from EXA_API_KEY; this flag prevents
     # accidental provider calls in environments that merely carry a key.
     enable_exa_search: bool = False
-    exa_lookback_days: int = 30
+    exa_lookback_days: int = Field(default=30, ge=1, le=30)
     exa_allowed_domains: str = ""
     noaa_cdo_token: str | None = None
     sec_edgar_user_agent: str = "hackmidwest-scraper-analysis <set-contact-email>"

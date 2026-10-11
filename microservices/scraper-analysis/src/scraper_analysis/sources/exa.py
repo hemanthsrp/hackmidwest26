@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, timedelta
-from typing import Callable
 
 from agentic_search.exa import ExaSearch
 
@@ -29,6 +29,8 @@ class ExaNewsAdapter(SourceAdapter):
         self._search = search or ExaSearch()
         self._allowed_domains = allowed_domains if allowed_domains is not None else settings.exa_allowed_domains_list
         self._lookback_days = lookback_days if lookback_days is not None else settings.exa_lookback_days
+        if type(self._lookback_days) is not int or not 1 <= self._lookback_days <= 30:
+            raise ValueError("Exa lookback_days must be an integer between 1 and 30")
         self._today = today
 
     def fetch_live(self, symbol: str) -> list[RawRecord]:
