@@ -1,0 +1,41 @@
+{
+  "name": "folio-research",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "next-auth": "5.0.0-beta.32",
+    "@auth/drizzle-adapter": "^1.11.0",
+    "drizzle-orm": "^0.45.4",
+    "postgres": "^3.4.7",
+    "zod": "^4.0.0",
+    "lucide-react": "^0.468.0",
+    "@radix-ui/react-dialog": "^1.1.0",
+    "recharts": "^3.0.0",
+    "@tanstack/react-query": "^5.90.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "vitest": "^5.0.3",
+    "drizzle-kit": "^0.31.0"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
+  }
+}

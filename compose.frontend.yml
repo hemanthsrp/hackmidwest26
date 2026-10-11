@@ -1,0 +1,46 @@
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: folio
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: folio
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - folio-local-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U folio"]
+      interval: 5s
+      retries: 10
+  research-api:
+    build: ./microservices/research-api
+    environment:
+      RESEARCH_DATABASE_URL: postgresql+psycopg://folio:localdev@database:5432/folio
+      SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET:?Set a random 32-byte service assertion secret}
+      SCRAPER_API_URL: ${SCRAPER_API_URL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CHAT_MODEL: ${CHAT_MODEL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+  frontend:
+    build: ./frontend
+    environment:
+      DATABASE_URL: postgresql://folio:localdev@database:5432/folio
+      AUTH_SECRET: ${AUTH_SECRET:?Set a random auth secret}
+      AUTH_URL: http://localhost:3000
+      AUTH_TRUST_HOST: "true"
+      SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET}
+      RESEARCH_API_URL: http://research-api:8000
+      ALLOW_REGISTRATION: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - research-api
+volumes:
+  folio-local-data:
