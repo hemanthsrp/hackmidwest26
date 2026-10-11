@@ -1,6 +1,6 @@
 # Four-agent task board
 
-**Status:** Proposed, unclaimed. This is a scoped handoff board, not a record that work has started. Confirm human ownership and the MVP with the team. Each implementation task requires a branch/worktree, exact acceptance checks and an integration review under `AGENTS.md`.
+**Status:** Mixed. Several discovery and implementation branches have landed, while Gate 0 and the full product contract remain open. Confirm human ownership and the MVP with the team. Each remaining implementation task requires a branch/worktree, acceptance checks and an integration review under `AGENTS.md`.
 
 ## Gates and dependency order
 
@@ -84,9 +84,10 @@
 
 ## Agent C — frontend and baseline (Hemanth lane)
 
-**C1 — Existing baseline assessment + UX wireframe** (unclaimed; independent discovery)
+**C1 — Existing baseline assessment + UX wireframe** (baseline assessment/import complete in `vsb-integration`; stock-detail UX wireframe still open)
 - Inspect the actual `vol-surface-builder` repo with authorization and identify code worth reusing versus options-only math. Propose one stock detail flow and labeled demo states (loading, stale, sample, error, insufficient data).
 - **Done when:** findings cite actual paths/tests, or lack of repo access is recorded; no claim that baseline predicts prices.
+- **Handoff (2026-10-10):** Imported the source option-volatility pipeline into `microservices/volatility-surface-builder` with a namespaced package, original tests/notebook/methodology, sample/live chart CLI, and standalone local API. See its README and `docs/integration-notes.md`. Sample data are SPY-only; the service is not wired into the research assessment. No buy/sell signal is inferred from option IV.
 
 **C2 — Next.js demo slice** (unclaimed; after Gate 0)
 - Build a Next.js/TypeScript view for symbol selection, dated evidence, chart/signals, assessment, uncertainty and source links. Consume the agreed API; fixture mode must be visually labeled. A preferences form is optional if time allows.

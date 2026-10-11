@@ -1,0 +1,6 @@
+# Reproducible chart and option-IV exports from the CLI
+output/
+
+# Local environments and package metadata
+.venv/
+*.egg-info/

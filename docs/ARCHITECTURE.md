@@ -1,6 +1,6 @@
 # Proposed architecture and integration contracts
 
-> **Design proposal, not implemented.** The repository currently contains documentation only. Verify service APIs, model availability, source rights and Akamai resources before committing to a provider.
+> **Status:** Core components exist locally, but this end-to-end diagram and the research-assessment contract remain proposals. Verify provider rights and integration behavior before treating a path as complete.
 
 ## Vertical slice
 
@@ -11,17 +11,18 @@ Next.js UI (Hemanth lane)
 Python HTTP API + Strands orchestration (Jet lane)
    ├── source adapter → normalized article evidence (Cai lane)
    ├── market/quant adapter → dated, unit-labeled signals (Cai lane)
+   ├── optional volatility chart → separate option-IV service (Hemanth lane)
    ├── optional retrieval index → evidence by symbol/time (Allen lane)
    └── decision adapter → JEV via MCP if verified (Jet lane)
    ▼
 Akamai deployment / storage / logs / health checks (Allen lane)
 ```
 
-The baseline `vol-surface-builder` described in `DUMP.md` is **not** a price predictor or news collector. Hemanth should identify transferable source-adapter patterns, tests and charting before any copy/import; don't treat its Black–Scholes/SVI outputs as validated buy/sell signals.
+The original `vol-surface-builder` is now imported under [`microservices/volatility-surface-builder`](../microservices/volatility-surface-builder/README.md). It runs independently and exposes a local `POST /v0/volatility-surfaces` endpoint for option-IV grids and statistics. Its sample mode is SPY-only and explicitly labeled. The Research API does not yet call it, and its Black–Scholes/SVI outputs are not validated buy/sell signals. Linking an option chart into the stock-detail view requires a reviewed frontend/backend contract.
 
 ## Contract-first rule
 
-The lane owners agree on concrete JSON schemas and API paths **before** building both sides. Below is a minimal *proposed* contract for discussion, not a pre-existing endpoint. The reviewable A1 request/response, four required failure examples, and server-side Akamai inference boundary are in [api-contract-v0.md](api-contract-v0.md). Record final choices in `DECISIONS.md` and update this document when implementation lands.
+The lane owners agree on concrete JSON schemas and API paths **before** building both sides. Below is a minimal *proposed* research-assessment contract, not a frozen endpoint. The reviewable A1 request/response, four required failure examples, and server-side Akamai inference boundary are in [api-contract-v0.md](api-contract-v0.md). The volatility service has a separate local API described in its README. Record final cross-service choices in `DECISIONS.md`.
 
 - Request: `symbol` (normalized uppercase ticker) and optional non-sensitive demo preferences. Validate allowed symbols and inputs.
 - Evidence item: stable `id`, `symbol`, `title`/summary, `source_name`, `source_url` if permitted, `published_at` if known, `observed_at`, `retrieved_at`, and `data_mode` (`live`, `cached`, `sample`); do not fabricate timestamps.

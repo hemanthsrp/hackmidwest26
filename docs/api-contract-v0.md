@@ -1,5 +1,7 @@
 # Proposed v0 research-assessment API contract
 
+> Repository-status update (2026-10-10): the standalone option-volatility endpoint is documented in [the volatility service README](../microservices/volatility-surface-builder/README.md). It does not alter or freeze the research-assessment contract below.
+
 > **Status: A1 proposal for Gate 0 review, not an implemented or frozen endpoint.**
 >
 > This contract exists so the frontend, evidence/quant, platform, and orchestration lanes can integrate against one small, deterministic shape. It does not authorize A2 implementation. All field values below are examples using fixtures, not live market data or investment advice.

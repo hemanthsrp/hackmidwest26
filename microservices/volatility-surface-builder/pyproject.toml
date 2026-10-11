@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hackmidwest-volatility-surface-builder"
+version = "0.3.0"
+description = "Option implied-volatility surface diagnostics for the Hack Midwest research demo"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.11",
+    "matplotlib>=3.7",
+    "plotly>=5.15",
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.27,<1",
+]
+
+[project.optional-dependencies]
+live = ["yfinance>=0.2.30"]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+vol-surface = "vol_surface_builder.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
