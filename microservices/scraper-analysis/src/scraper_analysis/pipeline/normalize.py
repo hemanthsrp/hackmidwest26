@@ -115,7 +115,7 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
     lag_days = _reporting_lag_days(record.published_at, record.observed_at)
     timing = classify_congressional_timing(lag_days) if lag_days is not None else None
     title = (
-        f"Sen. {payload.get('filer_name', 'Unknown')} reported "
+        f"{'Rep.' if payload.get('chamber') == 'House' else 'Sen.'} {payload.get('filer_name', 'Unknown')} reported "
         f"{payload.get('transaction_type', 'a transaction')} of {payload.get('ticker', record.symbol)} "
         f"({payload.get('amount_range', 'amount undisclosed')})"
     )
@@ -127,6 +127,7 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
         title=title,
         summary=summary,
         details={
+            "chamber": payload.get("chamber", "Senate"),
             "filer": payload.get("filer_name"),
             "owner": payload.get("owner"),
             "ticker": payload.get("ticker"),

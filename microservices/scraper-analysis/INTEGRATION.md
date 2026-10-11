@@ -57,7 +57,7 @@ Superset of the v0 contract in `docs/api-contract-v0.md`: every field there is p
 - **Form 4 dates:** `observed_at` is the earliest actual `transactionDate` in the filing, not `periodOfReport`. `details.transaction_dates` lists every trade date (the title shows the range when there are several) and `details.period_of_report` keeps the filing's reporting period.
 - **Three timestamps, never invented:** `published_at` (filing/article time), `observed_at` (when the underlying event happened, e.g. the trade date), `retrieved_at` (when we fetched it). Either of the first two can be `null` if the source doesn't give it.
 - **Extras beyond v0:** `source_type`, `reporting_lag_days`, `details`, `entities`, `sentiment`, `credibility`. `details` holds structured, source-specific facts (Form 4 buy/sell totals, Senate transaction type and amount range). `entities`/`sentiment` are only filled when `tag=true` and Bedrock is reachable.
-- **`source_type`** is one of `sec_filing`, `congressional_disclosure`, `general_news`, `social_media`.
+- **`source_type`** is one of `sec_filing`, `congressional_disclosure`, `general_news`, `social_media`. Congressional records come from both chambers: `details.chamber` is `Senate` or `House` (titles start `Sen.` / `Rep.`), with the same `transaction_type` values (`Purchase`, `Sale (Full)`, `Sale (Partial)`, `Exchange`).
 - **`credibility.overall_score`** is a heuristic (outlet prior + cross-source corroboration, see `pipeline/scoring.py`), not a validated measure. Official filings are `1.0` by definition.
 
 ## Signal record
@@ -101,7 +101,8 @@ Staleness is the caller's decision: compare `retrieved_at` / `published_at` to y
 ## Do not claim
 
 - Credibility scores, tone, or the briefing as validated or predictive.
-- Coverage of Bloomberg/WSJ/Reuters (excluded: no sanctioned access) or House of Representatives disclosures (not implemented).
+- Coverage of Bloomberg/WSJ/Reuters (excluded: no sanctioned access).
+- Complete House coverage: scanned/paper PTRs have no text layer and are skipped (no OCR), assets without a ticker (bonds, funds, LLCs) are ignored, and only the newest 30 filings in a 45-day window are read. Treat House trades as a best-effort sample, not a full ledger.
 - Reddit data: the adapter exists but Reddit blocks it (403); it is off by default.
 - Commodity fundamentals (WASDE/stocks-to-use, crop yield, soil moisture): not collected.
 
