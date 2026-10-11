@@ -132,8 +132,11 @@ class PostgresEvidenceStore:
                         id, symbol, title, summary, source_name, source_type,
                         source_url, published_at, observed_at, retrieved_at,
                         reporting_lag_days, entities, sentiment, credibility,
-                        data_mode, embedding, details
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        data_mode, embedding, details, provider, value_origin,
+                        impact_category, impact_level, impact_basis, embedding_status,
+                        lifecycle_status, fresh_until, stale_at, archived_at,
+                        retention_until, retention_reason
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         title = EXCLUDED.title, summary = EXCLUDED.summary,
                         source_name = EXCLUDED.source_name, published_at = EXCLUDED.published_at,
@@ -141,7 +144,13 @@ class PostgresEvidenceStore:
                         reporting_lag_days = EXCLUDED.reporting_lag_days,
                         entities = EXCLUDED.entities, sentiment = EXCLUDED.sentiment,
                         credibility = EXCLUDED.credibility, data_mode = EXCLUDED.data_mode,
-                        embedding = EXCLUDED.embedding, details = EXCLUDED.details
+                        embedding = EXCLUDED.embedding, details = EXCLUDED.details,
+                        provider = EXCLUDED.provider, value_origin = EXCLUDED.value_origin,
+                        impact_category = EXCLUDED.impact_category, impact_level = EXCLUDED.impact_level,
+                        impact_basis = EXCLUDED.impact_basis, embedding_status = EXCLUDED.embedding_status,
+                        lifecycle_status = EXCLUDED.lifecycle_status, fresh_until = EXCLUDED.fresh_until,
+                        stale_at = EXCLUDED.stale_at, archived_at = EXCLUDED.archived_at,
+                        retention_until = EXCLUDED.retention_until, retention_reason = EXCLUDED.retention_reason
                     -- replace only with a strictly better copy (pipeline.dedup.record_rank):
                     -- live beats sample, then parsed details beat metadata-only; never a downgrade
                     WHERE (EXCLUDED.data_mode <> 'sample', EXCLUDED.details ? 'insider')
@@ -165,6 +174,11 @@ class PostgresEvidenceStore:
                         item.data_mode,
                         embedding,
                         json.dumps(item.details),
+                        item.provider, item.value_origin, item.impact_category, item.impact_level,
+                        json.dumps(item.impact_basis),
+                        "available" if embedding is not None else "unavailable",
+                        item.lifecycle_status, item.fresh_until, item.stale_at, item.archived_at,
+                        item.retention_until, item.retention_reason,
                     ),
                 )
 
@@ -193,7 +207,10 @@ class PostgresEvidenceStore:
                 """
                 SELECT id, symbol, title, summary, source_name, source_type,
                        source_url, published_at, observed_at, retrieved_at,
-                       reporting_lag_days, entities, sentiment, credibility, data_mode, details
+                       reporting_lag_days, entities, sentiment, credibility, data_mode, details,
+                       provider, value_origin, impact_category, impact_level, impact_basis,
+                       embedding_status, lifecycle_status, fresh_until, stale_at, archived_at,
+                       retention_until, retention_reason
                 FROM evidence WHERE """ + where + """ ORDER BY retrieved_at DESC
                 """,
                 (value,),
@@ -204,6 +221,9 @@ class PostgresEvidenceStore:
             "id", "symbol", "title", "summary", "source_name", "source_type",
             "source_url", "published_at", "observed_at", "retrieved_at",
             "reporting_lag_days", "entities", "sentiment", "credibility", "data_mode", "details",
+            "provider", "value_origin", "impact_category", "impact_level", "impact_basis",
+            "embedding_status", "lifecycle_status", "fresh_until", "stale_at", "archived_at",
+            "retention_until", "retention_reason",
         ]
         results = []
         for row in rows:

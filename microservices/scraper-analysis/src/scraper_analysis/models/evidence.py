@@ -42,6 +42,21 @@ class Evidence(BaseModel):
     retrieved_at: datetime
     reporting_lag_days: float | None = None
 
+    # Typed provenance and lifecycle fields are frontend-sortable metadata.
+    # They are not an investment-confidence score or a vector similarity score.
+    provider: str | None = None
+    value_origin: str = "article"
+    impact_category: str = "other"
+    impact_level: Literal["unknown", "low", "medium", "high"] = "unknown"
+    impact_basis: dict[str, Any] = Field(default_factory=dict)
+    embedding_status: Literal["available", "unavailable", "not_applicable"] = "not_applicable"
+    lifecycle_status: Literal["fresh", "stale", "archived"] = "fresh"
+    fresh_until: datetime | None = None
+    stale_at: datetime | None = None
+    archived_at: datetime | None = None
+    retention_until: datetime | None = None
+    retention_reason: str | None = None
+
     # Structured, source-specific facts (e.g. Form 4 buy/sell totals, Senate
     # transaction type) so downstream code never has to parse titles.
     details: dict[str, Any] = Field(default_factory=dict)
