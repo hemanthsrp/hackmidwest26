@@ -1,8 +1,10 @@
+from dataclasses import asdict
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from .agents import synthesis_agent
-from .pipeline.ingest import InvalidSymbolError, run_ingestion, run_signal_ingestion, validate_symbol
+from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
 from .storage.store import get_store
 
 app = FastAPI(title="scraper-analysis", version="0.1.0")
@@ -31,24 +33,53 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/ingest/run")
+@app.post("/ingest/run", response_model=None)
 def ingest_run(
     symbol: str = Query(..., description="Ticker symbol, e.g. AAPL"),
-    live: bool = Query(True, description="Try live sources before falling back to fixtures"),
+    live: bool = Query(True, description="Try live sources; false forces fixtures"),
+    fallback: bool = Query(
+        True,
+        description="When a live source fails, substitute its labeled fixture. "
+        "Pass false to refuse fixtures: failed sources are omitted and reported as 'unavailable'.",
+    ),
     tag: bool = Query(True, description="Run the Strands/Bedrock tagging agent on each record"),
-) -> dict:
+):
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    evidence = run_ingestion(validated, allow_live=live, tag=tag)
-    signals = run_signal_ingestion(validated, allow_live=live)
+    result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
+    sources = [asdict(s) for s in result.sources]
+
+    # Strict mode with nothing live: this is the contract's provider_unavailable
+    # case, not an empty success.
+    if live and not fallback and not result.any_live:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "code": "provider_unavailable",
+                    "message": "No live source was reachable; no evidence was collected and fixtures were refused.",
+                    "retryable": True,
+                    "details": {"sources": sources},
+                }
+            },
+        )
+
     return {
         "symbol": validated,
-        "count": len(evidence),
-        "evidence": [e.model_dump(mode="json") for e in evidence],
-        "signals": [s.model_dump(mode="json") for s in signals],
+        "count": len(result.evidence),
+        "evidence": [e.model_dump(mode="json") for e in result.evidence],
+        "signals": [s.model_dump(mode="json") for s in result.signals],
+        "sources": sources,
+        "warnings": [
+            f"{s['name']}: live source failed, "
+            + ("fixtures substituted" if s["status"] == "fallback" else "omitted (fixtures refused)")
+            + f" ({s['error']})"
+            for s in sources
+            if s["status"] in ("fallback", "unavailable")
+        ],
     }
 
 

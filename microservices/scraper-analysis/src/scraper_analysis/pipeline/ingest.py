@@ -4,13 +4,14 @@ congressional disclosures, and -- feature-flagged -- Reddit. Commodities
 the pipeline don't change."""
 
 import re
+from dataclasses import dataclass
 
 from ..agents.tagging_agent import tag_evidence
 from ..config import get_settings
 from ..models.evidence import Evidence
 from ..models.signal import Signal
 from ..sources import commodities, market_signals
-from ..sources.base import SourceAdapter
+from ..sources.base import SourceAdapter, SourceStatus
 from ..sources.congressional import SenateEfdAdapter
 from ..sources.news_marketaux import MarketauxNewsAdapter
 from ..sources.official_rss import ADAPTERS as OFFICIAL_RSS_ADAPTERS
@@ -51,14 +52,40 @@ def validate_symbol(symbol: str) -> str:
     return normalized
 
 
-def run_ingestion(symbol: str, allow_live: bool = True, tag: bool = True) -> list[Evidence]:
+@dataclass
+class SourceReport:
+    """One source's outcome for this run, so substitution is never silent."""
+
+    name: str
+    status: SourceStatus
+    count: int
+    error: str | None = None
+
+
+@dataclass
+class IngestResult:
+    evidence: list[Evidence]
+    signals: list[Signal]
+    sources: list[SourceReport]
+
+    @property
+    def any_live(self) -> bool:
+        return any(s.status == "live" for s in self.sources)
+
+
+def ingest_evidence(
+    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True
+) -> tuple[list[Evidence], list[SourceReport]]:
     symbol = validate_symbol(symbol)
     all_evidence: list[Evidence] = []
+    reports: list[SourceReport] = []
 
     for adapter in build_adapters():
-        records, data_mode = adapter.fetch(symbol, allow_live=allow_live)
-        for record in filter_records(records):
-            all_evidence.append(normalize(record, data_mode))
+        result = adapter.fetch_result(symbol, allow_live=allow_live, fallback=fallback)
+        records = filter_records(result.items)
+        reports.append(SourceReport(adapter.name, result.status, len(records), result.error))
+        for record in records:
+            all_evidence.append(normalize(record, result.data_mode))
 
     deduped = dedup_evidence(all_evidence)
     assign_stable_ids(deduped)
@@ -71,14 +98,37 @@ def run_ingestion(symbol: str, allow_live: bool = True, tag: bool = True) -> lis
     if tag:
         new_items = [tag_evidence(e) for e in new_items]
     store.save_evidence(new_items)
-    return new_items
+    return new_items, reports
+
+
+def ingest_signals(
+    symbol: str, allow_live: bool = True, fallback: bool = True
+) -> tuple[list[Signal], list[SourceReport]]:
+    symbol = validate_symbol(symbol)
+    fetchers = [("market_signals", market_signals.fetch_result)]
+    if commodities.is_commodity(symbol):
+        fetchers.append(("commodities", commodities.fetch_result))
+    signals: list[Signal] = []
+    reports: list[SourceReport] = []
+    for name, fetch_result in fetchers:
+        result = fetch_result(symbol, allow_live=allow_live, fallback=fallback)
+        signals += result.items
+        reports.append(SourceReport(name, result.status, len(result.items), result.error))
+    get_store().save_signals(signals)
+    return signals, reports
+
+
+def ingest_symbol(
+    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True
+) -> IngestResult:
+    evidence, ev_reports = ingest_evidence(symbol, allow_live, tag, fallback)
+    signals, sig_reports = ingest_signals(symbol, allow_live, fallback)
+    return IngestResult(evidence, signals, ev_reports + sig_reports)
+
+
+def run_ingestion(symbol: str, allow_live: bool = True, tag: bool = True) -> list[Evidence]:
+    return ingest_evidence(symbol, allow_live, tag)[0]
 
 
 def run_signal_ingestion(symbol: str, allow_live: bool = True) -> list[Signal]:
-    symbol = validate_symbol(symbol)
-    signals, _data_mode = market_signals.fetch(symbol, allow_live=allow_live)
-    if commodities.is_commodity(symbol):
-        commodity_signals, _mode = commodities.fetch(symbol, allow_live=allow_live)
-        signals = signals + commodity_signals
-    get_store().save_signals(signals)
-    return signals
+    return ingest_signals(symbol, allow_live)[0]

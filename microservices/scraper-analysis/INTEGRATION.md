@@ -18,7 +18,7 @@ Storage is in-memory unless `DATABASE_URL` is set (then Postgres + pgvector; run
 
 | Route | Purpose |
 |---|---|
-| `POST /ingest/run?symbol=AAPL&live=true&tag=true` | Collect from all sources, score, dedupe, store. Returns **only newly stored** items plus `signals`; a repeat run returns `evidence: []`. `live=false` forces fixtures; `tag=false` skips the Bedrock tagging call |
+| `POST /ingest/run?symbol=AAPL&live=true&fallback=true&tag=true` | Collect from all sources, score, dedupe, store. Returns **only newly stored** items, `signals`, a per-source `sources` report and `warnings`; a repeat run returns `evidence: []`. `live=false` forces fixtures; `fallback=false` refuses fixtures (see below); `tag=false` skips the Bedrock tagging call |
 | `GET /evidence?symbol=AAPL` | Everything stored for the symbol. `status` is `ok` or `insufficient_data` |
 | `GET /signals?symbol=AAPL` | Stored quant signals, same `status` convention |
 | `POST /briefing?symbol=AAPL` | Cited research briefing from stored data (one Bedrock call, hence POST) |
@@ -69,9 +69,29 @@ Superset of the v0 contract in `docs/api-contract-v0.md`: every field there is p
 
 Realized, historical measures only, never forecasts.
 
-## `data_mode` and freshness
+## `data_mode`, fallback, and freshness
 
-`live` = fetched from the real source this run, `cached` = reserved, `sample` = deterministic fixture. A live source being down does **not** raise an error here: that source silently falls back to its fixture and the records are labeled `sample`. If the contract requires "do not silently substitute fixtures for a live provider failure" (see `docs/api-contract-v0.md`, provider-unavailable), the adapter in `research-api` must check `data_mode` and treat `sample` as unavailable when it asked for live data. Staleness is also the caller's decision: use `retrieved_at` / `published_at` against your freshness window. There is no scheduler yet, so data only refreshes when `/ingest/run` is called.
+`data_mode` on a record is `live` (fetched from the real source this run) or `sample` (deterministic fixture). Every `/ingest/run` response also carries a `sources` array so substitution is never invisible:
+
+```json
+"sources": [
+  {"name": "sec_edgar", "status": "live", "count": 10, "error": null},
+  {"name": "marketaux", "status": "fallback", "count": 2, "error": "NEWS_API_KEY not configured"}
+]
+```
+
+| status | meaning |
+|---|---|
+| `live` | the real source answered |
+| `sample` | fixtures, because you passed `live=false` |
+| `fallback` | the live source failed and its fixture was substituted (records are `data_mode: "sample"`); also listed in `warnings` |
+| `unavailable` | the live source failed and you passed `fallback=false`; nothing was substituted |
+
+**Recommended for `research-api`: `live=true&fallback=false`.** That satisfies `docs/api-contract-v0.md` ("do not silently substitute a live provider response with a fixture"): failed sources are omitted and reported, and if **no** source was live the endpoint returns `503 {"error": {"code": "provider_unavailable", "retryable": true, "details": {"sources": [...]}}}` with nothing stored. The default (`fallback=true`) keeps an offline demo working, but then your adapter must treat `sample` records as unavailable if it asked for live data. A partial outage in strict mode is a normal `200` with the failed sources marked `unavailable`.
+
+Fixtures are persisted like any other record (labeled), so a store that has ever seen a fallback run can hold `sample` rows next to live ones: filter on `data_mode` when reading `/evidence`. `/briefing` already prefers live records and ignores fixtures whenever any live record exists.
+
+Staleness is the caller's decision: compare `retrieved_at` / `published_at` to your freshness window. There is no scheduler yet, so data only refreshes when `/ingest/run` is called.
 
 ## Briefing
 

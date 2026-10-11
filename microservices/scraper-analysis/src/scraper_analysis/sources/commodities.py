@@ -33,7 +33,7 @@ import yfinance as yf
 
 from ..config import get_settings
 from ..models.signal import Signal
-from .base import SourceUnavailableError, load_fixture
+from .base import FetchResult, SourceUnavailableError, load_fixture, resolve
 
 FIXTURE_FILE = "commodity_signals_sample.json"
 NOAA_URL = "https://www.ncdc.noaa.gov/cdo-web/api/v2/data"
@@ -156,10 +156,10 @@ def fetch_sample(symbol: str) -> list[Signal]:
     ]
 
 
+def fetch_result(symbol: str, allow_live: bool = True, fallback: bool = True) -> FetchResult:
+    return resolve(lambda: fetch_live(symbol), lambda: fetch_sample(symbol), allow_live, fallback)
+
+
 def fetch(symbol: str, allow_live: bool = True) -> tuple[list[Signal], str]:
-    if allow_live:
-        try:
-            return fetch_live(symbol), "live"
-        except SourceUnavailableError:
-            pass
-    return fetch_sample(symbol), "sample"
+    result = fetch_result(symbol, allow_live)
+    return result.items, result.data_mode
