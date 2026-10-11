@@ -39,16 +39,33 @@ def test_nothing_is_reviewed_without_a_checker_or_for_code_written_text() -> Non
     assert checker.calls == []
 
 
-def test_only_text_citing_news_is_compared_with_its_evidence() -> None:
+def test_only_text_resting_on_news_alone_is_compared_with_its_evidence() -> None:
     checker = Checker()
-    text = model_text(("News is positive.", ["n1", "f1"]), ("An insider bought.", ["f1"]))
+    text = model_text(
+        ("News is positive.", ["n1", "n2"]),
+        ("News is positive and an insider bought.", ["n1", "f1"]),
+        ("An insider bought.", ["f1"]),
+        ("The price rose.", ["a-signal-id"]),
+    )
 
     outcome = review_explanation(text, BY_ID, checker)
 
-    assert checker.calls == [("News is positive.", ["n1"]), ("News is positive. An insider bought.", [])]
-    assert [p["status"] for p in outcome.meta["points"]] == ["checked", "not_checked"]
+    assert checker.calls[0] == ("News is positive.", ["n1", "n2"])
+    assert len(checker.calls) == 2 and checker.calls[1][1] == []  # the second call is the wording check
+    assert [p["status"] for p in outcome.meta["points"]] == ["checked", "not_checked", "not_checked", "not_checked"]
     assert outcome.explanation.points == text.points
     assert not outcome.replace_with_template
+
+
+def test_text_that_also_rests_on_a_filing_is_not_removed_for_what_the_news_cannot_show() -> None:
+    mixed = "Insiders sold under a plan while news was upbeat."
+    checker = Checker({mixed: review_result(unsupported=[mixed])})
+    text = model_text(("News is positive.", ["n2"]), answer=mixed, answer_ids=["n1", "f1"])
+
+    outcome = review_explanation(text, BY_ID, checker)
+
+    assert outcome.explanation.answer == mixed
+    assert outcome.meta["answer"]["status"] == "not_checked"
 
 
 def test_an_unsupported_point_is_removed_and_reported() -> None:
@@ -72,6 +89,18 @@ def test_an_unsupported_answer_is_removed_but_the_points_stay() -> None:
     assert outcome.explanation.answer_evidence_ids == []
     assert len(outcome.explanation.points) == 1
     assert outcome.meta["answer"]["status"] == "checked"
+
+
+def test_only_the_unsupported_sentence_of_an_answer_is_cut() -> None:
+    answer = "News reports weaker iPhone demand. Insiders are buying heavily."
+    checker = Checker({answer: review_result(unsupported=["Insiders are buying heavily."])})
+    text = model_text(("News is positive.", ["n2"]), answer=answer, answer_ids=["n1"])
+
+    outcome = review_explanation(text, BY_ID, checker)
+
+    assert outcome.explanation.answer == "News reports weaker iPhone demand."
+    assert outcome.explanation.answer_evidence_ids == ["n1"]
+    assert [w.code for w in outcome.explanation.warnings] == ["unsupported_answer_sentence_removed"]
 
 
 def test_advice_or_promise_wording_sends_the_caller_to_the_template() -> None:

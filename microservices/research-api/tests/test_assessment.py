@@ -123,7 +123,7 @@ def test_a_store_alone_is_enough_and_missing_inference_only_removes_the_model() 
 
     assert isinstance(maker, DecisionMaker)
     assert maker._agent_factory is None
-    assert maker._stale_after_seconds == 86400
+    assert (maker._use_agent_tools, maker._stale_after_seconds) == (False, 86400)
 
 
 def test_inference_settings_enable_the_model_and_tuning_is_read_from_the_environment() -> None:
@@ -134,13 +134,13 @@ def test_inference_settings_enable_the_model_and_tuning_is_read_from_the_environ
             "OPENAI_API_KEY": "test-key",
             "CHAT_MODEL": "hackathon-chat",
             "EMBEDDING_MODEL": "hackathon-embedding",
-            "DECISION_AGENT_TOOLS": "false",
+            "DECISION_AGENT_TOOLS": "true",
             "DECISION_STALE_AFTER_SECONDS": "259200",
         }
     )
 
     assert maker._agent_factory is not None
-    assert (maker._agent_model, maker._use_agent_tools, maker._stale_after_seconds) == ("hackathon-chat", False, 259200)
+    assert (maker._agent_model, maker._use_agent_tools, maker._stale_after_seconds) == ("hackathon-chat", True, 259200)
 
 
 def test_transport_reports_connection_failures_as_oserror_without_the_url(monkeypatch) -> None:

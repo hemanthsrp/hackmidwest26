@@ -37,7 +37,7 @@ def agent_factory(reply: dict):
     def factory(system_prompt, tools):
         def agent(prompt):
             for tool in tools:
-                tool(*(("anything",) if tool.__name__ == "search_evidence" else ()))
+                tool("general_news" if tool.__name__ == "get_evidence" else "anything")
             return json.dumps(reply)
 
         return agent
@@ -228,6 +228,7 @@ def test_an_agent_answer_is_returned_with_its_citations() -> None:
         ListSource(LIVE, SIGNALS, hits=["n1"]),
         agent_factory=agent_factory(reply),
         agent_model="hackathon-chat",
+        use_agent_tools=True,
         explanation_checker=Checker(),
     ).decide(live(query="What about the inquiry?"))
 
@@ -255,8 +256,46 @@ def test_advice_wording_from_the_model_is_replaced_by_the_template() -> None:
     assert response.assessment.answer is None
     assert "buy now" not in response.assessment.explanation
     assert response.meta["explanation_engine"]["name"] == "template"
+    assert response.meta["explanation_engine"]["mode"] is None
     assert {"explanation_replaced", "question_not_answered"} <= set(codes(response))
     assert response.meta["jev_review"]["personal_advice"] == 0.98
+
+
+def test_by_default_the_agent_gets_its_data_in_the_prompt_and_no_tools() -> None:
+    seen = {}
+
+    def factory(system_prompt, tools):
+        seen["tools"] = tools
+        return lambda prompt: json.dumps({"answer": None, "points": [{"text": "News is positive.", "evidence_ids": ["n1"]}]})
+
+    response = maker(ListSource(LIVE, SIGNALS), agent_factory=factory).decide(live())
+
+    assert seen["tools"] == []
+    assert response.meta["explanation_engine"]["mode"] == "context"
+
+
+def test_a_price_move_alone_does_not_produce_a_label() -> None:
+    quiet = [news("n1", "neutral"), news("n2", "neutral"), news("n3", "mixed")]
+
+    response = maker(ListSource(quiet, [price(9.0)])).decide(live())
+
+    assert_contract(response)
+    assert response.assessment.label == "hold"
+    assert response.meta["decision_trace"]["held_because"] == ["no_evidence_leg_agrees"]
+    assert "a price move alone is not treated as enough" in response.assessment.explanation
+
+
+def test_judgments_made_at_decision_time_are_reused_on_the_next_request() -> None:
+    judge = Judge(default=judged("negative"))
+    decider = maker(ListSource([news("n1", None), news("n2", None), news("n3", None)], SIGNALS), article_judge=judge)
+
+    first = decider.decide(live())
+    second = decider.decide(live())
+
+    assert len(judge.asked) == 3
+    assert (first.meta["judgments_at_decision"]["asked"], second.meta["judgments_at_decision"]["asked"]) == (3, 0)
+    assert second.meta["judgments_at_decision"]["from_cache"] == 3
+    assert first.assessment.label == second.assessment.label
 
 
 def test_news_stored_without_a_judgment_is_judged_at_decision_time() -> None:

@@ -42,6 +42,18 @@ def test_only_unjudged_live_news_is_sent() -> None:
     assert (stats["unjudged"], stats["asked"], stats["judged"], stats["unavailable"]) == (1, 1, 1, 0)
 
 
+def test_an_article_is_not_sent_twice_in_one_process() -> None:
+    records = [news("a", None), news("b", None)]
+    judge, cache = Judge({"b": UNAVAILABLE}), {}
+
+    judge_missing(records, judge, "Acme Corp", cache)
+    updated, stats = judge_missing(records, judge, "Acme Corp", cache)
+
+    assert [i for i, _ in judge.asked] == ["a", "b", "b"]  # the unanswered one is asked again, the judged one is not
+    assert (stats["from_cache"], stats["asked"], stats["judged"]) == (1, 1, 0)
+    assert updated[0].jev["judged_at"] == "decision" and updated[1].jev is None
+
+
 def test_a_fresh_judgment_is_attached_and_marked_without_touching_the_original() -> None:
     record = news("plain", None)
 

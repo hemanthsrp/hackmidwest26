@@ -28,7 +28,7 @@ python -m pip install -e ../jev-tool        # optional: Jev review and judging
 | `DATABASE_URL` | Required for `live`. The evidence store `scraper-analysis` writes; read-only here. Non-local hosts need `sslmode=require`. |
 | `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `CHAT_MODEL`, `EMBEDDING_MODEL` | All four enable the Strands explanation agent and semantic search for the question. Without them the explanation is a labeled template and the question does not narrow the evidence. |
 | `JEV_ENABLED`, `TYPESAFE_API_KEY` | Read by `jev-tool` (its own `.env` works). Enables review of the model's text and judging of news stored without a judgment. |
-| `DECISION_AGENT_TOOLS` | `false` gives the model its data in the prompt instead of tools. Default `true`; a failed tools attempt falls back to this automatically. |
+| `DECISION_AGENT_TOOLS` | `true` also gives the explanation agent two lookup tools. Default `false`: the agent gets its data in the prompt, because the tool loop did not fit the Akamai model in live runs (decision-maker README, "What the live runs showed"). |
 | `DECISION_STALE_AFTER_SECONDS` | Freshness window, default `86400`. Older evidence returns `409 stale_data`. |
 
 This service does not load a `.env` file itself; export the variables or start uvicorn with `--env-file`.
@@ -47,7 +47,7 @@ assessment.set_quant_provider(my_quant)   # (symbol, horizon) -> decision_maker.
 
 The expected fields, with an example built from `vol-surface-builder`'s own functions, are in the decision-maker README under "Handing over the math". Until a provider is registered, every assessment carries a `quant_unavailable` warning and is decided from evidence and the price signal alone. A provider that raises is reported as `quant_provider_failed` and does not block the response.
 
-Not yet run against the real store, Akamai inference or TypeSafe from this service; only the offline tests have run.
+Run live for AAPL on 2026-10-10 through this route, against the shared store, Akamai inference and TypeSafe: HTTP 200 in 18 to 27 seconds with a model-written, Jev-reviewed explanation. No math provider was registered, so those responses carry `quant_unavailable`.
 
 ## Akamai inference seam (server-side only)
 

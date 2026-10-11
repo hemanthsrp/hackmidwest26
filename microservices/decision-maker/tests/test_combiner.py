@@ -33,6 +33,12 @@ def test_a_single_usable_leg_is_not_enough() -> None:
         # Weights are renormalised over the legs that have data.
         ({"news_dir": 0.5, "price_dir": 0.0}, "buy", 0.3333),
         ({"insider": -1.0, "congress": 1.0}, "sell", -0.5),
+        # Price alone cannot carry a label: mild or neutral news leaves it at hold.
+        ({"news_dir": 0.0, "price_dir": 1.0}, "hold", 0.3333),
+        ({"news_dir": 0.17, "price_dir": 1.0}, "hold", 0.4467),
+        ({"news_dir": -0.1, "price_dir": -1.0}, "hold", -0.4),
+        ({"news_dir": 0.25, "price_dir": 1.0}, "buy", 0.5),
+        ({"congress": 1.0, "price_dir": 1.0}, "buy", 1.0),
     ],
 )
 def test_label_follows_the_weighted_direction(directions: dict, label: str, net: float) -> None:
@@ -89,6 +95,15 @@ def test_reason_codes_are_the_records_behind_the_label() -> None:
     assert buy.label == "buy"
     assert buy.reason_codes == ["n1", "n2", "f1", "p1", "q-skew"]  # the opposing congress leg is not a reason to buy
     assert hold.reason_codes == ["n1", "n2", "f1", "p1", "q-skew"]
+
+
+def test_a_held_back_label_says_why_and_cites_every_usable_leg() -> None:
+    held = combine(legs(news_dir=0.1, price_dir=1.0), NO_QUANT, has_evidence=True)
+    backed = combine(legs(news_dir=0.3, price_dir=1.0), NO_QUANT, has_evidence=True)
+
+    assert (held.label, held.held_because) == ("hold", ["no_evidence_leg_agrees"])
+    assert held.reason_codes == ["n1", "n2", "p1"]
+    assert (backed.label, backed.held_because) == ("buy", [])
 
 
 def test_opposing_legs_are_named_as_conflicts() -> None:

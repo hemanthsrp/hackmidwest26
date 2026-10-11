@@ -10,11 +10,13 @@ unsupported point is removed, and advice or promise language makes the caller
 fall back to the templated explanation. When Jev is unavailable the text passes
 through unreviewed and the response says so.
 
-Scope follows ``scraper-analysis/agents/jev_guard.py``: only text citing news or
-social records is compared, against those records' title and summary. Points
-resting on filings, disclosures or signals are not checked, because their facts
-are in structured details and numbers that this comparison cannot see. These
-are heuristic model judgments, not verification.
+Scope follows ``scraper-analysis/agents/jev_guard.py``, a little narrower: only
+text whose citations are all news or social records is compared, against those
+records' title and summary. Text resting on filings, disclosures or signals, in
+whole or in part, is not compared, because those facts are in structured
+details and numbers that this comparison cannot see. The advice and promise
+check covers all of the text. These are heuristic model judgments, not
+verification.
 """
 
 from __future__ import annotations
@@ -48,12 +50,28 @@ class ReviewOutcome:
     replace_with_template: bool = False
 
 
+NOT_CHECKED = "does not rest on news or social records alone"
+
+
 def _cited_news(ids: list[str], by_id: dict[str, EvidenceRecord]) -> list[dict[str, Any]]:
-    return [
-        {"id": by_id[i].id, "title": by_id[i].title, "summary": by_id[i].summary}
-        for i in ids
-        if i in by_id and by_id[i].source_type in NEWS_SOURCE_TYPES
-    ]
+    """The cited records when every one of them is a news or social item, else
+    nothing. Text that also cites a filing or a signal states facts the news
+    cannot back, and comparing it with the news alone got correct text removed
+    in a live run."""
+    records = [by_id.get(i) for i in ids]
+    if not records or any(r is None or r.source_type not in NEWS_SOURCE_TYPES for r in records):
+        return []
+    return [{"id": r.id, "title": r.title, "summary": r.summary} for r in records]
+
+
+def _without(text: str, sentences: Sequence[str]) -> str | None:
+    """``text`` with the given sentences cut out, or None when one cannot be found
+    verbatim or nothing is left."""
+    for sentence in sentences:
+        if sentence not in text:
+            return None
+        text = text.replace(sentence, " ")
+    return " ".join(text.split()) or None
 
 
 def review_explanation(
@@ -90,7 +108,7 @@ def review_explanation(
     kept = []
     for index, (point, items) in enumerate(zip(explanation.points, cited)):
         if not items:
-            points_meta.append({"index": index, "status": "not_checked", "reason": "cites no news or social records"})
+            points_meta.append({"index": index, "status": "not_checked", "reason": NOT_CHECKED})
             kept.append(point)
             continue
         unsupported = next(support).unsupported_sentences
@@ -113,15 +131,24 @@ def review_explanation(
             unsupported = next(support).unsupported_sentences
             answer_meta = {"status": "checked", "unsupported_sentences": len(unsupported), "evidence_checked": len(cited[-1])}
             if unsupported:
-                answer, answer_ids = None, []
-                warnings.append(
-                    ResponseWarning(
-                        code="unsupported_answer_removed",
-                        message="Removed the answer to the question: its cited evidence may not support it.",
+                answer = _without(explanation.answer, unsupported)
+                if answer:
+                    warnings.append(
+                        ResponseWarning(
+                            code="unsupported_answer_sentence_removed",
+                            message=f"Removed {len(unsupported)} sentence(s) of the answer that its cited evidence may not support.",
+                        )
                     )
-                )
+                else:
+                    answer, answer_ids = None, []
+                    warnings.append(
+                        ResponseWarning(
+                            code="unsupported_answer_removed",
+                            message="Removed the answer to the question: its cited evidence may not support it.",
+                        )
+                    )
         else:
-            answer_meta = {"status": "not_checked", "reason": "cites no news or social records"}
+            answer_meta = {"status": "not_checked", "reason": NOT_CHECKED}
 
     flagged = bool(framing.reads_as_advice or framing.promises_result)
     if flagged:

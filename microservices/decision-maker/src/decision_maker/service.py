@@ -119,7 +119,7 @@ class DecisionMaker:
         evidence_source: EvidenceSource | None = None,
         agent_factory: AgentFactory | None = None,
         agent_model: str | None = None,
-        use_agent_tools: bool = True,
+        use_agent_tools: bool = False,
         article_judge: ArticleJudge | None = None,
         explanation_checker: ExplanationChecker | None = None,
         companies: Mapping[str, str] | None = None,
@@ -135,6 +135,8 @@ class DecisionMaker:
         self._companies = companies or {}
         self._stale_after_seconds = stale_after_seconds
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        # Judgments made at decision time, by evidence id, for the life of this process.
+        self._judgment_cache: dict[str, dict[str, Any]] = {}
 
     def decide(self, request: DecisionRequest, quant: QuantInput | None = None) -> DecisionResponse:
         """Raises ``InvalidSymbolError``, ``ProviderUnavailableError`` or ``StaleDataError``;
@@ -188,7 +190,9 @@ class DecisionMaker:
 
         judgments = None
         if self._article_judge is not None and not sample:
-            window, judgments = judge_missing(window, self._article_judge, self._companies.get(symbol, symbol))
+            window, judgments = judge_missing(
+                window, self._article_judge, self._companies.get(symbol, symbol), self._judgment_cache
+            )
             if judgments["unavailable"]:
                 warnings.append(
                     ResponseWarning(
@@ -279,6 +283,7 @@ class DecisionMaker:
                     "net_direction": decision.net_direction,
                     "threshold": decision.threshold,
                     "threshold_raised_by": decision.threshold_raised_by,
+                    "held_because": decision.held_because,
                     "usable_legs": decision.usable_legs,
                     "conflicts": decision.conflicts,
                     "legs": [leg.model_dump() for leg in legs.values()],

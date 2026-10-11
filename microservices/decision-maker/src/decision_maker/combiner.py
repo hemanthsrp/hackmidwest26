@@ -19,7 +19,10 @@ WEIGHTS = {"news": 0.4, "insider": 0.3, "price": 0.2, "congress": 0.1}
 BASE_THRESHOLD = 0.25
 RAISED_THRESHOLD = 0.40
 MIN_USABLE_LEGS = 2
-CONFLICT_MIN_DIRECTION = 0.25
+# How far a leg must lean to count as pointing one way: for naming a conflict,
+# and for an evidence leg to back a buy or sell.
+MIN_LEG_DIRECTION = 0.25
+EVIDENCE_LEGS = frozenset({"news", "insider", "congress"})
 MAX_REASONS_PER_LEG = 5
 
 THRESHOLDS = {
@@ -27,7 +30,8 @@ THRESHOLDS = {
     "base_threshold": BASE_THRESHOLD,
     "raised_threshold": RAISED_THRESHOLD,
     "min_usable_legs": MIN_USABLE_LEGS,
-    "conflict_min_direction": CONFLICT_MIN_DIRECTION,
+    "min_leg_direction": MIN_LEG_DIRECTION,
+    "evidence_legs": sorted(EVIDENCE_LEGS),
 }
 
 
@@ -48,7 +52,7 @@ def _raised_by(legs: dict[str, Leg], quant: QuantReading) -> list[str]:
 
 
 def _conflicts(usable: list[Leg]) -> list[str]:
-    strong = [leg for leg in usable if abs(leg.direction) >= CONFLICT_MIN_DIRECTION]
+    strong = [leg for leg in usable if abs(leg.direction) >= MIN_LEG_DIRECTION]
     return [
         f"{a.name} ({a.reading}) against {b.name} ({b.reading})"
         for i, a in enumerate(strong)
@@ -107,12 +111,23 @@ def combine(legs: dict[str, Leg], quant: QuantReading, *, has_evidence: bool) ->
     total = sum(WEIGHTS[leg.name] for leg in usable)
     net = sum(WEIGHTS[leg.name] * leg.direction for leg in usable) / total
     label = "buy" if net >= threshold else "sell" if net <= -threshold else "hold"
+
+    held_because: list[str] = []
+    if label != "hold":
+        # A realized price move must not carry a label by itself: at least one kind
+        # of attributable evidence has to point the same way.
+        sign = 1.0 if label == "buy" else -1.0
+        agrees = any(leg.name in EVIDENCE_LEGS and leg.direction * sign >= MIN_LEG_DIRECTION for leg in usable)
+        if not agrees:
+            label = "hold"
+            held_because.append("no_evidence_leg_agrees")
     return Decision(
         label=label,
         reason_codes=_reason_codes(label, usable, legs, quant, raised_by),
         net_direction=round(net, 4),
         threshold=threshold,
         threshold_raised_by=raised_by,
+        held_because=held_because,
         usable_legs=names,
         conflicts=_conflicts(usable),
     )

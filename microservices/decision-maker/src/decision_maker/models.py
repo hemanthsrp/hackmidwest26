@@ -253,6 +253,8 @@ class Decision(BaseModel):
     net_direction: float | None = None
     threshold: float
     threshold_raised_by: list[str] = Field(default_factory=list)
+    # Why a net direction past the threshold was still held at "hold".
+    held_because: list[str] = Field(default_factory=list)
     usable_legs: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
 

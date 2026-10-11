@@ -256,7 +256,7 @@ These are intentionally names and defaults only. They do not assert Akamai's fin
 
 ## Additions made by the decision maker (A3)
 
-> **Status: implemented on `jet/a3-decision-maker` and tested offline; not yet reviewed at Gate 0 or run against live services.** Everything above still stands. These are additive: a client written against the shapes above keeps working. Detail is in [`microservices/decision-maker/README.md`](../microservices/decision-maker/README.md).
+> **Status: implemented on `jet/a3-decision-maker`, tested offline and run live for one symbol on 2026-10-10; not yet reviewed at Gate 0.** Everything above still stands. These are additive: a client written against the shapes above keeps working. Detail is in [`microservices/decision-maker/README.md`](../microservices/decision-maker/README.md).
 
 ### Request
 
@@ -274,7 +274,7 @@ These are intentionally names and defaults only. They do not assert Akamai's fin
 | `query` | The question as used (cleaned and capped), or `null` |
 | `assessment.answer` | The model's short answer to the question; `null` with no question, no model, or when the answer failed review |
 | `assessment.explanation_points` | `[{text, evidence_ids}]`: the cited points that `assessment.explanation` is assembled from |
-| `assessment.decision_engine` | `{name: "combiner-v1", status: "used" \| "not_run"}`. `not_run` only when no evidence was in the recency window. |
+| `assessment.decision_engine` | `{name: "combiner-v1", status: "used" \| "not_run"}`. `not_run` only when no evidence was in the recency window. A `buy` or `sell` needs at least one kind of attributable evidence leaning that way; a price move alone gives `hold`. |
 | `freshness.status` | Adds `unknown` (no evidence to date) alongside `fresh` and `stale` |
 | `meta` | `decision_trace`, `explanation_engine`, `jev_review`, `judgments_at_decision`, `retrieval`. Diagnostic; safe to show, not required to render. |
 

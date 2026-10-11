@@ -116,7 +116,7 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ) -> Any:
         evidence_source=source,
         agent_factory=agent_factory,
         agent_model=chat_model,
-        use_agent_tools=environ.get("DECISION_AGENT_TOOLS", "true").strip().lower() != "false",
+        use_agent_tools=environ.get("DECISION_AGENT_TOOLS", "false").strip().lower() == "true",
         article_judge=JevDecisionAdapter(jev) if jev else None,
         explanation_checker=JevExplanationAdapter(jev) if jev else None,
         companies=COMPANY_NAMES,
