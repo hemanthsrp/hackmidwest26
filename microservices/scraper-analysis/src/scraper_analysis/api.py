@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from .agents import synthesis_agent
 from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
+from .sources.base import sanitize_error
 from .storage.store import get_store
 
 app = FastAPI(title="scraper-analysis", version="0.1.0")
@@ -24,7 +25,9 @@ def briefing(symbol: str = Query(..., description="Ticker symbol, e.g. AAPL")) -
         # Same envelope shape as docs/api-contract-v0.md errors.
         return JSONResponse(
             status_code=503,
-            content={"error": {"code": "briefing_unavailable", "message": str(exc), "retryable": True}},
+            content={
+                "error": {"code": "briefing_unavailable", "message": sanitize_error(exc), "retryable": True}
+            },
         )
 
 
@@ -50,7 +53,11 @@ def ingest_run(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
-    sources = [asdict(s) for s in result.sources]
+    # Adapters already sanitize via sources.base.resolve(); repeat it at the
+    # API boundary so no future source path can return raw upstream text.
+    sources = [
+        {**asdict(s), "error": sanitize_error(s.error) if s.error else None} for s in result.sources
+    ]
 
     # Strict mode with nothing live: this is the contract's provider_unavailable
     # case, not an empty success.

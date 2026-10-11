@@ -37,6 +37,9 @@ def _form4_title(symbol: str, f: dict) -> str:
         codes = ", ".join(sorted(f["other_codes"])) or "none"
         actions.append(f"reported non-open-market activity (codes: {codes})")
     title = f"{who} {' and '.join(actions)} of {symbol} -- Form 4"
+    dates = f.get("transaction_dates") or []
+    if len(dates) > 1:
+        title += f" (trades {dates[0]} to {dates[-1]})"
     if f["is_10b5_1"]:
         title += " [pre-scheduled 10b5-1 plan]"
     return title
@@ -64,6 +67,11 @@ def _normalize_sec_filing(record: RawRecord, data_mode: str) -> Evidence:
                 "sell_shares": form4["sell_shares"],
                 "sell_value_usd": form4["sell_value_usd"],
                 "other_codes": form4["other_codes"],
+                # Actual trade dates, not the filing's reporting period;
+                # observed_at is the earliest of these.
+                "transaction_dates": form4.get("transaction_dates")
+                or ([form4["transaction_date"]] if form4.get("transaction_date") else []),
+                "period_of_report": form4.get("period_of_report"),
             }
         )
     return Evidence(
