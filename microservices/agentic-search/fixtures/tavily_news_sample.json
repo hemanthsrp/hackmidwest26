@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Apple guidance sample",
+    "url": "https://example.com/aapl-guidance",
+    "content": "Deterministic fixture-only article summary for AAPL.",
+    "published_date": "2026-10-05T00:00:00Z"
+  },
+  {
+    "title": "Other company sample",
+    "url": "https://other.example.com/market-update",
+    "content": "Fixture-only market update.",
+    "published_date": "2026-10-06T00:00:00Z"
+  }
+]
