@@ -41,6 +41,10 @@ Safety properties, because this writes to a shared database unattended:
   If any live data arrived but some source is not live or carries a note,
   the symbol is ok=False, partial=True with one entry per degraded source in
   ``notes``. ok=True only when every source is live with no note.
+- Per-symbol status fields describe the LATEST attempt only: they are reset
+  when an attempt starts, so a failed or interrupted attempt shows empty
+  sources/notes and its own counts, never the previous run's. The last run
+  with live data is kept separately under ``last_success`` (with ``at``).
 - Slower outside US market hours (README 4.3 cost guidance): the interval is
   multiplied by SCHEDULER_OFFHOURS_FACTOR on weekends and outside 08:00-18:00
   America/New_York. Interval and factor must be finite and > 0.
@@ -49,6 +53,7 @@ Safety properties, because this writes to a shared database unattended:
 """
 
 import asyncio
+import copy
 import functools
 import logging
 import math
@@ -229,6 +234,10 @@ class SymbolStatus:
     # "still running", then what actually happened once the worker exited.
     after_stop: str | None = None
     finished_after_stop: bool = False
+    # History, kept apart from the latest-attempt fields above: the last run
+    # in which any source was live ({at, ok, partial, new_evidence,
+    # new_signals, sources, notes}), or None if there has been none.
+    last_success: dict | None = None
 
 
 def _source_reports(reports) -> tuple[list[dict], list[str]]:
@@ -432,6 +441,11 @@ class Scheduler:
                 status.ok, status.partial = False, False
                 status.consecutive_failures += 1
                 status.error = "no source was live"
+            if result.any_live:
+                status.last_success = {
+                    "at": status.last_run_at, "ok": status.ok, "partial": status.partial,
+                    "new_evidence": status.new_evidence, "new_signals": status.new_signals,
+                    "sources": [dict(x) for x in sources], "notes": list(notes)}
             if late:
                 status.after_stop = (f"finished {when}; its writes landed late: "
                                      f"+{status.new_evidence} evidence, +{status.new_signals} signals")
@@ -444,9 +458,15 @@ class Scheduler:
         run = run or self._run
         status = self.statuses[symbol]
         with self._status_lock:
+            # Top-level fields describe THIS attempt only: clear everything the
+            # previous run set, so a failed or interrupted attempt can never
+            # show the old run's sources/counts/notes as if they were current.
+            # The last successful run stays visible under last_success.
             status.last_run_at = self._now().isoformat()
+            status.ok, status.error = None, None
             status.after_stop, status.finished_after_stop = None, False
             status.partial, status.notes = False, []
+            status.sources, status.new_evidence, status.new_signals = [], 0, 0
         call = _Call(symbol)
         inflight = asyncio.ensure_future(asyncio.to_thread(self._ingest_in_thread, symbol, run, call))
         # Belt and braces: whatever happens to the awaiting task, retrieve the
@@ -613,7 +633,7 @@ class Scheduler:
     def status(self) -> dict:
         draining = self._draining()
         with self._status_lock:
-            symbols = {s: dict(st.__dict__) for s, st in self.statuses.items()}
+            symbols = {s: copy.deepcopy(st.__dict__) for s, st in self.statuses.items()}
         return {
             "enabled": True,
             "running": self._task is not None and not self._task.done(),
