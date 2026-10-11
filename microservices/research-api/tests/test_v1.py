@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 from research_api.app import app
-from research_api import storage, v1
+from research_api import broker, storage, v1
 from research_api.broker import RobinhoodAdapter, encrypt_grant, decrypt_grant
 
 SECRET='test-service-secret-with-at-least-32-characters'
@@ -55,6 +55,72 @@ def test_broker_rejects_mutations_before_transport():
     adapter.call('get_equity_positions',{})
     assert calls==['get_equity_positions']
 
+def test_portfolio_refresh_passes_the_returned_account_number_to_robinhood(monkeypatch):
+    monkeypatch.setenv('ROBINHOOD_MCP_ENABLED','true')
+    monkeypatch.setattr(broker,'_access_token',lambda _: ({},'token'))
+    calls=[]
+    responses={
+        'get_accounts':{'data':{'accounts':[{'account_number':'account-123'}]}},
+        'get_portfolio':{'data':{'total_value':'1250.50'}},
+        'get_equity_positions':{'data':{'positions':[{'symbol':'NVDA','quantity':'2'}]}},
+        'get_equity_quotes':{'data':{'results':[]}},
+    }
+    def mcp_call(_token,tool,arguments):
+        calls.append((tool,arguments))
+        return responses[tool]
+    monkeypatch.setattr(broker,'_mcp_call',mcp_call)
+
+    snapshot=broker.refresh_portfolio('alice')
+
+    assert calls==[
+        ('get_accounts',{}),
+        ('get_portfolio',{'account_number':'account-123'}),
+        ('get_equity_positions',{'account_number':'account-123'}),
+        ('get_equity_quotes',{'symbols':['NVDA']}),
+    ]
+    assert snapshot['connected'] is True
+    assert snapshot['value']==1250.5
+    assert snapshot['positions']==[{'symbol':'NVDA','shares':2.0,'price':0.0}]
+
+def test_portfolio_refresh_uses_live_equity_quotes_for_position_prices(monkeypatch):
+    monkeypatch.setenv('ROBINHOOD_MCP_ENABLED','true')
+    monkeypatch.setattr(broker,'_access_token',lambda _: ({},'token'))
+    calls=[]
+    responses={
+        'get_accounts':{'data':{'accounts':[{'account_number':'account-123'}]}},
+        'get_portfolio':{'data':{'total_value':'1250.50'}},
+        'get_equity_positions':{'data':{'positions':[{'symbol':'NVDA','quantity':'2'}]}},
+        'get_equity_quotes':{'data':{'results':[
+            {'quote':{'symbol':'NVDA','last_trade_price':'123.45','previous_close':'120.00'}}
+        ]}},
+    }
+    def mcp_call(_token,tool,arguments):
+        calls.append((tool,arguments))
+        return responses[tool]
+    monkeypatch.setattr(broker,'_mcp_call',mcp_call)
+
+    snapshot=broker.refresh_portfolio('alice')
+
+    assert ('get_equity_quotes',{'symbols':['NVDA']}) in calls
+    assert snapshot['positions']==[{'symbol':'NVDA','shares':2.0,'price':123.45}]
+
+def test_portfolio_refresh_keeps_positions_when_quotes_are_unavailable(monkeypatch):
+    monkeypatch.setenv('ROBINHOOD_MCP_ENABLED','true')
+    monkeypatch.setattr(broker,'_access_token',lambda _: ({},'token'))
+    responses={
+        'get_accounts':{'data':{'accounts':[{'account_number':'account-123'}]}},
+        'get_portfolio':{'data':{'total_value':'1250.50'}},
+        'get_equity_positions':{'data':{'positions':[{'symbol':'NVDA','quantity':'2'}]}},
+    }
+    def mcp_call(_token,tool,arguments):
+        if tool=='get_equity_quotes': raise broker.BrokerUnavailable('Quotes unavailable')
+        return responses[tool]
+    monkeypatch.setattr(broker,'_mcp_call',mcp_call)
+
+    snapshot=broker.refresh_portfolio('alice')
+
+    assert snapshot['positions']==[{'symbol':'NVDA','shares':2.0,'price':0.0}]
+
 def test_encryption_binds_grants_to_user(monkeypatch):
     monkeypatch.setenv('BROKER_ENCRYPTION_KEY',base64.b64encode(b'a'*32).decode())
     encrypted=encrypt_grant({'access_token':'private'},'alice')
@@ -74,6 +140,25 @@ def test_stale_and_sample_evidence_cannot_produce_live_assessment(monkeypatch):
     result=TestClient(app).get('/v1/stocks/NVDA',headers=headers()).json()
     assert result['assessment']['label']=='insufficient_data'
     assert result['evidence']==[] and result['signals']==[]
+
+def test_home_feed_researches_a_holding_outside_the_default_radar(monkeypatch):
+    now=datetime.now(timezone.utc).isoformat()
+    monkeypatch.setattr(v1,'portfolio',lambda _: {'data':{'positions':[{'symbol':'ABCD','shares':2,'price':10}]}})
+    monkeypatch.setattr(v1,'ranked',lambda: [])
+    monkeypatch.setattr(v1,'assess_cached',lambda symbol:{
+        'symbol':symbol,
+        'assessment':{'label':'hold'},
+        'evidence':[{'id':'source','observed_at':now}],
+        'signals':[],
+        'data_mode':'live',
+        'snapshot':{'as_of':now},
+    })
+
+    response=TestClient(app).get('/v1/home-feed',headers=headers())
+
+    assert response.status_code==200
+    assert [item['symbol'] for item in response.json()['data']]==['ABCD']
+    assert response.json()['data'][0]['rank_reason'].startswith('Related to a current holding')
 
 def test_read_only_chat_request_does_not_store_transcript():
     client=TestClient(app)
@@ -97,6 +182,43 @@ def test_live_chat_saves_only_explicit_preferences_after_success(monkeypatch):
     memory=storage.read('alice','memory')
     assert len(memory)==1 and memory[0]['value']=='balanced'
     assert '1234' not in json.dumps(TestClient(app).get('/v1/me/export',headers=headers()).json())
+
+def test_chat_limits_research_context_sent_to_inference(monkeypatch):
+    huge_evidence = [
+        {
+            'id': f'evidence-{index}',
+            'title': 'Provider record',
+            'source': 'Provider',
+            'summary': 'x' * 2000,
+            'observed_at': datetime.now(timezone.utc).isoformat(),
+            'data_mode': 'live',
+            'sentiment': {'direction': 'bullish'},
+        }
+        for index in range(42)
+    ]
+    monkeypatch.setattr(v1, 'assess', lambda _: {
+        'symbol': 'NVDA',
+        'evidence': huge_evidence,
+        'signals': [],
+        'assessment': {'label': 'buy'},
+    })
+    monkeypatch.setattr(v1.InferenceSettings, 'from_environ', lambda _: None)
+    captured = {}
+
+    class Client:
+        def __init__(self, *args): pass
+        def chat_completion(self, messages):
+            captured['messages'] = messages
+            return {'choices': [{'message': {'content': 'NVDA research remains uncertain.'}}]}
+
+    monkeypatch.setattr(v1, 'AkamaiInferenceClient', Client)
+    response = TestClient(app).post('/v1/chat/turn', headers=headers(), json={
+        'message': 'What is the current research for NVDA?',
+        'preferences': {},
+    })
+
+    assert response.status_code == 200
+    assert len(captured['messages'][0]['content']) <= 12000
 
 def test_disabling_memory_deletes_previous_preferences():
     storage.write('alice','memory','horizon','30d')

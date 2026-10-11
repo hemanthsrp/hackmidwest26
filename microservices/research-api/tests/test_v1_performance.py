@@ -71,3 +71,31 @@ def test_home_feed_writes_only_changed_labels(monkeypatch):
     writes.clear()
     client.get('/v1/home-feed', headers=headers())
     assert [w for w in writes if w[0] == 'last_assessment'] == []
+
+
+def test_ranked_limits_parallel_research_reads(monkeypatch):
+    active = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def fake(symbol):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.03)
+        with lock:
+            active -= 1
+        return {
+            'assessment': {'label': 'insufficient_data'},
+            'evidence': [],
+            'signals': [],
+            'data_mode': 'live',
+            'snapshot': {'as_of': 'x'},
+        }
+
+    monkeypatch.setattr(v1, 'assess_cached', fake)
+
+    v1.ranked()
+
+    assert peak <= 2

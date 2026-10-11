@@ -30,6 +30,10 @@ import {
   type Stock,
   type Article,
 } from "@/lib/market";
+import {
+  normalizePortfolioPositions,
+  type PortfolioPosition,
+} from "@/lib/portfolio";
 import { useApp } from "./shell";
 import { ResearchAssessment } from "./research-assessment";
 function Badge({ stance }: { stance: string }) {
@@ -77,11 +81,12 @@ function Sparkline({
     </svg>
   );
 }
-function StockLogo({ stock }: { stock: Stock }) {
+function StockLogo({ stock }: { stock: PortfolioPosition }) {
+  const color = stock.color ?? "#89919f";
   return (
     <span
       className="stock-logo"
-      style={{ background: stock.color + "19", color: stock.color }}
+      style={{ background: color + "19", color }}
     >
       {stock.symbol === "AAPL"
         ? "a"
@@ -152,11 +157,11 @@ export function Home() {
       return r.json();
     },
   });
-  const positions = demo
+  const positions: PortfolioPosition[] = demo
     ? stocks.filter((s) => s.shares > 0)
-    : q.data?.data?.positions || [];
+    : normalizePortfolioPositions(q.data?.data?.positions);
   const total = demo
-    ? positions.reduce((n: number, s: Stock) => n + s.price * s.shares, 0)
+    ? positions.reduce((n, s) => n + (s.price ?? 0) * s.shares, 0)
     : q.data?.data?.value || 0;
   return (
     <>
@@ -207,70 +212,68 @@ export function Home() {
                 : "Not connected"}
           </span>
         </div>
-        <div className="portfolio-chart">
-          <ResponsiveContainer width="100%" height={145}>
-            <AreaChart
-              data={(demo ? stocks[0].history : [])
-                .slice(
-                  range === "1D"
-                    ? -4
-                    : range === "1W"
-                      ? -6
-                      : range === "1M"
-                        ? -8
-                        : range === "3M"
-                          ? -10
-                          : range === "1Y"
-                            ? -12
-                            : 0,
-                )
-                .map((v, i) => ({ value: total * (0.87 + v / 1000), day: i }))}
-            >
-              <YAxis hide domain={["dataMin - 100", "dataMax + 100"]} />
-              <defs>
-                <linearGradient id="portfolio-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#608873" stopOpacity={0.16} />
-                  <stop offset="100%" stopColor="#608873" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <Tooltip
-                formatter={(v) => money(Number(v))}
-                labelFormatter={() => "Illustrative portfolio value"}
-                contentStyle={{
-                  background: "var(--card)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#5e8f77"
-                strokeWidth={2}
-                fill="url(#portfolio-fill)"
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="chart-footer">
-          <span>
-            {demo
-              ? "Illustrative performance · not historical returns"
-              : "Connect an account to see your positions"}
-          </span>
-          <div className="range-tabs">
-            {["1D", "1W", "1M", "3M", "1Y", "ALL"].map((r) => (
-              <button
-                key={r}
-                className={range === r ? "selected" : ""}
-                onClick={() => setRange(r)}
+        {demo && <>
+          <div className="portfolio-chart">
+            <ResponsiveContainer width="100%" height={145}>
+              <AreaChart
+                data={stocks[0].history
+                  .slice(
+                    range === "1D"
+                      ? -4
+                      : range === "1W"
+                        ? -6
+                        : range === "1M"
+                          ? -8
+                          : range === "3M"
+                            ? -10
+                            : range === "1Y"
+                              ? -12
+                              : 0,
+                  )
+                  .map((v, i) => ({ value: total * (0.87 + v / 1000), day: i }))}
               >
-                {r}
-              </button>
-            ))}
+                <YAxis hide domain={["dataMin - 100", "dataMax + 100"]} />
+                <defs>
+                  <linearGradient id="portfolio-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#608873" stopOpacity={0.16} />
+                    <stop offset="100%" stopColor="#608873" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <Tooltip
+                  formatter={(v) => money(Number(v))}
+                  labelFormatter={() => "Illustrative portfolio value"}
+                  contentStyle={{
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#5e8f77"
+                  strokeWidth={2}
+                  fill="url(#portfolio-fill)"
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
-        </div>
+          <div className="chart-footer">
+            <span>Illustrative performance · not historical returns</span>
+            <div className="range-tabs">
+              {["1D", "1W", "1M", "3M", "1Y", "ALL"].map((r) => (
+                <button
+                  key={r}
+                  className={range === r ? "selected" : ""}
+                  onClick={() => setRange(r)}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>}
       </section>
       {!demo && q.isError && (
         <div role="alert" className="error-box">
@@ -309,39 +312,36 @@ export function Home() {
               <tr>
                 <th>Asset</th>
                 <th>Price</th>
-                <th>Today</th>
-                <th>7-day trend</th>
+                {demo && <><th>Today</th><th>7-day trend</th></>}
                 <th>Position</th>
               </tr>
             </thead>
             <tbody>
               {positions
-                .filter((s: Stock) =>
-                  `${s.name} ${s.symbol}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
+                .filter((s) =>
+                  s.symbol.toLowerCase().includes(search.toLowerCase()),
                 )
                 .slice(0, showAll ? 100 : 4)
-                .map((s: Stock) => (
+                .map((s) => (
                   <tr key={s.symbol}>
                     <td>
                       <Link className="asset" href={`/stocks/${s.symbol}`}>
                         <StockLogo stock={s} />
                         <span>
                           <strong>{s.symbol}</strong>
-                          <small>{s.name}</small>
+                          <small>{demo ? s.name : "Robinhood position"}</small>
                         </span>
                       </Link>
                     </td>
-                    <td>{money(s.price)}</td>
-                    <td className={s.change >= 0 ? "positive" : "negative"}>
-                      {pct(s.change)}
-                    </td>
+                    <td>{s.price === null ? "—" : money(s.price)}</td>
+                    {demo && <>
+                      <td className={(s.change ?? 0) >= 0 ? "positive" : "negative"}>
+                        {pct(s.change ?? 0)}
+                      </td>
+                      <td><Sparkline stock={s as Stock} /></td>
+                    </>}
                     <td>
-                      <Sparkline stock={s} />
-                    </td>
-                    <td>
-                      <strong>{money(s.price * s.shares)}</strong>
+                      <strong>{s.price === null ? "—" : money(s.price * s.shares)}</strong>
                       <small>{s.shares} shares</small>
                     </td>
                   </tr>

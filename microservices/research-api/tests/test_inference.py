@@ -78,6 +78,7 @@ def test_chat_request_uses_server_side_alias_and_one_transient_retry(
     assert requests[0][0] == "https://ws.akamai-workshops.com/v1/chat/completions"
     assert requests[0][2]["model"] == "hackathon-chat"
     assert requests[0][1]["Authorization"] == "Bearer test-server-only-key"
+    assert requests[0][3] == 30.0
 
 
 def test_embedding_request_fails_without_fixture_substitution(

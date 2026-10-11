@@ -22,6 +22,7 @@ import {
 import { defaultPreferences, type Preferences } from "@/lib/market";
 import { Settings } from "./settings";
 import { Notifications } from "./notifications";
+import { MarkdownText } from "./markdown";
 type AppContext = {
   preferences: Preferences;
   savePreferences: (p: Preferences) => Promise<void>;
@@ -264,15 +265,57 @@ function Chat() {
         body: JSON.stringify({ message: text, context: next.slice(-10), demo }),
         signal: controller.signal,
       });
-      const data = await r.json();
-      if (!r.ok)
+      if (!r.ok) {
+        const data = await r.json();
         throw new Error(
           data.error?.message || "The assistant is temporarily unavailable.",
         );
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: data.reply, citations: data.citations },
-      ]);
+      }
+      if (!r.body || !r.headers.get("Content-Type")?.includes("text/event-stream")) {
+        const data = await r.json();
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: data.reply, citations: data.citations },
+        ]);
+        return;
+      }
+      setMessages((m) => [...m, { role: "assistant", content: "", citations: [] }]);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        for (const eventText of events) {
+          const line = eventText.split("\n").find((line) => line.startsWith("data: "));
+          if (!line) continue;
+          const event = JSON.parse(line.slice(6)) as {
+            type: string;
+            content?: string;
+            message?: string;
+            citations?: { symbol: string; label: string }[];
+          };
+          if (event.type === "delta" && event.content)
+            setMessages((m) => {
+              const last = m.at(-1);
+              return last
+                ? [...m.slice(0, -1), { ...last, content: last.content + event.content }]
+                : m;
+            });
+          if (event.type === "done")
+            setMessages((m) => {
+              const last = m.at(-1);
+              return last
+                ? [...m.slice(0, -1), { ...last, citations: event.citations || [] }]
+                : m;
+            });
+          if (event.type === "error")
+            throw new Error(event.message || "The assistant is temporarily unavailable.");
+        }
+        if (done) break;
+      }
     } catch (e) {
       if (!controller.signal.aborted)
         setError(
@@ -354,7 +397,7 @@ function Chat() {
               <span className="message-author">
                 {m.role === "assistant" ? "✳ Folio" : "You"}
               </span>
-              <p>{m.content}</p>
+              <MarkdownText content={m.content} />
               {m.citations?.map((c) => (
                 <Link
                   className="citation"

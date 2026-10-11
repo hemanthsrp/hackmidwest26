@@ -81,7 +81,7 @@ class AkamaiInferenceClient:
     """Small OpenAI-compatible client with a single bounded retry for transient errors."""
 
     _MAX_ATTEMPTS = 2
-    _TIMEOUT_SECONDS = 10.0
+    _TIMEOUT_SECONDS = 30.0
 
     def __init__(self, settings: InferenceSettings, transport: Transport) -> None:
         self._settings = settings

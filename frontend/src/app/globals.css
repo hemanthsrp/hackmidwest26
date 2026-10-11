@@ -983,12 +983,16 @@ td small {
   color: var(--green);
   font-weight: 600;
 }
-.message p {
+.markdown-text p,
+.markdown-text ul,
+.markdown-text h3,
+.markdown-text h4 {
   font-size: 11px;
   line-height: 1.85;
   margin-top: 7px;
-  white-space: pre-wrap;
 }
+.markdown-text ul { padding-left: 18px; }
+.markdown-text code { font-family: var(--font-mono, monospace); font-size: 10px; }
 .citation {
   display: inline-flex;
   align-items: center;

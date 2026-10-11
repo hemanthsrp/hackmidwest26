@@ -245,19 +245,63 @@ def _mcp_call(access_token: str, tool: str, arguments: dict | None = None) -> ob
     except (httpx.HTTPError, ValueError):
         raise BrokerUnavailable('Robinhood portfolio data is temporarily unavailable.') from None
 
+def _mcp_data(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    data = value.get('data')
+    return data if isinstance(data, dict) else value
+
 def refresh_portfolio(user_id: str) -> dict:
     if not _enabled():
         raise BrokerUnavailable('Robinhood linking is disabled for this deployment.')
     _grant, token = _access_token(user_id)
     adapter = RobinhoodAdapter(lambda name, args: _mcp_call(token, name, args))
     accounts = adapter.call('get_accounts', {})
-    portfolio = adapter.call('get_portfolio', {})
-    positions = adapter.call('get_equity_positions', {})
     # Keep only the account summaries and position fields Folio renders. Never
     # return Robinhood account numbers, transaction history, or raw MCP payloads.
-    account_rows = accounts if isinstance(accounts, list) else accounts.get('accounts', []) if isinstance(accounts, dict) else []
-    position_rows = positions if isinstance(positions, list) else positions.get('positions', []) if isinstance(positions, dict) else []
-    position_rows = position_rows if isinstance(position_rows, list) else []
+    accounts_data = _mcp_data(accounts)
+    account_rows = accounts_data.get('accounts', [])
+    account_rows = account_rows if isinstance(account_rows, list) else []
+    account_numbers = [
+        item['account_number']
+        for item in account_rows
+        if isinstance(item, dict) and isinstance(item.get('account_number'), str) and item['account_number']
+    ]
+    if not account_numbers:
+        raise BrokerUnavailable('Robinhood returned no accessible accounts.')
+    portfolio_data = []
+    position_rows = []
+    for account_number in account_numbers:
+        portfolio_data.append(_mcp_data(adapter.call('get_portfolio', {'account_number': account_number})))
+        positions = _mcp_data(adapter.call('get_equity_positions', {'account_number': account_number}))
+        rows = positions.get('positions', [])
+        if isinstance(rows, list):
+            position_rows.extend(rows)
+    symbols = list(dict.fromkeys(
+        str(item.get('symbol') or item.get('ticker') or '').upper()
+        for item in position_rows
+        if isinstance(item, dict) and re.fullmatch('[A-Z]{1,5}', str(item.get('symbol') or item.get('ticker') or '').upper())
+    ))
+    quote_prices = {}
+    if symbols:
+        try:
+            quote_data = _mcp_data(adapter.call('get_equity_quotes', {'symbols': symbols}))
+        except BrokerUnavailable:
+            quote_data = {}
+        quote_rows = quote_data.get('results', [])
+        for item in quote_rows if isinstance(quote_rows, list) else []:
+            quote = item.get('quote') if isinstance(item, dict) else None
+            close = item.get('close') if isinstance(item, dict) else None
+            quote = quote if isinstance(quote, dict) else {}
+            close = close if isinstance(close, dict) else {}
+            symbol = str(quote.get('symbol') or close.get('symbol') or '').upper()
+            raw_price = next((quote.get(key) for key in ('last_trade_price', 'last_non_reg_trade_price', 'ask_price', 'bid_price') if quote.get(key) is not None), close.get('price'))
+            try:
+                price = float(raw_price)
+            except (ValueError, TypeError):
+                continue
+            if re.fullmatch('[A-Z]{1,5}', symbol) and price > 0:
+                quote_prices[symbol] = price
     safe_positions = []
     for item in position_rows:
         if not isinstance(item, dict):
@@ -266,17 +310,18 @@ def refresh_portfolio(user_id: str) -> dict:
         try:
             shares = float(item.get('quantity', item.get('shares', item.get('qty', 0))))
             market_value = float(item.get('market_value', item.get('current_value', 0)) or 0)
-            price = float(item.get('current_price', item.get('price', item.get('mark_price', market_value / shares if shares else 0))))
+            price = float(item.get('current_price', item.get('price', item.get('mark_price', quote_prices.get(symbol, market_value / shares if shares else 0)))))
         except (ValueError, TypeError):
             continue
         if re.fullmatch('[A-Z]{1,5}', symbol) and shares >= 0 and price >= 0:
             safe_positions.append({'symbol': symbol, 'shares': shares, 'price': price})
-    portfolio_data = portfolio if isinstance(portfolio, dict) else {}
-    raw_value = next((portfolio_data.get(key) for key in ('portfolio_value', 'total_portfolio_value', 'total_account_value', 'total_value', 'total_equity', 'equity') if portfolio_data.get(key) is not None), 0)
-    try:
-        total_value = max(0, float(raw_value))
-    except (ValueError, TypeError):
-        total_value = 0
+    total_value = 0
+    for portfolio in portfolio_data:
+        raw_value = next((portfolio.get(key) for key in ('portfolio_value', 'total_portfolio_value', 'total_account_value', 'total_value', 'total_equity', 'equity') if portfolio.get(key) is not None), 0)
+        try:
+            total_value += max(0, float(raw_value))
+        except (ValueError, TypeError):
+            continue
     snapshot = {'connected': bool(account_rows), 'value': total_value, 'positions': safe_positions, 'updated_at': int(time.time())}
     storage.write(user_id, 'portfolio', 'current', snapshot)
     return snapshot

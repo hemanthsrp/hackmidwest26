@@ -46,13 +46,16 @@ export async function POST(r: Request) {
     .from(users)
     .where(eq(users.id, s.user.id));
   try {
-    const res = await service(s.user.id, "chat/turn", {
+    const res = await service(s.user.id, "chat/stream", {
       method: "POST",
       body: JSON.stringify({ ...p.data, preferences: user?.preferences || {} }),
     });
-    return new Response(await res.text(), {
+    return new Response(res.body, {
       status: res.status,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": res.headers.get("Content-Type") || "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
     });
   } catch {
     return failure(
