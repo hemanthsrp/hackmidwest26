@@ -59,7 +59,7 @@ async def test_runs_are_always_strict_live_only():
     assert calls == [("AAPL", True, False, False)]  # live=True, fallback=False
     st = s.statuses["AAPL"]
     assert st.ok is True and st.new_evidence == 2 and st.new_signals == 1
-    assert st.sources == [{"name": "sec_edgar", "status": "live", "count": 3}]
+    assert st.sources == [{"name": "sec_edgar", "status": "live", "count": 3, "error": None}]
 
 
 async def test_one_symbol_failing_does_not_stop_the_others():

@@ -35,6 +35,12 @@ Safety properties, because this writes to a shared database unattended:
   message) can reach asyncio's "never retrieved" handler or stderr.
 - One symbol failing never stops the others or kills the loop.
 - Errors are passed through sanitize_error before they are stored or shown.
+- Partial coverage is never reported as a clean OK: every source's sanitized
+  ``error`` is kept regardless of status (a "live" source with ``error`` set
+  is live but partially covered, e.g. "partial: 3 of 30 filings skipped").
+  If any live data arrived but some source is not live or carries a note,
+  the symbol is ok=False, partial=True with one entry per degraded source in
+  ``notes``. ok=True only when every source is live with no note.
 - Slower outside US market hours (README 4.3 cost guidance): the interval is
   multiplied by SCHEDULER_OFFHOURS_FACTOR on weekends and outside 08:00-18:00
   America/New_York. Interval and factor must be finite and > 0.
@@ -214,11 +220,30 @@ class SymbolStatus:
     new_signals: int = 0
     sources: list[dict] = field(default_factory=list)
     error: str | None = None
+    # Some data was ingested but coverage was incomplete: a source was not
+    # live, or was live with a partial-coverage note. ok is False then.
+    partial: bool = False
+    notes: list[str] = field(default_factory=list)  # "<source> (<status>): <sanitized error>"
     consecutive_failures: int = 0
     # Set when this symbol's ingest was abandoned by a timed-out drain: first
     # "still running", then what actually happened once the worker exited.
     after_stop: str | None = None
     finished_after_stop: bool = False
+
+
+def _source_reports(reports) -> tuple[list[dict], list[str]]:
+    """Per-source status rows (always with a sanitized ``error``, whatever the
+    status) and one note per degraded source: not live, or live with an error
+    (the partial-coverage convention)."""
+    sources: list[dict] = []
+    notes: list[str] = []
+    for r in reports:
+        error = getattr(r, "error", None)
+        error = sanitize_error(error) if error else None
+        sources.append({"name": r.name, "status": r.status, "count": r.count, "error": error})
+        if r.status != "live" or error:
+            notes.append(f"{r.name} ({r.status}): {error or 'no data'}")
+    return sources, notes
 
 
 def is_market_hours(now: datetime) -> bool:
@@ -393,12 +418,18 @@ class Scheduler:
                     status.after_stop = status.error
                 logger.warning("scheduled ingest failed for %s: %s", symbol, status.error)
                 return not late
-            status.sources = [{"name": s.name, "status": s.status, "count": s.count} for s in result.sources]
+            sources, notes = _source_reports(result.sources)
+            status.sources, status.notes = sources, notes
             status.new_evidence, status.new_signals = len(result.evidence), len(result.signals)
             if result.any_live:
-                status.ok, status.error, status.consecutive_failures = True, None, 0
+                status.consecutive_failures = 0
+                if notes:  # live data arrived, but coverage was incomplete
+                    status.ok, status.partial = False, True
+                    status.error = f"partial coverage: {len(notes)} source(s) degraded; see notes"
+                else:
+                    status.ok, status.partial, status.error = True, False, None
             else:
-                status.ok = False
+                status.ok, status.partial = False, False
                 status.consecutive_failures += 1
                 status.error = "no source was live"
             if late:
@@ -415,6 +446,7 @@ class Scheduler:
         with self._status_lock:
             status.last_run_at = self._now().isoformat()
             status.after_stop, status.finished_after_stop = None, False
+            status.partial, status.notes = False, []
         call = _Call(symbol)
         inflight = asyncio.ensure_future(asyncio.to_thread(self._ingest_in_thread, symbol, run, call))
         # Belt and braces: whatever happens to the awaiting task, retrieve the
