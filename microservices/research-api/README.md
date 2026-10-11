@@ -30,7 +30,7 @@ python -m pip install -e ../jev-tool        # optional: Jev review and judging
 | `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `CHAT_MODEL`, `EMBEDDING_MODEL` | All four enable the Strands explanation agent and semantic search for the question. Without them the explanation is a labeled template and the question does not narrow the evidence. |
 | `JEV_ENABLED`, `TYPESAFE_API_KEY` | Read by `jev-tool` (its own `.env` works). Enables review of the model's text and judging of news stored without a judgment. |
 | `DECISION_AGENT_TOOLS` | `true` also gives the explanation agent two lookup tools. Default `false`: the agent gets its data in the prompt, because the tool loop did not fit the Akamai model in live runs (decision-maker README, "What the live runs showed"). |
-| `DECISION_STALE_AFTER_SECONDS` | Freshness window, default `86400`. Older evidence returns `409 stale_data`. |
+| `DECISION_STALE_AFTER_SECONDS` | Freshness window, default `86400`; the root `.env.example` sets `604800` (7 days) for now, because stored evidence is not refreshed daily. Older evidence returns `409 stale_data`. |
 | `CORS_ALLOW_ORIGINS` | Comma-separated browser origins allowed to call the API. Default `http://localhost:3000,http://127.0.0.1:3000` (Next.js dev). `*` is ignored; credentials are never allowed. |
 | `VOL_SURFACE_URL` | Base URL of the volatility surface service. Enables the options math (below). |
 
