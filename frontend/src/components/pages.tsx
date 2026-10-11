@@ -191,7 +191,10 @@ export function Home() {
               </span>
             ) : (
               <button className="text-button" onClick={openSettings}>
-                <Link2 size={14} /> Connect your Robinhood portfolio
+                <Link2 size={14} />
+                {q.data?.data?.connected
+                  ? "Refresh Robinhood portfolio"
+                  : "Connect your Robinhood portfolio"}
               </button>
             )}
           </div>

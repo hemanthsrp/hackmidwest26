@@ -204,7 +204,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {demo && (
             <div className="demo-banner">
               <span className="small-dot" />
-              Demo workspace · Illustrative market data as of Oct 10, 2026
+              Demo workspace · Illustrative portfolio data
               <Link href="/login">
                 Connect your portfolio <ArrowRight size={13} />
               </Link>
@@ -214,6 +214,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <footer className="workspace-footer">
             Made for a more informed perspective.
             <span>Research insights. No trade execution.</span>
+            <span className="legal-links">
+              <Link href="/privacy">Privacy</Link>
+              <Link href="/terms">Terms</Link>
+            </span>
           </footer>
         </main>
         {chatOpen && <Chat />}

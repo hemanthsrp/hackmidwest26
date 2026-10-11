@@ -33,6 +33,9 @@ _EVIDENCE_COLUMNS = (
     "id", "symbol", "title", "summary", "source_name", "source_type", "source_url",
     "published_at", "observed_at", "retrieved_at", "reporting_lag_days",
     "entities", "sentiment", "credibility", "data_mode", "details",
+    "provider", "value_origin", "impact_category", "impact_level", "impact_basis",
+    "embedding_status", "lifecycle_status", "fresh_until", "stale_at", "archived_at",
+    "retention_until", "retention_reason",
 )
 _SIGNAL_COLUMNS = ("id", "symbol", "name", "value", "unit", "window", "as_of", "source", "data_mode")
 

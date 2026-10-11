@@ -1,8 +1,13 @@
-import { defineConfig } from "vitest/config";
-import { fileURLToPath } from "node:url";
+const path = require("node:path");
+const { defineConfig } = require("vitest/config");
 
-export default defineConfig({
+module.exports = defineConfig({
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
+  test: {
+    environment: "node",
   },
 });

@@ -12,7 +12,10 @@ failed for that request. Nothing is substituted.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+import json
+import os
 from typing import Any
+from uuid import uuid4
 
 SURFACE_PATH = "/v0/volatility-surfaces"
 # A live surface means fetching option chains and inverting each quote to an
@@ -41,7 +44,7 @@ def _atm_by_expiry(surface: Mapping[str, Any], spot: float) -> list[dict[str, fl
     return points
 
 
-def to_quant_input(snapshot: Mapping[str, Any]) -> Any:
+def to_quant_input(snapshot: Mapping[str, Any], citation: dict[str, Any] | None = None) -> Any:
     """Map a ``POST /v0/volatility-surfaces`` response onto the decision maker's input."""
     from decision_maker import QuantInput, VolSurfaceSnapshot
 
@@ -62,8 +65,33 @@ def to_quant_input(snapshot: Mapping[str, Any]) -> Any:
             T_range=statistics.get("maturity_range_years"),
             strike_range=statistics.get("strike_range"),
             atm_iv_by_expiry=_atm_by_expiry(snapshot.get("surface") or {}, snapshot["spot"]),
-        )
+        ),
+        quant_citations=[citation] if citation else [],
     )
+
+
+def persist_snapshot(snapshot: Mapping[str, Any], database_url: str | None = None) -> dict[str, Any] | None:
+    """Persist only provider diagnostics/provenance; never raw option-chain rows."""
+    database_url = database_url or os.getenv("DATABASE_URL")
+    if not database_url:
+        return None
+    snapshot_id = str(uuid4())
+    as_of = snapshot.get("market_observed_at") or snapshot["retrieved_at"]
+    try:
+        import psycopg
+        with psycopg.connect(database_url, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO volatility_snapshots
+                   (id, symbol, source, data_mode, as_of, retrieved_at, statistics, stale_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s, %s::timestamptz + interval '1 day')""",
+                (snapshot_id, snapshot["symbol"], snapshot["source"], snapshot["data_mode"], as_of,
+                 snapshot["retrieved_at"], json.dumps(snapshot["statistics"]), snapshot["retrieved_at"]),
+            )
+    except Exception:
+        return None
+    return {"id": snapshot_id, "kind": "options_surface", "value_origin": "options_surface",
+            "impact_category": "options_risk", "source": snapshot["source"],
+            "mode": snapshot["data_mode"], "as_of": as_of, "retrieved_at": snapshot["retrieved_at"]}
 
 
 def vol_surface_provider(base_url: str, post: Callable[..., Any] | None = None) -> Callable[[str, str], Any]:
@@ -79,6 +107,7 @@ def vol_surface_provider(base_url: str, post: Callable[..., Any] | None = None) 
             raise VolSurfaceUnavailable(type(error).__name__) from None
         if response.status_code != 200:
             raise VolSurfaceUnavailable(f"HTTP {response.status_code}")
-        return to_quant_input(response.json())
+        snapshot = response.json()
+        return to_quant_input(snapshot, persist_snapshot(snapshot))
 
     return provider

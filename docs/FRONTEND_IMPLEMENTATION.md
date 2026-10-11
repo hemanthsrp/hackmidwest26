@@ -22,7 +22,8 @@ Notifications are in-app and email.
 - `microservices/research-api/`: `/v1` authenticated routes, SQLAlchemy-owned
   research records, source adapter requests, live-only freshness filtering,
   evidence-direction assessments, category rankings, structured memories,
-  account isolation, notification/outbox creation, read-only broker adapter seam.
+  account isolation, notification/outbox creation, and an opt-in Robinhood MCP
+  OAuth connector restricted to portfolio read tools.
 - Existing `/v0/research-assessments` behavior remains compatible.
 - Existing scraper tables and Jev package were not modified.
 
@@ -45,8 +46,9 @@ records use an explicit `python -m research_api.storage` schema initialization.
 
 ## Outstanding before public beta
 
-Robinhood custom-platform approval and a verified authorization/refresh/revocation
-flow; real provider credentials and end-to-end auth/email tests; live data and
+Robinhood approval for a hosted platform and a real user authorization/refresh
+check; provider-side revocation is unavailable in Robinhood's published OAuth
+metadata, so users must revoke there separately. Real email auth checks, live data and
 inference verification; formal migration upgrades/rollback beyond initial tables;
 production monitoring, retention/backup policy, legal copy,
 and an approved HTTPS deployment. The research chat currently uses the Akamai
@@ -54,3 +56,14 @@ client directly; a Strands orchestration path for this new chat remains outstand
 
 This document records implementation status, not a claim that public beta or live
 brokerage connectivity is complete. See `frontend/README.md` for reproducible commands.
+
+## Local live research preview
+
+For local development only, `DEMO_LIVE_RESEARCH=true` lets the stock-detail BFF
+strictly ingest live sources through `scraper-analysis` before requesting the
+Research API response with a local demo identity. This is gated off in
+production, uses the existing signed service assertion, disables tagging and
+Jev for the request, and refuses fixture substitution. It does not enable live
+account data or change the illustrative home portfolio. Configure the shared
+`SERVICE_ASSERTION_SECRET` and `SCRAPER_API_URL` in ignored local environment
+files; see `frontend/README.md`.

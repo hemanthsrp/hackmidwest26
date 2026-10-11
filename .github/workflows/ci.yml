@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend build and security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run typecheck
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm audit --omit=dev
+        working-directory: frontend
+
+  python:
+    name: Python services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install service packages and test dependencies
+        run: >-
+          python -m pip install
+          -e 'microservices/research-api[dev]'
+          -e 'microservices/decision-maker[pg,agent,dev]'
+          -e 'microservices/jev-tool[dev]'
+          -e 'microservices/scraper-analysis[dev]'
+          -e 'microservices/agentic-search[dev]'
+          -e 'microservices/yahoo-finance-mcp[dev]'
+          -e 'microservices/volatility-surface-builder[dev]'
+      - name: Test research API
+        run: python -m pytest -q
+        working-directory: microservices/research-api
+      - name: Test decision maker
+        run: python -m pytest -q
+        working-directory: microservices/decision-maker
+      - name: Test Jev adapter
+        run: python -m pytest -q
+        working-directory: microservices/jev-tool
+      - name: Test scraper analysis
+        run: python -m pytest -q
+        working-directory: microservices/scraper-analysis
+      - name: Test agentic search
+        run: python -m pytest -q
+        working-directory: microservices/agentic-search
+      - name: Test Yahoo Finance MCP
+        run: python -m pytest -q
+        working-directory: microservices/yahoo-finance-mcp
+      - name: Test volatility surface builder
+        run: python -m pytest -q
+        working-directory: microservices/volatility-surface-builder
