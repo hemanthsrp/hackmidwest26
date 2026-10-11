@@ -201,12 +201,14 @@ def parse_ptr_lines(ptr_lines: list[PtrLine]) -> list[dict]:
       (PtrLine.anchor_aligned True). Wrapped description prose that happens
       to contain such a run -- even with "(AAPL) [ST]" -- is not aligned and
       is skipped;
-    - plain text (no positions): after any marker, a new row also needs the
-      asset-type code the form prints for every asset ("[ST]", "[OP]", ...);
-      after a free-text block (D:, C:) it additionally needs an owner code
-      (SP/DC/JT) at the line start, because plain text cannot tell a
-      Self-owned row from a description line that copies one. Such rows are
-      skipped (under-count) rather than risk a fabricated trade.
+    - plain text (no positions): after a field marker (F S:, S O:, L:) a new
+      row also needs the asset-type code the form prints for every asset
+      ("[ST]", "[OP]", ...). After a free-text block (D:, C:) NO trade-shaped
+      line is a row until the next field marker: plain text cannot tell a
+      real row from description prose that copies one -- even one with an
+      owner code and "[ST]" (PR #17 review) -- so the row right after a
+      description is skipped (under-count) rather than risk a fabricated
+      trade. The next row after that row's own "F S:" line parses again.
     """
     lines = [PtrLine(ln.text.replace("\x00", "").strip(), ln.anchor_aligned) for ln in ptr_lines]
     rows = []
@@ -229,10 +231,10 @@ def parse_ptr_lines(ptr_lines: list[PtrLine]) -> list[dict]:
                 break
             asset_lines.append(nxt.text)
         if block is not None and pl.anchor_aligned is None:
+            if block == "free":
+                continue  # could be description/comment prose copying a row: skip, never guess
             if not any(_ASSET_TYPE_RE.search(part) for part in asset_lines):
                 continue  # trade-shaped text inside a field block: ambiguous, skip
-            if block == "free" and not _OWNER_RE.match(left):
-                continue  # could be description prose copying a row: skip, never guess
         block = None  # a real asset row starts here, even if it is skipped below
         amount = re.sub(r"\s+", " ", m.group("amount"))
         if amount.endswith("-"):
@@ -374,10 +376,26 @@ def _validate_trade_date(row: dict, filed: datetime, now: datetime) -> tuple[dat
         return None, "future"
     if traded.date() > filed.date():
         return None, "after_filing"
-    notified = _parse_date(row.get("notification_date"))
-    if notified is not None and traded > notified:
-        return None, "after_notification"
     return traded, None
+
+
+def _validate_notification_date(row: dict, traded: datetime | None, filed: datetime,
+                                now: datetime) -> tuple[datetime | None, str | None]:
+    """(notification date, None) when usable, else (None, reason). Checked
+    like the trade date: a real calendar date, not in the future, not after
+    the filing that reports it, and not before the trade it notifies of (only
+    checked when the trade date is valid). An invalid notification date never
+    invalidates a valid trade date; it only drops notification-derived values."""
+    notified = _parse_date(row.get("notification_date"))
+    if notified is None:
+        return None, "unparseable"
+    if notified > now:
+        return None, "future"
+    if notified.date() > filed.date():
+        return None, "after_filing"
+    if traded is not None and notified < traded:
+        return None, "before_trade"
+    return notified, None
 
 
 def _with_occurrence(rows: list[dict]) -> list[tuple[dict, int]]:
@@ -429,6 +447,7 @@ class HouseClerkAdapter(SourceAdapter):
 
     def _record(self, filing: HouseFiling, row: dict, occurrence: int, symbol: str, now: datetime) -> RawRecord:
         traded, date_issue = _validate_trade_date(row, filing.filed, now)
+        notified, notification_issue = _validate_notification_date(row, traded, filing.filed, now)
         return RawRecord(
             source_name="House Clerk",
             source_type=self.source_type,
@@ -444,6 +463,13 @@ class HouseClerkAdapter(SourceAdapter):
                 "amount_range": row["amount_range"],
                 "transaction_date": row["transaction_date"],
                 "date_issue": date_issue,
+                # Validated separately: an invalid notification date is
+                # reported here and yields no notification-derived values,
+                # but never makes a valid trade date undated.
+                "notification_date_reported": row.get("notification_date"),
+                "notification_date": notified.date().isoformat() if notified else None,
+                "notification_date_issue": notification_issue,
+                "notification_lag_days": (notified - traded).days if notified and traded else None,
                 # Nth identical row (same owner/asset/type/date/amount) in this
                 # filing, so two real lots never collapse into one evidence ID.
                 "filing_row": occurrence,

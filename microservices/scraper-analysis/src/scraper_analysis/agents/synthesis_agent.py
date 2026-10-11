@@ -192,7 +192,10 @@ def build_tools(
         """Compare the direction of independent source types (price, discretionary
         insider trades, Senate trades, news tone) and list where they disagree.
         Cite the evidence_ids on each flag. A flag is a heuristic, not a forecast."""
-        result = divergence.analyze(symbol, evidence, signals)
+        # Raw stored records, as the /divergence endpoint passes: analyze()
+        # does its own live-only filtering and must see every dropped record
+        # so excluded.sample / excluded.cached are complete.
+        result = divergence.analyze(symbol, store.query_evidence(symbol), store.query_signals(symbol))
         for flag in result["flags"]:
             seen_ids.update(flag["evidence_ids"])
         return json.dumps(result)

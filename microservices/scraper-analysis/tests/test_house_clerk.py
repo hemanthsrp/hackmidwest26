@@ -358,7 +358,9 @@ def test_valid_trade_date_still_gets_lag_and_timing(adapter, monkeypatch):
         ("garbage", "03/01/2026", 10, "unparseable"),
         (_d(-5), _d(-5), 10, "future"),  # after retrieval
         (_d(5), _d(5), 10, "after_filing"),  # after the filing date
-        (_d(15), _d(20), 10, "after_notification"),  # traded after the member was notified of it
+        # A notification date before the trade is a notification-date issue
+        # (details.notification_date_issue); the valid trade date is kept --
+        # see test_house_notification_date.py.
     ],
 )
 def test_invalid_trade_dates_never_produce_lag_or_timing(adapter, monkeypatch, tx, notified, filed_days_ago, issue):
@@ -449,12 +451,11 @@ def test_description_continuation_followed_by_a_real_row_keeps_the_real_row():
         "Stock (GOOGL) [ST]\n"
         "F S: New\n"
     )
-    parsed = h.parse_ptr_text(text)
-    # Plain text cannot tell the Self-owned GOOGL row after the C: block from
-    # comment prose that copies a row (PR #17 third review), so it is skipped;
-    # with word positions it parses (test_real_self_row_directly_after_a_d_block...).
-    assert [r["ticker"] for r in parsed] == ["MSFT"]
-    assert parsed[0]["owner"] == "Spouse"
+    # Plain text cannot tell a row directly after a D:/C: block from prose
+    # that copies one -- not even with an owner code and [ST] (PR #17 fourth
+    # review) -- so MSFT and GOOGL are skipped; with word positions (the live
+    # path) real rows there parse (test_real_self_row_directly_after_a_d_block...).
+    assert h.parse_ptr_text(text) == []
 
 
 def test_sample_text_rows_survive_the_description_state_rule():
@@ -685,10 +686,15 @@ def test_real_self_row_directly_after_a_d_block_still_parses_with_layout():
         ("AMZN", "Sale (Full)", "Self"), ("AAPL", "Purchase", "Self"), ("GOOGL", "Sale (Full)", "Self")]
 
 
-def test_owner_prefixed_row_after_a_d_block_still_parses_in_plain_text():
-    text = REVIEWER_D_BLOCK + "SP Microsoft Corporation (MSFT) [ST] P 03/18/2026 03/18/2026 $15,001 - $50,000\nF S: New\n"
+def test_owner_prefixed_row_after_a_d_block_is_skipped_in_plain_text_but_the_next_row_parses():
+    # PR #17 fourth review: an owner code + [ST] is still copyable prose, so
+    # in plain text the line right after a D: block is never a row. Parsing
+    # resumes after the next field marker.
+    text = (REVIEWER_D_BLOCK
+            + "SP Microsoft Corporation (MSFT) [ST] P 03/18/2026 03/18/2026 $15,001 - $50,000\nF S: New\n"
+            + "JT Tesla (TSLA) [ST] S 03/19/2026 03/19/2026 $1,001 - $15,000\nF S: New\n")
     parsed = h.parse_ptr_text(text)
-    assert [(r["ticker"], r["owner"]) for r in parsed] == [("MSFT", "Spouse")]
+    assert [(r["ticker"], r["owner"]) for r in parsed] == [("TSLA", "Joint")]
 
 
 def test_layout_sample_parses_every_real_row():
