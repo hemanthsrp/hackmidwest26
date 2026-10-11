@@ -8,7 +8,7 @@ from .agents import synthesis_agent
 from .config import get_settings
 from .pipeline import divergence
 from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
-from .scheduler import Scheduler
+from .scheduler import Scheduler, build_owner_lock
 from .sources.base import sanitize_error
 from .storage.store import get_store
 
@@ -23,9 +23,13 @@ async def lifespan(app: FastAPI):
             interval_minutes=settings.scheduler_interval_minutes,
             offhours_factor=settings.scheduler_offhours_factor,
             tag=settings.scheduler_tag,
+            # With DATABASE_URL set: a Postgres advisory lock so only one
+            # process/replica can own the scheduler. None = in-process only.
+            owner_lock=build_owner_lock(settings),
         )
         # start() refuses (start_error in /scheduler/status) if another
-        # scheduler already owns this process; it never runs two at once.
+        # scheduler owns this process, a previous run is still draining, or
+        # another process holds the advisory lock; it never runs two at once.
         scheduler.start()
         app.state.scheduler = scheduler
     try:
@@ -166,16 +170,13 @@ def get_signals(symbol: str = Query(...)) -> dict:
 def get_divergence(symbol: str = Query(...)) -> dict:
     """Where independent source types disagree (price vs insiders vs Senate
     vs news). Deterministic and rule-based; thresholds are in the response.
-    Only live records inside the recency window around the price signal can
-    contribute to a flag; fixtures never do (see pipeline/divergence.py)."""
+    Only live records (never sample or cached) inside the price signal's
+    window, with a fresh price, can contribute to a flag (see
+    pipeline/divergence.py). Raw stored records are passed so `excluded`
+    counts every dropped record."""
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = get_store()
-    evidence, signals = synthesis_agent.select_briefing_records(
-        store.query_evidence(validated), store.query_signals(validated)
-    )
-    result = divergence.analyze(validated, evidence, signals)
-    result["data_modes"] = sorted({e.data_mode for e in evidence} | {s.data_mode for s in signals})
-    return result
+    return divergence.analyze(validated, store.query_evidence(validated), store.query_signals(validated))

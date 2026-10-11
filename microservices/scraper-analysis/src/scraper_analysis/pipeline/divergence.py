@@ -13,7 +13,7 @@ independent legs, each backed by cited records:
   insider    discretionary Form 4 open-market flow (10b5-1 plan trades are
              excluded -- they were scheduled months ago and say little about
              current conviction; they are reported in notes instead)
-  congress   congressional (Senate and House) periodic-transaction purchases vs sales
+  congress   congressional (Senate/House) periodic-transaction purchases vs sales
   news       credibility-weighted tone of Bedrock-tagged news items
 
 and flag the pairs that disagree. Every threshold is a named constant and is
@@ -21,19 +21,35 @@ returned in the response.
 
 Input hygiene, applied inside analyze() so no caller can bypass it:
 
-  * live only -- records with data_mode "sample" (fixtures) are dropped
-    before any leg is computed, so a fixture can never contribute to a flag,
-    even when nothing live exists (status is then insufficient_data);
-  * recency -- every evidence record must fall inside a bounded window
-    around the anchor (the price signal's as_of, else the caller's as_of,
-    else now): at most RECENCY_LOOKBACK_DAYS before it and
-    RECENCY_FORWARD_GRACE_DAYS after it. The event date is observed_at
-    (Form 4 / congressional trade date) falling back to published_at (news).
-    Congressional disclosures are filed up to 45 days after the trade; we
-    still window on the trade date, because that is when the senator acted,
-    and accept that the congress leg will often be empty (a false negative
-    is preferred to pairing a months-old trade with today's price move).
-    Undated evidence cannot be placed in the window and is dropped;
+  * live only -- only records with data_mode "live" are compared. "sample"
+    (fixtures) and "cached" records are dropped before any leg is computed
+    and counted in excluded.sample / excluded.cached, so neither can
+    contribute to a flag, even when nothing live exists (status is then
+    insufficient_data). Callers should pass the raw stored records so these
+    counts are complete;
+  * fresh price -- the price leg is the latest live price signal, usable only
+    if its as_of is at most MAX_PRICE_SIGNAL_AGE_DAYS before the request time
+    (and not more than RECENCY_FORWARD_GRACE_DAYS after it). A stale price
+    leaves the leg unusable, is counted in excluded.stale_price and warned
+    about, and never anchors the window -- old data is never presented as a
+    current flag;
+  * recency -- every evidence record must fall inside the comparison window.
+    With a fresh price it is the price signal's own change window
+    (`window`, e.g. "30d"; RECENCY_LOOKBACK_DAYS if unparseable) ending at
+    its as_of, so every flag pairs the price move with evidence from the
+    period that move covers; otherwise it is RECENCY_LOOKBACK_DAYS before
+    the request time. RECENCY_FORWARD_GRACE_DAYS after the end absorbs the
+    close being stamped at midnight of the session date. The event date is
+    observed_at (Form 4 / congressional trade date) falling back to
+    published_at for other sources (news). Congressional records use the
+    trade date only -- never the filing date -- and any record whose parser
+    set details.date_issue (e.g. a House trade dated after its filing) is
+    excluded as invalid_date. Congressional disclosures are filed up to 45
+    days after the trade; we still window on the trade date, because that is
+    when the member acted, and accept that the congress leg will often be
+    empty (a false negative is preferred to pairing a months-old trade with
+    today's price move). Undated evidence cannot be placed in the window and
+    is dropped;
   * insider -- only discretionary open-market P/S counts. A filing that is
     a 10b5-1 plan trade, tax withholding (F), an option exercise (M), a
     grant, etc. leaves the insider leg unusable (direction None).
@@ -53,11 +69,16 @@ INSIDER_NET_USD = 100_000.0
 MIN_TAGGED_NEWS = 3
 NEWS_TONE_THRESHOLD = 0.25
 DEFAULT_CREDIBILITY = 0.5
-# Evidence must sit within this window of the anchor (price signal as_of).
-# 45 days covers the 30-day price window plus ingest slack; a few days of
-# forward grace absorbs clock/ingest skew between price and other sources.
-RECENCY_LOOKBACK_DAYS = 45
-RECENCY_FORWARD_GRACE_DAYS = 3
+# Lookback when the price signal's window cannot be used (no fresh price, or
+# an unparseable `window`): matches the 30-day price change signal, so the
+# evidence never covers a longer period than the price move it is paired with.
+RECENCY_LOOKBACK_DAYS = 30
+# Daily closes are stamped at midnight of the session date, so evidence from
+# that same day is up to one day "after" as_of; nothing later counts.
+RECENCY_FORWARD_GRACE_DAYS = 1
+# A price signal older than this (relative to the request time) is stale:
+# a weekly ingest plus weekends/holidays fits; a 2010 close never does.
+MAX_PRICE_SIGNAL_AGE_DAYS = 7
 
 THRESHOLDS = {
     "price_move_pct": PRICE_MOVE_PCT,
@@ -66,6 +87,7 @@ THRESHOLDS = {
     "news_tone_threshold": NEWS_TONE_THRESHOLD,
     "recency_lookback_days": RECENCY_LOOKBACK_DAYS,
     "recency_forward_grace_days": RECENCY_FORWARD_GRACE_DAYS,
+    "max_price_signal_age_days": MAX_PRICE_SIGNAL_AGE_DAYS,
 }
 
 PRICE_SIGNAL = "30-day price change"
@@ -88,12 +110,36 @@ class Flag:
     evidence_ids: list[str]
 
 
-def _price_leg(signals: list[Signal]) -> Leg:
-    # Callers pass live-only signals (see analyze); never fall back to fixtures.
-    candidates = [s for s in signals if s.name == PRICE_SIGNAL and s.data_mode != "sample"]
-    if not candidates:
-        return Leg("price", None, "No live price signal available.")
-    s = max(candidates, key=lambda x: x.as_of)
+def _utc(t: datetime) -> datetime:
+    return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
+
+
+def _window_days(window: str) -> int:
+    """'30d' -> 30; anything else falls back to RECENCY_LOOKBACK_DAYS."""
+    w = (window or "").strip().lower()
+    if w.endswith("d") and w[:-1].isdigit() and int(w[:-1]) > 0:
+        return int(w[:-1])
+    return RECENCY_LOOKBACK_DAYS
+
+
+def _price_leg(signals: list[Signal], now: datetime) -> tuple[Leg, Signal | None, int]:
+    """Latest live price signal, if fresh relative to `now`. Returns the leg,
+    the chosen signal (also when stale, so its age can be reported) and the
+    number of live price signals rejected as stale/future-dated."""
+    live = [s for s in signals if s.name == PRICE_SIGNAL and s.data_mode == "live"]
+    if not live:
+        return Leg("price", None, "No live price signal available."), None, 0
+    latest_ok = now + timedelta(days=RECENCY_FORWARD_GRACE_DAYS)
+    oldest_ok = now - timedelta(days=MAX_PRICE_SIGNAL_AGE_DAYS)
+    fresh = [s for s in live if oldest_ok <= _utc(s.as_of) <= latest_ok]
+    rejected = len(live) - len(fresh)
+    if not fresh:
+        past = [s for s in live if _utc(s.as_of) <= latest_ok]
+        s = max(past or live, key=lambda x: _utc(x.as_of))
+        return Leg("price", None, f"Latest live price signal is stale (as of {_utc(s.as_of).date()}, more than "
+                   f"{MAX_PRICE_SIGNAL_AGE_DAYS} days before the request) or future-dated; not compared.",
+                   [], {"as_of": _utc(s.as_of).isoformat()}), s, rejected
+    s = max(fresh, key=lambda x: _utc(x.as_of))
     if s.value >= PRICE_MOVE_PCT:
         direction = "up"
     elif s.value <= -PRICE_MOVE_PCT:
@@ -101,9 +147,9 @@ def _price_leg(signals: list[Signal]) -> Leg:
     else:
         direction = "flat"
     return Leg(
-        "price", direction, f"{s.value:+.1f}% over {s.window} (as of {s.as_of.date()}).",
-        [s.id], {"change_pct": s.value, "as_of": s.as_of.isoformat()},
-    )
+        "price", direction, f"{s.value:+.1f}% over {s.window} (as of {_utc(s.as_of).date()}).",
+        [s.id], {"change_pct": s.value, "as_of": _utc(s.as_of).isoformat(), "window": s.window},
+    ), s, rejected
 
 
 def _insider_leg(evidence: list[Evidence]) -> tuple[Leg, list[str]]:
@@ -149,7 +195,7 @@ def _congress_leg(evidence: list[Evidence]) -> Leg:
     buys = [e for e in trades if str(e.details.get("transaction_type", "")).lower().startswith("purchase")]
     sells = [e for e in trades if str(e.details.get("transaction_type", "")).lower().startswith("sale")]
     if not buys and not sells:
-        return Leg("congress", None, "No congressional (Senate or House) trades in this symbol.")
+        return Leg("congress", None, "No dated congressional (Senate or House) trades in this symbol in the window.")
     if len(buys) > len(sells):
         direction = "buying"
     elif len(sells) > len(buys):
@@ -210,40 +256,60 @@ def _flags(legs: dict[str, Leg]) -> list[Flag]:
 
 
 def _event_time(e: Evidence) -> datetime | None:
-    t = e.observed_at or e.published_at
-    if t is not None and t.tzinfo is None:
-        t = t.replace(tzinfo=timezone.utc)
-    return t
+    # Congressional rows: the trade date only. The filing date (published_at)
+    # can be up to 45 days later and must never stand in for an invalid or
+    # missing trade date.
+    if e.source_type == "congressional_disclosure":
+        t = e.observed_at
+    else:
+        t = e.observed_at or e.published_at
+    return _utc(t) if t is not None else None
 
 
 def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of: datetime | None = None) -> dict:
-    """Deterministic for fixed inputs (pass as_of to pin the anchor when no
-    price signal exists). Sample records and out-of-window evidence are
-    dropped here, whatever the caller passes in."""
+    """Deterministic for fixed inputs when `as_of` (the request time) is
+    passed; defaults to now. Non-live, stale and out-of-window records are
+    dropped here, whatever the caller passes in -- pass the raw stored records
+    so the `excluded` counts are complete."""
     warnings: list[str] = []
-    sample_count = sum(1 for i in [*evidence, *signals] if i.data_mode == "sample")
-    live_evidence = [e for e in evidence if e.data_mode != "sample"]
-    live_signals = [s for s in signals if s.data_mode != "sample"]
+    now = _utc(as_of) if as_of is not None else datetime.now(timezone.utc)
+    records = [*evidence, *signals]
+    sample_count = sum(1 for i in records if i.data_mode == "sample")
+    cached_count = sum(1 for i in records if i.data_mode == "cached")
+    live_evidence = [e for e in evidence if e.data_mode == "live"]
+    live_signals = [s for s in signals if s.data_mode == "live"]
     if sample_count:
         if not live_evidence and not live_signals:
             warnings.append(f"Only sample (fixture) data is stored ({sample_count} record(s)); fixtures never "
                             "contribute to divergence flags.")
         else:
             warnings.append(f"{sample_count} sample (fixture) record(s) ignored; only live data is compared.")
+    if cached_count:
+        warnings.append(f"{cached_count} cached record(s) ignored; only live data is compared.")
 
-    price = _price_leg(live_signals)
+    price, price_signal, stale_price = _price_leg(live_signals, now)
+    price_age_days = None
+    if price_signal is not None:
+        price_age_days = round((now - _utc(price_signal.as_of)).total_seconds() / 86400, 2)
     if price.direction is not None:
-        anchor = datetime.fromisoformat(price.inputs["as_of"])
+        end_anchor = _utc(price_signal.as_of)
+        lookback = _window_days(price_signal.window)
     else:
-        anchor = as_of or datetime.now(timezone.utc)
-    if anchor.tzinfo is None:
-        anchor = anchor.replace(tzinfo=timezone.utc)
-    start = anchor - timedelta(days=RECENCY_LOOKBACK_DAYS)
-    end = anchor + timedelta(days=RECENCY_FORWARD_GRACE_DAYS)
+        end_anchor = now
+        lookback = RECENCY_LOOKBACK_DAYS
+        if price_signal is not None:
+            warnings.append(f"Price signal is stale (as of {_utc(price_signal.as_of).date()}, "
+                            f"{price_age_days:g} day(s) before the request; limit {MAX_PRICE_SIGNAL_AGE_DAYS}); "
+                            "the price leg is not compared and the window is anchored on the request time.")
+    start = end_anchor - timedelta(days=lookback)
+    end = end_anchor + timedelta(days=RECENCY_FORWARD_GRACE_DAYS)
 
     in_window: list[Evidence] = []
-    out_of_window = undated = 0
+    out_of_window = undated = invalid_date = 0
     for e in live_evidence:
+        if e.details.get("date_issue"):
+            invalid_date += 1
+            continue
         t = _event_time(e)
         if t is None:
             undated += 1
@@ -255,7 +321,11 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
         warnings.append(f"{out_of_window} live record(s) fall outside the comparison window "
                         f"({start.date()} to {end.date()}) and were not counted.")
     if undated:
-        warnings.append(f"{undated} live record(s) have no observed/published date and were not counted.")
+        warnings.append(f"{undated} live record(s) have no usable event date (trade date for congressional "
+                        "records, else observed/published date) and were not counted.")
+    if invalid_date:
+        warnings.append(f"{invalid_date} live record(s) have an invalid date (details.date_issue) and were not "
+                        "counted.")
 
     insider, notes = _insider_leg(in_window)
     legs = {
@@ -277,14 +347,20 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
         "flags": [f.__dict__ for f in flags],
         "notes": notes + [f"Unavailable -- {u}" for u in unavailable],
         "warnings": warnings,
-        "excluded": {"sample": sample_count, "out_of_window": out_of_window, "undated": undated},
+        "excluded": {"sample": sample_count, "cached": cached_count, "stale_price": stale_price,
+                     "out_of_window": out_of_window, "undated": undated, "invalid_date": invalid_date},
         "window": {
-            "anchor": anchor.isoformat(),
+            "request_time": now.isoformat(),
+            "anchor": end_anchor.isoformat(),
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "lookback_days": RECENCY_LOOKBACK_DAYS,
+            "lookback_days": lookback,
             "forward_grace_days": RECENCY_FORWARD_GRACE_DAYS,
+            "price_as_of": _utc(price_signal.as_of).isoformat() if price_signal is not None else None,
+            "price_age_days": price_age_days,
+            "max_price_age_days": MAX_PRICE_SIGNAL_AGE_DAYS,
         },
+        "data_modes": ["live"] if live_evidence or live_signals else [],
         "thresholds": THRESHOLDS,
         "disclaimer": "Heuristic comparison of source directions. Not a prediction, score, or recommendation.",
     }
