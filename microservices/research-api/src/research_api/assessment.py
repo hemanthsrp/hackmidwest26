@@ -6,9 +6,10 @@ Everything is built from the process environment, server-side. With no
 decision maker, and the route keeps answering live requests with
 ``503 provider_unavailable``; nothing is substituted.
 
-The math lives in this service and reaches the decision maker through
-``set_quant_provider``. Until one is registered every assessment says the
-options-based math was not supplied.
+The math comes from ``microservices/volatility-surface-builder`` when
+``VOL_SURFACE_URL`` points at it (``quant.py``), or from any provider passed to
+``set_quant_provider``. With neither, every assessment says the options-based
+math was not supplied.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import Any
 
 from .decision import JevDecisionAdapter, JevExplanationAdapter
 from .inference import AkamaiInferenceClient, InferenceConfigurationError, InferenceResponse, InferenceSettings
+from .quant import vol_surface_provider
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +126,21 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ) -> Any:
     )
 
 
+def configure_quant(environ: Mapping[str, str] = os.environ) -> None:
+    """Use the volatility service for the math when ``VOL_SURFACE_URL`` names it,
+    unless a provider was registered by hand."""
+    url = environ.get("VOL_SURFACE_URL", "").strip()
+    if url and _quant_provider is None:
+        set_quant_provider(vol_surface_provider(url))
+
+
 def get_decision_maker() -> Any:
     """Built once, on the first live request."""
     global _decision_maker, _built
     if not _built:
         _decision_maker = build_decision_maker()
+        if _decision_maker is not None:
+            configure_quant()
         _built = True
     return _decision_maker
 

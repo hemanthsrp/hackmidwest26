@@ -30,24 +30,22 @@ python -m pip install -e ../jev-tool        # optional: Jev review and judging
 | `JEV_ENABLED`, `TYPESAFE_API_KEY` | Read by `jev-tool` (its own `.env` works). Enables review of the model's text and judging of news stored without a judgment. |
 | `DECISION_AGENT_TOOLS` | `true` also gives the explanation agent two lookup tools. Default `false`: the agent gets its data in the prompt, because the tool loop did not fit the Akamai model in live runs (decision-maker README, "What the live runs showed"). |
 | `DECISION_STALE_AFTER_SECONDS` | Freshness window, default `86400`. Older evidence returns `409 stale_data`. |
+| `VOL_SURFACE_URL` | Base URL of the volatility surface service. Enables the options math (below). |
 
 This service does not load a `.env` file itself; export the variables or start uvicorn with `--env-file`.
 
 Errors use the contract envelope: `400 invalid_symbol`, `503 provider_unavailable`, `409 stale_data`, and `500 internal_error` for anything unexpected (the cause is logged by type only).
 
-### Plugging in the math
+### The math
 
-The quant math lives in this service and reaches the decision maker through one hook:
+The options math comes from [`microservices/volatility-surface-builder`](../volatility-surface-builder/README.md). Set `VOL_SURFACE_URL` to that service (for example `http://127.0.0.1:8002`) and each live assessment asks it for the symbol's surface in `live` mode; `research_api/quant.py` maps the reply onto the decision maker's input. The field mapping is in the decision-maker README under "Where the math comes from".
 
-```python
-from research_api import assessment
+- Without `VOL_SURFACE_URL`, every assessment carries a `quant_unavailable` warning and is decided from evidence and the price signal alone.
+- If the service is down, slow (30-second limit) or has no option data for the symbol, the response carries `quant_provider_failed` and is still returned. Nothing is substituted.
+- A live surface adds the service's own time to the request: it fetches option chains and inverts each quote.
+- Another source can be registered instead with `research_api.assessment.set_quant_provider(fn)`, where `fn(symbol, horizon)` returns a `decision_maker.QuantInput` or `None`.
 
-assessment.set_quant_provider(my_quant)   # (symbol, horizon) -> decision_maker.QuantInput | None
-```
-
-The expected fields, with an example built from `vol-surface-builder`'s own functions, are in the decision-maker README under "Handing over the math". Until a provider is registered, every assessment carries a `quant_unavailable` warning and is decided from evidence and the price signal alone. A provider that raises is reported as `quant_provider_failed` and does not block the response.
-
-Run live for AAPL on 2026-10-10 through this route, against the shared store, Akamai inference and TypeSafe: HTTP 200 in 18 to 27 seconds with a model-written, Jev-reviewed explanation. No math provider was registered, so those responses carry `quant_unavailable`.
+Run live for AAPL on 2026-10-10 through this route, against the shared store, Akamai inference and TypeSafe: HTTP 200 in 18 to 27 seconds with a model-written, Jev-reviewed explanation. The volatility service was not part of those runs (it merged afterwards); the adapter is checked against its sample output only.
 
 ## Akamai inference seam (server-side only)
 

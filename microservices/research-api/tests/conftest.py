@@ -12,6 +12,7 @@ def no_live_providers(monkeypatch):
     from research_api import assessment
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("VOL_SURFACE_URL", raising=False)
     assessment.reset()
     yield
     assessment.reset()

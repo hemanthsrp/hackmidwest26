@@ -4,7 +4,7 @@ The combination layer. Evidence from the store, an optional user question and th
 
 It is a library, not a service. `research-api` imports it, builds it from the environment and passes the math in (`microservices/research-api/src/research_api/assessment.py`).
 
-> **Status:** 136 offline tests, and run live on 2026-10-10 through `POST /v0/research-assessments` for AAPL against the shared Postgres store, Akamai inference and TypeSafe (see "What the live runs showed"). The options math has only been exercised with fixtures, because the real math is not written yet. The label is a rule-based research heuristic. Nothing here is investment advice, a probability or a validated prediction.
+> **Status:** 136 offline tests, and run live on 2026-10-10 through `POST /v0/research-assessments` for AAPL against the shared Postgres store, Akamai inference and TypeSafe (see "What the live runs showed"). The options math is wired to `microservices/volatility-surface-builder` and checked against that service's sample output; a live option chain has not been run through it yet. The label is a rule-based research heuristic. Nothing here is investment advice, a probability or a validated prediction.
 
 ## How a request is handled
 
@@ -51,47 +51,34 @@ Everything outside the package is injected, so it can be tested without a networ
 | `explanation_checker` | reviews model-written text | `JevExplanationAdapter` |
 | `stale_after_seconds` | freshness window, default 86400 | `DECISION_STALE_AFTER_SECONDS` |
 
-## Handing over the math
+## Where the math comes from
 
-The math is written in `research-api`, based on [vol-surface-builder](https://github.com/hemanthsrp/vol-surface-builder). It reaches the decision maker as a `QuantInput`. `VolSurfaceSnapshot` uses the same key names as `compute_surface_statistics(df, S)`, ignores keys it does not know, accepts numpy values and reads NaN as missing, so the builder's dict can be passed nearly as it is:
+The math is [`microservices/volatility-surface-builder`](../volatility-surface-builder/README.md). `research-api` asks that service for a symbol's surface and maps the reply onto a `QuantInput` (`research_api/quant.py`, switched on by `VOL_SURFACE_URL`):
+
+| Service reply (`POST /v0/volatility-surfaces`) | `VolSurfaceSnapshot` field | Notes |
+|---|---|---|
+| `spot`, `source`, `data_mode` | same names | A `sample` surface is ignored by a live assessment |
+| `retrieved_at` | `as_of` | The service gives no quote time (`market_observed_at` is null), so this is when the chain was fetched |
+| `statistics.atm_iv_decimal` | `atm_iv_mean` | Annualized volatility as a fraction (0.24 = 24%). Null is accepted. |
+| `statistics.skew_25d_proxy_decimal` | `skew_25d_proxy` | |
+| `statistics.n_points`, `n_expiries` | same names | |
+| `statistics.iv_range_decimal`, `maturity_range_years`, `strike_range` | `iv_range`, `T_range`, `strike_range` | Carried for reference |
+| `surface` grid | `atm_iv_by_expiry` | One `{T, iv}` per maturity, read at the strike nearest spot. Enables the term structure. |
+
+Any other source of math can be registered by hand; `VolSurfaceSnapshot` uses the key names of the builder's `compute_surface_statistics(df, S)`, ignores keys it does not know, accepts numpy values and reads NaN as missing:
 
 ```python
-from datetime import datetime, timezone
-
 from decision_maker import QuantInput, VolSurfaceSnapshot
 from research_api import assessment
 
-
-def quant(symbol: str, horizon: str) -> QuantInput | None:
-    df, spot = get_option_data(source="live", ticker=symbol)
-    return QuantInput(
-        vol_surface=VolSurfaceSnapshot(
-            **compute_surface_statistics(df, spot),
-            spot=spot,
-            as_of=datetime.now(timezone.utc),       # when the option chain was observed
-            source="Yahoo Finance options (yfinance)",
-            data_mode="live",                       # "sample" for the synthetic SVI surface
-            atm_iv_by_expiry=[{"T": 0.08, "iv": 0.34}, {"T": 1.0, "iv": 0.29}],   # optional
-            svi_fits=calibrate_svi_surface(df).to_dict("records"),                 # optional
-        )
-    )
-
-
-assessment.set_quant_provider(quant)   # once, at start-up
+assessment.set_quant_provider(
+    lambda symbol, horizon: QuantInput(vol_surface=VolSurfaceSnapshot(**stats, spot=spot, as_of=when, source="...", data_mode="live"))
+)
 ```
 
-| Field | Needed | Notes |
-|---|---|---|
-| `spot`, `as_of`, `source`, `data_mode` | yes | Provenance the builder does not emit. A `sample` surface is ignored by a live assessment. |
-| `atm_iv_mean`, `skew_25d_proxy`, `n_points`, `n_expiries` | from the builder | Annualized volatility as a fraction (0.24 = 24%). NaN or missing is accepted. |
-| `iv_range`, `T_range`, `strike_range` | optional | Carried for reference |
-| `atm_iv_by_expiry` | optional | One `{T, iv}` per expiry, `T` in years. Without it the term structure is not read. |
-| `svi_fits` | optional | Rows of `calibrate_svi_surface(df)`; only `T`, `rmse`, `converged` are read |
-| `QuantInput.signals` | optional | Any other dated signals in the contract shape; returned and citable |
+`svi_fits` (rows of `calibrate_svi_surface(df)`; only `T`, `rmse`, `converged` are read) and `QuantInput.signals` (other dated signals in the contract shape) are optional. A provider that returns `None` or raises does not block the assessment: it is produced from evidence and says the math was unavailable or failed.
 
-Returning `None`, or raising, is fine: the assessment is still produced from evidence and says the math was unavailable.
-
-**What the math does to the result.** The surface statistics describe how much movement and downside protection options are pricing, not which way the stock will go (the builder's own `docs/methodology.md`, section 7). So the math never sets direction. It does two things:
+**What the math does to the result.** The surface statistics describe how much movement and downside protection options are pricing, not which way the stock will go (the service's own README and `docs/methodology.md` say so). So the math never sets direction. It does two things:
 
 1. It raises the amount of agreement needed to leave `hold` when priced volatility is high, the skew is steep or the term structure is inverted.
 2. It supplies the implied move quoted in the uncertainty statement.
@@ -130,6 +117,8 @@ All of these are hand-set constants, not fitted or validated. They are returned 
 | Data quality | ok / thin | At least 30 quotes, 3 expiries, and SVI converging on half the expiries |
 
 The news rule and its weights are a port of `scraper-analysis/pipeline/grade.py` (`grade-v1`); a stored `details.grade` is used as it is. The insider, congress and price thresholds match `pipeline/divergence.py` on the open `achen/scraper-divergence` branch.
+
+The volatility service prices every ticker with fixed risk-free-rate and dividend-yield assumptions (0.043 and 0.013), which its README says must be reviewed for a live ticker. The buckets above inherit that.
 
 ## Reading the evidence store
 

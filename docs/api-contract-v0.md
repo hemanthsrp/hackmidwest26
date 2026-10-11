@@ -280,7 +280,7 @@ These are intentionally names and defaults only. They do not assert Akamai's fin
 | `freshness.status` | Adds `unknown` (no evidence to date) alongside `fresh` and `stale` |
 | `meta` | `decision_trace`, `explanation_engine`, `jev_review`, `judgments_at_decision`, `retrieval`. Diagnostic; safe to show, not required to render. |
 
-Signals now include rows derived from the options math, for example `ATM implied volatility` and `Implied one-standard-deviation move`. They describe how much movement is priced, not direction.
+Signals now include rows derived from the options math when the volatility service is configured (`VOL_SURFACE_URL`), for example `ATM implied volatility` and `Implied one-standard-deviation move`. They describe how much movement is priced, not direction. The volatility service's own `POST /v0/volatility-surfaces` contract is unchanged.
 
 ### System reason codes
 
