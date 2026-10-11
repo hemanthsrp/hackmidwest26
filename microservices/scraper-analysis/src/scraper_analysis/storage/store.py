@@ -136,7 +136,7 @@ class PostgresEvidenceStore:
                         impact_category, impact_level, impact_basis, embedding_status,
                         lifecycle_status, fresh_until, stale_at, archived_at,
                         retention_until, retention_reason
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         title = EXCLUDED.title, summary = EXCLUDED.summary,
                         source_name = EXCLUDED.source_name, published_at = EXCLUDED.published_at,
