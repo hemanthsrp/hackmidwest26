@@ -62,6 +62,9 @@ MAX_CITED_PER_POINT = 5
 # The hosted model's output length varies a lot run to run (458 to 868 tokens for
 # the same request in live runs); lower caps ended some replies mid-way.
 MAX_OUTPUT_TOKENS = 1500
+# Claude on Bedrock exceeded 1500 on a real explanation (MaxTokensReachedException); it also
+# spends tokens reasoning before it answers, so it gets a larger cap than the Akamai model.
+BEDROCK_MAX_OUTPUT_TOKENS = 6000
 MODEL_TIMEOUT_SECONDS = 60.0
 
 RAISED_BY_TEXT = {
@@ -479,6 +482,42 @@ def explain(
         )
     )
     return template
+
+
+def bedrock_agent_factory(
+    *,
+    model_id: str,
+    region: str = "us-east-1",
+    access_key_id: str | None = None,
+    secret_access_key: str | None = None,
+    session_token: str | None = None,
+) -> AgentFactory:
+    """Agent factory for a Claude model on AWS Bedrock. The session is built from the
+    given credentials, not the ambient AWS identity, which may have no Bedrock access.
+    Strands and boto3 are imported on first use."""
+
+    def factory(system_prompt: str, tools: list) -> Callable[[str], Any]:
+        import boto3
+        from strands import Agent, ModelRetryStrategy
+        from strands.models import BedrockModel
+
+        session = boto3.Session(
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            aws_session_token=session_token,
+            region_name=region,
+        )
+        model = BedrockModel(
+            model_id=model_id,
+            boto_session=session,
+            # The workshop IAM role allows InvokeModel but not InvokeModelWithResponseStream.
+            streaming=False,
+            max_tokens=BEDROCK_MAX_OUTPUT_TOKENS,
+        )
+        retries = ModelRetryStrategy(max_attempts=2, initial_delay=2, max_delay=4)
+        return Agent(model=model, system_prompt=system_prompt, tools=tools, callback_handler=None, retry_strategy=retries)
+
+    return factory
 
 
 def openai_compatible_agent_factory(*, base_url: str, api_key: str, model_id: str) -> AgentFactory:

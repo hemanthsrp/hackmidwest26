@@ -6,7 +6,7 @@ explanation comes out. See README.md.
 """
 
 from .combiner import COMBINER_VERSION
-from .explain import openai_compatible_agent_factory
+from .explain import bedrock_agent_factory, openai_compatible_agent_factory
 from .models import (
     DecisionError,
     DecisionRequest,
@@ -37,5 +37,6 @@ __all__ = [
     "SignalRecord",
     "StaleDataError",
     "VolSurfaceSnapshot",
+    "bedrock_agent_factory",
     "openai_compatible_agent_factory",
 ]
