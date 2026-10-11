@@ -388,3 +388,51 @@ def test_class_share_lookup_is_separator_agnostic():
 def test_ticker_whitespace_is_stripped_not_kept():
     c = _json_client({"0": {"cik_str": 320193, "ticker": " aapl ", "title": "Apple Inc."}})
     assert sec_tickers.lookup("AAPL", c).cik == 320193
+
+
+# --- PR #18 review (hbot) on 6880d3e: a ticker *string* that isn't ticker-shaped
+# ("123", "1ABC", "", "  ", ...) is a structurally bad row and rejects the whole
+# table exactly like a numeric ticker does -- it is never silently skipped. -----
+
+BAD_SHAPED_TICKERS = ["123", "1ABC", "", "  ", "\t", "-X", ".B", "/B", "<b>X</b>", "A B", "A" * 21]
+
+
+@pytest.mark.parametrize("bad", BAD_SHAPED_TICKERS, ids=repr)
+def test_bad_shaped_ticker_string_rejects_table_via_lookup(bad):
+    c = _json_client(_with({"x": {"cik_str": 5, "ticker": bad, "title": "Bad Inc"}}))
+    for _ in range(2):
+        with pytest.raises(ValueError) as ei:
+            sec_tickers.lookup("T000", c)
+        assert str(ei.value) == sec_tickers.MALFORMED_MESSAGE  # fixed text, no body echoed
+        assert sec_tickers._cache is None
+        assert sec_tickers.cached_title("T000") is None
+    assert c.calls == 2  # not cached: the second lookup re-downloads
+
+
+@pytest.mark.parametrize("bad", BAD_SHAPED_TICKERS, ids=repr)
+def test_bad_shaped_ticker_string_then_good_table_recovers(bad):
+    c = _json_client(_with({"x": {"cik_str": 5, "ticker": bad, "title": "Bad Inc"}}), RAW)
+    with pytest.raises(ValueError):
+        sec_tickers.lookup("AAPL", c)
+    assert sec_tickers.lookup("AAPL", c).cik == 320193
+    assert c.calls == 2
+
+
+@pytest.mark.parametrize("bad", ["123", 123, 12.5], ids=repr)
+def test_numeric_ticker_string_and_number_are_treated_alike(bad):
+    raw = _with({"x": {"cik_str": 5, "ticker": bad, "title": "Num Inc"}})
+    with pytest.raises(ValueError) as ei:
+        sec_tickers._parse(raw)
+    assert str(ei.value) == sec_tickers.MALFORMED_MESSAGE
+
+
+def test_valid_ticker_shapes_still_load():
+    good = ["BRK-B", "BF.B", "A", "V", "GAB-PG", "msft", " aapl ", "NONE."]  # "NONE." is in SEC's real file
+    rows = _good_rows(20)
+    for i, t in enumerate(good):
+        rows[f"g{i}"] = {"cik_str": 9000 + i, "ticker": t, "title": f"Good {i}"}
+    c = _json_client(rows)
+    for i, t in enumerate(good):
+        assert sec_tickers.lookup(t, c).cik == 9000 + i
+    assert sec_tickers.lookup("BF/B", c).title == "Good 1"
+    assert c.calls == 1

@@ -16,7 +16,8 @@ never the response body) when:
 - the response is served as HTML, or the body is not JSON / not a JSON object
   (null, list, string, ...), or it has more than MAX_ENTRIES rows;
 - ANY row is structurally corrupt: a row that is not an object, or a present
-  field of the wrong type (ticker not a ticker-shaped string, cik_str not a
+  field of the wrong type (ticker not a string starting with a letter --
+  "123", "1ABC", "", "  " included, same as a numeric ticker --, cik_str not a
   positive int / digit string -- bools and floats rejected, title not a
   string). Real SEC rows are uniform, so one such row means the body is not
   the table we expect;
@@ -55,12 +56,12 @@ _cache: tuple[float, dict[str, TickerInfo]] | None = None
 _load_lock = threading.Lock()
 
 
-# Deliberately loose (any real SEC ticker such as "BRK-B", "GAB-PG" must pass:
-# one bad row rejects the whole table); it only catches non-ticker junk.
-_TICKER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-/]{0,19}$")
-# What a usable ticker looks like: letters first, optional class/series suffix.
-# A string that passes _TICKER_RE but not this ("123") is skipped, not fatal.
-_USABLE_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{0,9}(?:[.-][A-Z0-9]{1,4})?$")
+# THE ticker-shape rule, applied in exactly one place (_row): a letter first,
+# then letters/digits/class separators. Loose enough for every real SEC ticker
+# ("BRK-B", "GAB-PG", even "NONE." which is in the live file) because one
+# failing row rejects the whole table; anything else ("123", "1ABC", "", "  ",
+# "-X", markup) is structural corruption, never a skipped row.
+_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-/]{0,19}$")
 _CLASS_SEP = re.compile(r"[./]")
 
 
@@ -88,14 +89,16 @@ def _row(entry) -> tuple[str, TickerInfo] | None:
     if not isinstance(entry, dict):
         raise _Corrupt
     ticker, title = entry.get("ticker"), entry.get("title", "")
-    if "ticker" in entry:  # null / number / "  " / markup is corruption, not a ticker
-        if not isinstance(ticker, str) or not _TICKER_RE.match(ticker.strip()):
+    if "ticker" in entry:  # null / number / "123" / "  " / markup is corruption, not a ticker
+        if not isinstance(ticker, str):
             raise _Corrupt
         ticker = ticker.strip().upper()
+        if not _TICKER_RE.match(ticker):
+            raise _Corrupt
     if not isinstance(title, str):
         raise _Corrupt
     cik = _cik(entry["cik_str"]) if "cik_str" in entry else None
-    if ticker is None or cik is None or not _USABLE_TICKER_RE.match(ticker):
+    if ticker is None or cik is None:  # only a MISSING field skips a row
         return None
     return ticker, TickerInfo(cik, title)
 
