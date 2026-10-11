@@ -123,3 +123,89 @@ def test_matching_never_downloads_anything(monkeypatch):
     monkeypatch.setattr(sec_tickers.httpx.Client, "get", boom)
     assert matches_symbol("Adobe news", "ADBE") is False  # no cache, no hint: ticker forms only
     assert matches_symbol("Adobe (ADBE) news", "ADBE") is True
+
+
+# --- PR #18 review (hbot): ordinary words must not match word tickers --------
+
+WORD_TICKERS = [
+    "ON", "IT", "ALL", "ARE", "CAN", "NOW", "BIG", "A", "F", "O", "T", "GO", "BE", "SO",
+    "HAS", "OPEN", "LOW", "REAL", "KEY", "CAR", "CAT", "SEE", "FUN",
+]
+ORDINARY_SENTENCES = [
+    "it is on now",
+    "IT IS ON NOW",
+    "Is NOW the time to buy?",
+    "ALL EYES ON THE FED AS RATES HOLD",
+    "BREAKING: CAN THE RALLY LAST?",
+    "This is BIG news for savers",
+    "Act NOW before it is too late",
+    "We ARE open late; doors OPEN at 9",
+    "Prices are at a LOW and it is REAL",
+    "The KEY question: SEE you at the CAR show, it was FUN",
+    "A CAT can GO where it wants, SO BE it, it HAS to",
+    "Choose option (A) or (B)",
+    "big lots of people go out on a real low budget",
+    "Costs $A 50 in Sydney",
+    "the $all variable and $on handler",
+]
+
+
+@pytest.mark.parametrize("symbol", WORD_TICKERS)
+@pytest.mark.parametrize("text", ORDINARY_SENTENCES)
+def test_ordinary_prose_never_matches_word_tickers(text, symbol):
+    assert matches_symbol(text, symbol) is False
+
+
+@pytest.mark.parametrize("text,symbol", [
+    ("Traders pile into $ON after guidance", "ON"),
+    ("onsemi rival? NASDAQ:ON jumps 8%", "ON"),
+    ("ON Semiconductor beats estimates", "ON"),
+    ("Ford Motor (NYSE: F) recalls trucks", "F"),
+    ("Ford recalls 100,000 trucks", "F"),
+    ("Why ALL stock fell today", "ALL"),
+    ("Buying more shares of NOW after the dip", "NOW"),
+    ("ServiceNow (NOW) climbs", "NOW"),
+    ("Realty Income (NYSE: O) raises its dividend", "O"),
+    ("AT&T (T) adds subscribers", "T"),
+    ("$CAT hits record on infrastructure bill", "CAT"),
+])
+def test_real_headlines_for_word_tickers_still_match(text, symbol):
+    assert matches_symbol(text, symbol) is True
+
+
+def test_sec_names_require_proper_noun_capitalisation(monkeypatch):
+    import time
+    table = {"BIG": sec_tickers.TickerInfo(768835, "Big Lots Inc"),
+             "AAPL": sec_tickers.TickerInfo(320193, "Apple Inc.")}
+    monkeypatch.setattr(sec_tickers, "_cache", (time.monotonic(), table))
+    assert matches_symbol("big lots of people showed up", "BIG") is False
+    assert matches_symbol("Big Lots files for bankruptcy", "BIG") is True
+    assert matches_symbol("BIG LOTS CLOSES STORES", "BIG") is True
+    assert matches_symbol("an apple a day", "AAPL") is False
+
+
+# --- PR #18 review (hbot): `$F` must not match `$F.X` / class shares ---------
+
+@pytest.mark.parametrize("text,symbol", [
+    ("$F.X rallies", "F"),
+    ("Watching F.X closely", "F"),
+    ("NYSE: F.X slides", "F"),
+    ("(F.X) slides", "F"),
+    ("Buying $BRK.B today", "BRK"),
+    ("NYSE: BRK.B up", "BRK"),
+    ("BRK.B hits a record", "BRK"),
+    ("BRK-B hits a record", "BRK"),
+])
+def test_ticker_followed_by_dot_letter_is_a_different_symbol(text, symbol):
+    assert matches_symbol(text, symbol) is False
+
+
+@pytest.mark.parametrize("text,symbol", [
+    ("I bought more shares of $F.", "F"),
+    ("Ford Motor (NYSE: F). Shares rose.", "F"),
+    ("Bought $BRK.B.", "BRK.B"),
+    ("Long $AAPL.", "AAPL"),
+    ("Long AAPL. Short MSFT.", "AAPL"),
+])
+def test_sentence_final_period_still_matches(text, symbol):
+    assert matches_symbol(text, symbol) is True

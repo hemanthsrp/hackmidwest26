@@ -6,8 +6,14 @@ clients to keep request volume down, so it is now fetched at most once per
 TTL per process. The company names in it also feed ticker/name matching for
 sources that aren't scoped to one symbol (pipeline/symbol_match.py), which
 only ever READS the cache and never triggers a download itself.
+
+Loading is single-flight: concurrent cold lookups (e.g. parallel ingests)
+share one download instead of each fetching the file. A failed or malformed
+download is not cached, so the next lookup retries; a malformed table raises
+a fixed ValueError message (never the response body).
 """
 
+import threading
 import time
 from dataclasses import dataclass
 
@@ -23,27 +29,54 @@ class TickerInfo:
     title: str
 
 
+MALFORMED_MESSAGE = "SEC company_tickers.json was malformed"
+
 _cache: tuple[float, dict[str, TickerInfo]] | None = None
+_load_lock = threading.Lock()
 
 
 def _parse(raw: dict) -> dict[str, TickerInfo]:
+    if not isinstance(raw, dict):
+        raise ValueError(MALFORMED_MESSAGE)
     table: dict[str, TickerInfo] = {}
     for entry in raw.values():
+        if not isinstance(entry, dict):
+            continue
         ticker = str(entry.get("ticker", "")).upper()
         if ticker and "cik_str" in entry:
-            table.setdefault(ticker, TickerInfo(int(entry["cik_str"]), str(entry.get("title", ""))))
+            try:
+                cik = int(entry["cik_str"])
+            except (TypeError, ValueError):
+                continue
+            table.setdefault(ticker, TickerInfo(cik, str(entry.get("title", ""))))
     return table
+
+
+def _fresh() -> dict[str, TickerInfo] | None:
+    cached = _cache
+    if cached is not None and time.monotonic() - cached[0] < TTL_SECONDS:
+        return cached[1]
+    return None
 
 
 def load(client: httpx.Client) -> dict[str, TickerInfo]:
     global _cache
-    if _cache is not None and time.monotonic() - _cache[0] < TTL_SECONDS:
-        return _cache[1]
-    resp = client.get(TICKERS_URL)
-    resp.raise_for_status()
-    table = _parse(resp.json())
-    _cache = (time.monotonic(), table)
-    return table
+    table = _fresh()
+    if table is not None:
+        return table
+    with _load_lock:  # single-flight: re-check once we hold the lock
+        table = _fresh()
+        if table is not None:
+            return table
+        resp = client.get(TICKERS_URL)
+        resp.raise_for_status()
+        try:
+            raw = resp.json()
+        except ValueError:
+            raise ValueError(MALFORMED_MESSAGE) from None
+        table = _parse(raw)
+        _cache = (time.monotonic(), table)
+        return table
 
 
 def lookup(symbol: str, client: httpx.Client) -> TickerInfo | None:
@@ -53,7 +86,8 @@ def lookup(symbol: str, client: httpx.Client) -> TickerInfo | None:
 def cached_title(symbol: str) -> str | None:
     """Company title if (and only if) the table is already loaded: pure,
     never touches the network."""
-    if _cache is None:
+    cached = _cache
+    if cached is None:
         return None
-    info = _cache[1].get(symbol.upper())
+    info = cached[1].get(symbol.upper())
     return info.title if info else None
