@@ -1,9 +1,11 @@
 import logging
+import os
 import re
 import uuid
 from typing import Literal
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,7 +13,24 @@ from . import assessment
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
+
+
+def cors_origins() -> list[str]:
+    """Browser origins allowed to call this API: the Next.js dev server by default,
+    or the comma-separated CORS_ALLOW_ORIGINS. Never a wildcard."""
+    raw = os.environ.get("CORS_ALLOW_ORIGINS", DEFAULT_CORS_ORIGINS)
+    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip() and origin.strip() != "*"]
+
+
 app = FastAPI(title="Research API", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins(),
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+    allow_credentials=False,
+)
 
 
 class AssessmentPreferences(BaseModel):

@@ -23,6 +23,7 @@ The frontend talks to **research-api only**. The other services are backend depe
 - **Symbols** are 1 to 5 letters, uppercased by the server. Anything else is `400 invalid_symbol`.
 - **Data modes**: every record and response carries `data_mode` of `live`, `cached` or `sample`. Sample data is never presented as live, and a failed live request never falls back to fixtures (except where scraper-analysis documents `fallback=true`).
 - **Timestamps** are ISO 8601 UTC.
+- **CORS**: research-api allows `http://localhost:3000` and `http://127.0.0.1:3000` by default (GET, POST, OPTIONS; no credentials). Set `CORS_ALLOW_ORIGINS` (comma-separated) for a deployed frontend. `*` is ignored. The other services have no CORS and are not meant to be called from a browser.
 - **No credentials** reach a response or the browser. Provider keys live in the backend process environment only.
 
 ---
@@ -135,7 +136,7 @@ Read [AGENT_GUIDE.md](../microservices/jev-tool/AGENT_GUIDE.md) before calling. 
 
 - No endpoint triggers ingestion on demand; `live` assessments read what scraper-analysis has already stored.
 - No streaming or job/poll endpoint. A live assessment blocks for 20 to 30 seconds, so the frontend needs a loading state and a generous timeout.
-- No CORS configuration on research-api, no auth, and no rate limiting. A browser frontend on another origin needs CORS added before it can call it.
+- No auth and no rate limiting on any service.
 - The score meaning and the whole v0 contract still need Gate 0 sign-off.
 
 ## Adding an endpoint

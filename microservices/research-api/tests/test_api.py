@@ -68,3 +68,27 @@ def test_invalid_symbol_has_a_stable_client_error_envelope() -> None:
         "message": "symbol must be an uppercase ticker containing 1 to 5 letters",
         "retryable": False,
     }
+
+
+def test_cors_allows_the_local_frontend_origin_only() -> None:
+    from fastapi.testclient import TestClient
+
+    from research_api.app import app
+
+    client = TestClient(app)
+    preflight = {"Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type"}
+
+    allowed = client.options("/v0/research-assessments", headers={"Origin": "http://localhost:3000", **preflight})
+    assert allowed.status_code == 200
+    assert allowed.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "access-control-allow-credentials" not in allowed.headers
+
+    blocked = client.options("/v0/research-assessments", headers={"Origin": "https://evil.example", **preflight})
+    assert "access-control-allow-origin" not in blocked.headers
+
+
+def test_cors_origins_come_from_the_environment_and_never_allow_a_wildcard(monkeypatch) -> None:
+    from research_api.app import cors_origins
+
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://app.example/, *, http://localhost:3000")
+    assert cors_origins() == ["https://app.example", "http://localhost:3000"]
