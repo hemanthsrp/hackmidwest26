@@ -26,11 +26,12 @@ enabled, so with JEV_ENABLED unset records are unchanged.
 """
 
 import logging
+import math
 from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..models.evidence import Evidence
-from .jev_judge import request_enabled
+from .jev_judge import request_enabled, valid_judgment
 
 logger = logging.getLogger(__name__)
 
@@ -57,18 +58,41 @@ TONE_MIN_STORIES = 3
 
 
 def _jev(evidence: Evidence) -> dict | None:
+    """The stored judgment, only if it is one grading can use (see jev_judge.valid_judgment).
+    Anything else -- unavailable, missing, malformed, never sent -- is unknown, not a number."""
     judgment = evidence.details.get("jev")
-    return judgment if judgment and judgment.get("engine") == "jev" else None
+    return judgment if valid_judgment(judgment) else None
+
+
+def jev_status(evidence: Evidence) -> str:
+    """ok / unavailable / malformed / missing / failed for a record sent to Jev,
+    "not_sent" for one that never was (filings, Jev off at ingest)."""
+    judgment = evidence.details.get("jev")
+    if not isinstance(judgment, dict):
+        return "not_sent"
+    if judgment.get("engine") == "jev":
+        return "ok" if valid_judgment(judgment) else "malformed"  # re-checked: older rows were not validated
+    status = judgment.get("status")
+    return status if isinstance(status, str) else "unavailable"
+
+
+def _credibility(evidence: Evidence) -> float:
+    value = evidence.credibility.overall_score
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return DEFAULT_CREDIBILITY
+    return min(1.0, max(0.0, value))
 
 
 def grade_record(evidence: Evidence, relevance_gate: float) -> dict:
-    credibility = evidence.credibility.overall_score
-    credibility = DEFAULT_CREDIBILITY if credibility is None else credibility
+    credibility = _credibility(evidence)
     judgment = _jev(evidence)
     if judgment is None:
+        # Unknown, not neutral: graded on the source alone, never gated, and (in news_tone)
+        # never a vote -- the same treatment as a filing Jev never saw.
         return {
             "version": GRADE_VERSION,
             "basis": "source_only",
+            "jev_status": jev_status(evidence),
             "strength": round(credibility, 4),
             "gated": False,
             "gate_reasons": [],
@@ -96,6 +120,7 @@ def grade_record(evidence: Evidence, relevance_gate: float) -> dict:
     return {
         "version": GRADE_VERSION,
         "basis": "jev",
+        "jev_status": "ok",
         "strength": round(min(1.0, strength), 4),
         "gated": bool(reasons),
         "gate_reasons": reasons,

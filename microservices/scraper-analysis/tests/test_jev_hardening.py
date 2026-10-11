@@ -97,6 +97,16 @@ def test_grade_evidence_isolates_one_bad_record():
     good.details["jev"] = dict(vars(judgment()))
     bad.details["jev"] = {**dict(vars(judgment())), "materiality": None}  # as if stored by older code
     grade.grade_evidence([bad, good])
+    assert good.details["grade"]["basis"] == "jev"
+    # Re-validated at grading (PR #19 review): unknown, graded on the source alone, not a crash.
+    assert (bad.details["grade"]["basis"], bad.details["grade"]["jev_status"]) == ("source_only", "malformed")
+
+
+def test_grade_evidence_still_isolates_a_record_that_raises(monkeypatch):
+    good, bad = article("good"), article("bad")
+    real = grade.grade_record
+    monkeypatch.setattr(grade, "grade_record", lambda e, gate: 1 / 0 if e.id == "bad" else real(e, gate))
+    grade.grade_evidence([bad, good])
     assert "grade" in good.details and "grade" not in bad.details
 
 

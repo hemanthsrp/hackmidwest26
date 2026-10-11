@@ -144,7 +144,9 @@ def test_disabled_by_default_is_a_no_op(monkeypatch):
     assert evidence.model_dump() == before
 
 
-def test_a_crashing_judge_leaves_records_untouched():
+def test_a_crashing_judge_only_marks_the_records_as_failed():
+    """Sent but unanswered is marked (PR #19 review), so it can't pass for "never judged";
+    nothing else on the record changes."""
     class Boom:
         def judge_evidence_items(self, items, companies):
             raise RuntimeError("boom")
@@ -152,7 +154,9 @@ def test_a_crashing_judge_leaves_records_untouched():
     evidence = make_evidence()
     before = evidence.model_dump()
     jev_judge.judge_evidence([evidence], tool=Boom())
-    assert evidence.model_dump() == before
+    after = evidence.model_dump()
+    assert after["details"].pop("jev") == {"engine": "unavailable", "status": "failed", "error": "jev call failed"}
+    assert after == before
 
 
 def test_ingest_calls_judge_only_when_asked(monkeypatch):

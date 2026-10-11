@@ -21,6 +21,7 @@ none of the values is a probability that a price will move.
 
 import logging
 import math
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -53,6 +54,19 @@ _JUDGMENT_FIELDS = (
     "materiality",
     "materiality_confidence",
 )
+_STRING_FIELDS = frozenset({"direction", "content_type", "event_type"})
+_META_FIELDS = ("model", "question_set_version", "request_id")
+
+# Valid range of each numeric field; anything else (NaN, +-inf, out of range, a string,
+# a bool) is treated as missing. materiality is a score over three levels, so 0..2.
+FIELD_RANGES = {"materiality": (0.0, 2.0)}  # every other numeric field: 0..1
+
+# details["jev"]["status"]: every record sent for judgment says what came back.
+STATUS_OK = "ok"  # a validated judgment (engine "jev")
+STATUS_UNAVAILABLE = "unavailable"  # the tool answered "unavailable" for this record
+STATUS_MALFORMED = "malformed"  # a result came back but failed validation
+STATUS_MISSING = "missing"  # sent, but no result came back for this record
+STATUS_FAILED = "failed"  # the whole call raised
 
 # Jev direction -> the tagging agent's vocabulary. "mixed" has no equivalent there.
 _SENTIMENT_FROM_DIRECTION = {"positive": "Bullish", "negative": "Bearish", "neutral": "Neutral", "mixed": "Neutral"}
@@ -102,8 +116,12 @@ def company_name(symbol: str) -> str:
 def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
     """Attach ``details["jev"]`` to news/social items. Returns the same list.
 
-    A record Jev could not answer for gets ``{"engine": "unavailable", "error": ...}``
-    so the gap is visible downstream rather than looking like a judgment.
+    Every record sent gets a ``status``: ``ok`` (a validated judgment), or
+    ``{"engine": "unavailable", "status": "unavailable" | "malformed" | "missing" |
+    "failed", "error": ...}`` so the gap is visible downstream rather than looking like
+    a judgment or like a record that was never sent. Results are matched to records by
+    ``evidence_id`` and validated one by one; one bad result never stops the others, and
+    nothing here raises into the ingest.
     """
     targets = [e for e in items if e.source_type in JUDGED_SOURCE_TYPES]
     if not targets or not request_enabled():
@@ -121,52 +139,158 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
     payload = [{"id": e.id, "symbol": e.symbol, "title": e.title, "summary": e.summary} for e in targets]
     companies = {e.symbol: company_name(e.symbol) for e in targets}
     try:
-        judgments = tool.judge_evidence_items(payload, companies)
+        judgments = list(tool.judge_evidence_items(payload, companies))
     except Exception:
-        logger.warning("jev judgment failed; leaving %d record(s) unjudged", len(targets), exc_info=True)
+        # Sent but nothing came back: mark it, so "Jev failed" never looks like "never judged".
+        logger.warning("jev judgment failed for %d record(s)", len(targets), exc_info=True)
+        for evidence in targets:
+            evidence.details["jev"] = _unavailable(STATUS_FAILED, "jev call failed")
         return items
 
+    for evidence, result in _match_results(targets, judgments):
+        # Each record on its own: one bad result can never stop the others being attached.
+        try:
+            evidence.details["jev"] = _read_result(result)
+        except Exception:
+            logger.warning("unreadable jev result for %s; marking it malformed", evidence.id, exc_info=True)
+            evidence.details["jev"] = _unavailable(STATUS_MALFORMED, "unreadable judgment")
+            continue
+        if evidence.details["jev"]["engine"] == "jev":
+            try:
+                _fill_sentiment(evidence)
+            except Exception:
+                logger.warning("jev sentiment fill failed for %s; skipping", evidence.id, exc_info=True)
+    for evidence in targets:
+        if "jev" not in evidence.details:
+            evidence.details["jev"] = _unavailable(STATUS_MISSING, "no judgment returned for this record")
+
     try:
-        for evidence, judgment in zip(targets, judgments):
-            if judgment.engine != "jev":
-                evidence.details["jev"] = {
-                    "engine": "unavailable",
-                    "error": sanitize_error(judgment.error) if judgment.error else None,
-                }
-                continue
-            incomplete = _incomplete_fields(judgment)
-            if incomplete:
-                # The tool's result type allows None for every field. Grading multiplies
-                # these, so a half-filled judgment must not be stored as a real one.
-                evidence.details["jev"] = {
-                    "engine": "unavailable",
-                    "error": f"incomplete judgment (missing or non-numeric: {', '.join(incomplete)})",
-                }
-                continue
-            evidence.details["jev"] = {
-                "engine": "jev",
-                "model": judgment.model,
-                "question_set_version": judgment.question_set_version,
-                "request_id": judgment.request_id,
-                **{name: getattr(judgment, name) for name in _JUDGMENT_FIELDS},
-            }
-            _fill_sentiment(evidence, judgment)
-        _mark_same_story([e for e in targets if e.details.get("jev", {}).get("engine") == "jev"], tool)
+        _mark_same_story([e for e in targets if e.details["jev"]["engine"] == "jev"], tool)
     except Exception:
         # Optional and additive: whatever went wrong, the records still get stored.
-        logger.warning("jev post-processing failed; keeping records as they are", exc_info=True)
+        logger.warning("jev same-story marking failed; keeping records as they are", exc_info=True)
     return items
+
+
+def _unavailable(status: str, error: str | None) -> dict:
+    return {"engine": "unavailable", "status": status, "error": error}
+
+
+def _field(result, name):
+    """Read one field from a result object (jev-tool's pydantic model) or a plain mapping."""
+    if isinstance(result, Mapping):
+        return result.get(name)
+    return getattr(result, name, None)
+
+
+def _is_result(result) -> bool:
+    return isinstance(result, Mapping) or hasattr(result, "engine")
+
+
+def _match_results(targets: list[Evidence], results: list) -> list[tuple[Evidence, object]]:
+    """Pair each result with the record it is about.
+
+    jev-tool echoes the payload ``id`` as ``evidence_id``, so match on that; a result
+    without one falls back to its position (the tool returns results in order). Results
+    naming an id we did not send, and second results for an already-matched record,
+    are dropped -- never attached to some other record.
+    """
+    by_id = {e.id: e for e in targets}
+    matched: dict[str, tuple[Evidence, object]] = {}
+    positional = []
+    for index, result in enumerate(results):
+        try:
+            key = _field(result, "evidence_id") if _is_result(result) else None
+        except Exception:
+            logger.warning("could not read evidence_id from jev result %d", index, exc_info=True)
+            key = None
+        if key is None:
+            positional.append((index, result))
+        elif isinstance(key, str) and key in by_id:
+            if key in matched:
+                logger.warning("duplicate jev result for %s; keeping the first", key)
+            else:
+                matched[key] = (by_id[key], result)
+        else:
+            logger.warning("jev result for an id that was not sent (%r); dropping it", key)
+    for index, result in positional:
+        if index < len(targets) and targets[index].id not in matched:
+            matched[targets[index].id] = (targets[index], result)
+    return list(matched.values())
+
+
+def _read_result(result) -> dict:
+    """Validate one result at the boundary and build what gets stored.
+
+    jev-tool types every field ``float | None`` and nothing here trusts that further:
+    the fields grading multiplies must be finite numbers in range or the judgment is
+    stored as malformed; any other invalid value is stored as missing (None) and named
+    in ``invalid_fields``. Never a NaN, an infinity or a string in a number's place.
+    """
+    if not _is_result(result):
+        return _unavailable(STATUS_MALFORMED, f"not a judgment ({type(result).__name__})")
+    engine = _field(result, "engine")
+    if engine != "jev":
+        if engine != "unavailable":
+            return _unavailable(STATUS_MALFORMED, "judgment has no valid engine")
+        error = _field(result, "error")
+        return _unavailable(STATUS_UNAVAILABLE, sanitize_error(error) if error else None)
+    bad = [name for name in REQUIRED_NUMERIC_FIELDS if _number(_field(result, name), name) is None]
+    if bad:
+        # Grading multiplies these, so a half-filled judgment must not be stored as a real one.
+        return _unavailable(
+            STATUS_MALFORMED, f"incomplete judgment (missing, non-numeric or out of range: {', '.join(bad)})"
+        )
+    stored = {"engine": "jev", "status": STATUS_OK}
+    for name in _META_FIELDS:
+        value = _field(result, name)
+        stored[name] = value if value is None or isinstance(value, str) else str(value)
+    invalid = []
+    for name in _JUDGMENT_FIELDS:
+        raw = _field(result, name)
+        value = _string(raw) if name in _STRING_FIELDS else _number(raw, name)
+        if value is None and raw is not None:
+            invalid.append(name)
+        stored[name] = value
+    if invalid:
+        stored["invalid_fields"] = invalid
+    return stored
 
 
 def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def _incomplete_fields(judgment) -> list[str]:
-    return [name for name in REQUIRED_NUMERIC_FIELDS if not _is_number(getattr(judgment, name, None))]
+def _number(value, name: str) -> float | None:
+    """The value when it is a finite number inside the field's range, otherwise None."""
+    if not _is_number(value):
+        return None
+    low, high = FIELD_RANGES.get(name, (0.0, 1.0))
+    return value if low <= value <= high else None
 
 
-def _fill_sentiment(evidence: Evidence, judgment) -> None:
+def _string(value) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def valid_judgment(judgment) -> bool:
+    """True for a stored judgment grading can use as one: engine "jev" and every
+    number it multiplies or compares finite and in range. Re-checked at read time
+    because records written by older code were never validated."""
+    if not isinstance(judgment, Mapping) or judgment.get("engine") != "jev":
+        return False
+    if any(_number(judgment.get(name), name) is None for name in REQUIRED_NUMERIC_FIELDS):
+        return False
+    confidence = judgment.get("direction_confidence")
+    if confidence is not None and _number(confidence, "direction_confidence") is None:
+        return False
+    if not all(_string(judgment.get(name)) is not None or judgment.get(name) is None for name in _STRING_FIELDS):
+        return False
+    same = judgment.get("same_story_as", [])
+    return isinstance(same, list)
+
+
+def _fill_sentiment(evidence: Evidence) -> None:
     """Opt-in, and only when the tagging agent cannot run at all (Bedrock not configured):
     this step runs before tagging, so it must not write a value the tagger would replace.
     Never overwrites an existing value."""
@@ -175,10 +299,11 @@ def _fill_sentiment(evidence: Evidence, judgment) -> None:
         return
     if evidence.sentiment.direction is not None:
         return
-    confidence = judgment.direction_confidence or 0.0
+    judgment = evidence.details["jev"]  # already validated by _read_result
+    confidence = judgment["direction_confidence"] or 0.0
     if confidence < FILL_SENTIMENT_MIN_CONFIDENCE:
         return
-    mapped = _SENTIMENT_FROM_DIRECTION.get(judgment.direction)
+    mapped = _SENTIMENT_FROM_DIRECTION.get(judgment["direction"])
     if mapped is None:  # no direction (or one we don't know): leave sentiment empty rather than guess
         return
     evidence.sentiment = Sentiment(direction=mapped, score=round(confidence, 4))
@@ -203,10 +328,17 @@ def _mark_same_story(judged: list[Evidence], tool) -> None:
     except Exception:
         logger.warning("jev same-story check failed; skipping", exc_info=True)
         return
-    if result.engine != "jev":
+    if _field(result, "engine") != "jev":
         return
-    for pair in result.pairs:
-        if pair.same >= SAME_STORY_THRESHOLD:
-            a, b = judged[pair.a], judged[pair.b]
-            a.details["jev"].setdefault("same_story_as", []).append(b.id)
-            b.details["jev"].setdefault("same_story_as", []).append(a.id)
+    asked = set(pairs)
+    for pair in _field(result, "pairs") or []:
+        # Per pair, like the judgments: one bad pair must not drop the rest.
+        try:
+            a, b, same = _field(pair, "a"), _field(pair, "b"), _field(pair, "same")
+            if (a, b) not in asked or not _is_number(same) or same < SAME_STORY_THRESHOLD:
+                continue
+            first, second = judged[a], judged[b]
+            first.details["jev"].setdefault("same_story_as", []).append(second.id)
+            second.details["jev"].setdefault("same_story_as", []).append(first.id)
+        except Exception:
+            logger.warning("skipping an unreadable same-story pair", exc_info=True)
