@@ -1,6 +1,5 @@
 import { auth } from "@/auth";
-import { stocks, sampleAsOf } from "@/lib/market";
-import { failure } from "@/lib/server";
+import { failure, rateLimit, service } from "@/lib/server";
 export async function GET(r: Request) {
   const url = new URL(r.url);
   const symbol = (url.searchParams.get("symbol") || "").trim().toUpperCase();
@@ -8,41 +7,84 @@ export async function GET(r: Request) {
     return failure("Enter a valid stock symbol.", 400, "invalid_symbol");
   const mode = url.searchParams.get("mode");
   if (mode === "sample") {
-    const s = stocks.find((s) => s.symbol === symbol);
-    if (!s)
-      return failure(
-        "This symbol is not available in the demo.",
-        400,
-        "unsupported_symbol",
+    try {
+      if (process.env.PUBLIC_LIVE_RESEARCH === "true") {
+        if (!(await rateLimit("public-live-research", 600, 60)))
+          return failure(
+            "The public research limit was reached. Please wait a minute and retry.",
+            429,
+            "rate_limited",
+          );
+        const response = await service(
+          "public-beta-readonly",
+          `stocks/${symbol}`,
+        );
+        return new Response(await response.text(), {
+          status: response.status,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+
+      if (
+        process.env.DEMO_LIVE_RESEARCH === "true" &&
+        process.env.NODE_ENV !== "production"
+      ) {
+        const scraperUrl =
+          process.env.SCRAPER_API_URL || "http://127.0.0.1:8002";
+        const ingest = await fetch(
+          `${scraperUrl}/ingest/run?symbol=${encodeURIComponent(symbol)}&live=true&fallback=false&tag=false&judge=false`,
+          {
+            method: "POST",
+            cache: "no-store",
+            signal: AbortSignal.timeout(120000),
+          },
+        );
+        if (!ingest.ok)
+          return new Response(await ingest.text(), {
+            status: ingest.status,
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-store",
+            },
+          });
+
+        const response = await service("local-live-demo", `stocks/${symbol}`);
+        return new Response(await response.text(), {
+          status: response.status,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+
+      const response = await fetch(
+        `${process.env.RESEARCH_API_URL || "http://127.0.0.1:8000"}/v0/research-assessments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol, mode: "sample" }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        },
       );
-    return Response.json({
-      symbol,
-      data_mode: "sample",
-      snapshot: { as_of: sampleAsOf },
-      assessment: {
-        label: s.stance,
-        explanation: s.reason,
-        uncertainty:
-          "Illustrative research only. This sample does not reflect current market conditions.",
-        data_mode: "sample",
-      },
-      signals: [
-        {
-          id: `demo-${symbol}-change`,
-          name: "Sample daily price change",
-          value: s.change,
-          unit: "percent",
+      return new Response(await response.text(), {
+        status: response.status,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
         },
-      ],
-      evidence: [
-        {
-          id: `demo-${symbol}-evidence`,
-          title: `${s.name} sample research`,
-          summary: s.reason,
-          source_name: "Folio illustrative dataset",
-        },
-      ],
-    });
+      });
+    } catch {
+      return failure(
+        "The research service is unavailable. Start the Research API and try again.",
+        503,
+        "research_service_unavailable",
+      );
+    }
   }
   const session = await auth();
   if (!session?.user?.id)

@@ -1,7 +1,7 @@
 import math
 from urllib.parse import parse_qs, urlparse
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -76,15 +76,20 @@ class Settings(BaseSettings):
     # host/port/name/user/password fields, so there's no app-level default
     # (e.g. a hardcoded port or a non-enforcing sslmode) to drift from the
     # real provisioned instance. Never log, commit, or expose this value.
+    allow_insecure_local_database: bool = False
     database_url: str | None = None
 
     @field_validator("database_url")
     @classmethod
-    def _require_tls_for_non_local_hosts(cls, v: str | None) -> str | None:
+    def _require_tls_for_non_local_hosts(
+        cls, v: str | None, info: ValidationInfo
+    ) -> str | None:
         if not v:
             return v
         host = urlparse(v).hostname
-        if host in ("localhost", "127.0.0.1"):
+        if host in ("localhost", "127.0.0.1") or (
+            host == "database" and info.data.get("allow_insecure_local_database")
+        ):
             return v  # local Docker stand-in has no TLS cert configured
         sslmode = parse_qs(urlparse(v).query).get("sslmode", [None])[0]
         if sslmode != "require":

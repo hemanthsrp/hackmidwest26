@@ -45,7 +45,12 @@ def fresh(record):
     try:
         timestamp = record.get('as_of') or record.get('published_at') or record.get('observed_at')
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(timestamp.replace('Z','+00:00'))).total_seconds()
-        return 0 <= age <= 86400 and record.get('data_mode') in {'live','cached'}
+        # A daily market close remains the latest legitimate observation over
+        # weekends and market holidays. Keep the shorter window for news and
+        # filings, while permitting an explicit recent close up to three days.
+        market_signal = record.get('name') == '30-day price change'
+        max_age = int(os.getenv('MARKET_SIGNAL_MAX_AGE_SECONDS', '259200')) if market_signal else 86400
+        return 0 <= age <= max_age and record.get('data_mode') in {'live','cached'}
     except (ValueError, TypeError, AttributeError): return False
 
 def source_records(symbol):
@@ -85,12 +90,17 @@ def stock(symbol: str, uid=Depends(user_id)):
 @router.get('/portfolio')
 def portfolio(uid=Depends(user_id)):
     snapshots=storage.read(uid,'portfolio')
-    if not snapshots: return envelope({'connected':False,'positions':[],'value':0})
-    return envelope(snapshots[0]['value'],'cached')
+    connected=bool(storage.read(uid,'broker_grants'))
+    if not snapshots: return envelope({'connected':connected,'positions':[],'value':0})
+    return envelope({**snapshots[0]['value'],'connected':connected},'cached')
 
 @router.post('/portfolio/refresh')
 def refresh(uid=Depends(user_id)):
-    raise HTTPException(503,'Robinhood platform integration is pending approval. No refresh was performed.')
+    from .broker import BrokerUnavailable, refresh_portfolio
+    try:
+        return envelope(refresh_portfolio(uid),'live')
+    except BrokerUnavailable as error:
+        raise HTTPException(503,str(error)) from None
 
 @router.get('/broker-connections')
 def connections(uid=Depends(user_id)):
@@ -98,15 +108,32 @@ def connections(uid=Depends(user_id)):
 
 @router.post('/broker-connections/robinhood/start')
 def connect(uid=Depends(user_id)):
-    # Personal MCP authorization does not grant this public application access.
-    raise HTTPException(503,'Robinhood has not approved this application yet. No account has been connected.')
+    from .broker import BrokerUnavailable, begin_authorization
+    try:
+        return {'url':begin_authorization(uid)}
+    except BrokerUnavailable as error:
+        raise HTTPException(503,str(error)) from None
+
+class RobinhoodCallback(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    code: str = Field(min_length=1, max_length=4096)
+    state: str = Field(min_length=1, max_length=512)
+
+@router.post('/broker-connections/robinhood/callback')
+def robinhood_callback(body: RobinhoodCallback, uid=Depends(user_id)):
+    from .broker import BrokerUnavailable, complete_authorization
+    try:
+        complete_authorization(uid,body.code,body.state)
+        return {'connected':True,'message':'Robinhood connected. Portfolio data is read only in Folio.'}
+    except BrokerUnavailable as error:
+        raise HTTPException(400,str(error)) from None
 
 @router.delete('/broker-connections/{connection_id}')
 def disconnect(connection_id: str, uid=Depends(user_id)):
-    if storage.read(uid,'broker_grants'):
-        raise HTTPException(503,'Provider revocation must succeed before disconnecting this account')
-    storage.remove(uid,'connection_metadata',connection_id); storage.remove(uid,'portfolio')
-    return {'message':'Connection removed.'}
+    if connection_id != 'robinhood': raise HTTPException(404,'Connection not found')
+    from .broker import remove_connection
+    remove_connection(uid)
+    return {'message':'Folio removed its Robinhood grant. To revoke provider access too, disconnect Folio in Robinhood account settings.'}
 
 def ranked(category=None, stance=None):
     output=[]

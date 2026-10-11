@@ -15,6 +15,16 @@ const input = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   token: z.string().max(128).optional(),
 });
+function localAccountSetupEnabled() {
+  if (process.env.LOCAL_ACCOUNT_AUTH !== "true") return false;
+  try {
+    return ["localhost", "127.0.0.1", "[::1]"].includes(
+      new URL(process.env.AUTH_URL || "").hostname,
+    );
+  } catch {
+    return false;
+  }
+}
 export async function POST(r: Request) {
   if (!sameOrigin(r)) return failure("Invalid request origin.", 403);
   if (!process.env.DATABASE_URL)
@@ -70,11 +80,12 @@ export async function POST(r: Request) {
         : failure("This link has expired or was already used.");
     }
     if (!email) return failure("Email is required.");
-    if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM)
+    const localSetup = action === "register" && localAccountSetupEnabled();
+    if ((!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) && !localSetup)
       return failure("Email delivery is not configured yet.", 503);
     let [user] = await db().select().from(users).where(eq(users.email, email));
     if (action === "register") {
-      if (process.env.ALLOW_REGISTRATION !== "true")
+      if (process.env.ALLOW_REGISTRATION !== "true" && !localSetup)
         return failure(
           "Registration is not open yet. You can explore the demo.",
           503,
@@ -83,9 +94,25 @@ export async function POST(r: Request) {
       if (!user) {
         [user] = await db()
           .insert(users)
-          .values({ name, email, passwordHash: await hashPassword(password) })
+          .values({
+            name,
+            email,
+            passwordHash: await hashPassword(password),
+            ...(localSetup ? { emailVerified: new Date() } : {}),
+          })
+          .returning();
+      } else if (localSetup && !user.emailVerified) {
+        [user] = await db()
+          .update(users)
+          .set({ emailVerified: new Date() })
+          .where(eq(users.id, user.id))
           .returning();
       }
+      if (localSetup && user?.emailVerified)
+        return Response.json({
+          message:
+            "Local Folio account is ready. Email verification is skipped only for this loopback app; you can sign in now.",
+        });
     }
     if (user && !(action === "resend" && user.emailVerified)) {
       const raw = randomBytes(32).toString("hex");
