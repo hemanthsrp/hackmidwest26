@@ -34,10 +34,11 @@ Input hygiene, applied inside analyze() so no caller can bypass it:
     reproducible/back-dated analysis but is always labelled
     window.historical = true with a warning, so historical flags are never
     presented as current;
-  * nothing from the future -- any record (price signal or evidence) dated
-    more than CLOCK_SKEW_TOLERANCE_HOURS after the request time (and so,
-    for a current request, after the actual clock) is unusable: it is
-    counted in excluded.future_dated and warned about, and never compared;
+  * nothing from the future -- one ceiling, min(request time, actual clock)
+    + CLOCK_SKEW_TOLERANCE_HOURS (the tolerance applies once, never stacked
+    on an as_of that was itself accepted inside it). Any record (price
+    signal or evidence) whose event date OR published_at is after it is
+    unusable: counted in excluded.future_dated, warned about, never compared;
   * fresh price -- the price leg is the latest live, not-future price
     signal, usable only if its as_of is at most MAX_PRICE_SIGNAL_AGE_DAYS
     before the request time. A stale price leaves the leg unusable, is
@@ -50,7 +51,7 @@ Input hygiene, applied inside analyze() so no caller can bypass it:
     period that move covers; otherwise it is RECENCY_LOOKBACK_DAYS before
     the request time. RECENCY_FORWARD_GRACE_DAYS after the end absorbs the
     close being stamped at midnight of the session date, but the window
-    never extends past request time + CLOCK_SKEW_TOLERANCE_HOURS. The event date is
+    never extends past that same ceiling. The event date is
     observed_at (Form 4 / congressional trade date) falling back to
     published_at for other sources (news). Congressional records use the
     trade date only -- never the filing date -- and any record whose parser
@@ -156,15 +157,17 @@ def _window_days(window: str) -> int:
     return RECENCY_LOOKBACK_DAYS
 
 
-def _price_leg(signals: list[Signal], now: datetime) -> tuple[Leg, Signal | None, int, int]:
+def _price_leg(signals: list[Signal], now: datetime, ceiling: datetime | None = None) -> tuple[Leg, Signal | None, int, int]:
     """Latest live price signal, if fresh relative to the request time `now`.
     Returns the leg, the chosen signal (the latest not-future one, also when
     stale, so its age can be reported), and the numbers of live price
-    signals rejected as stale and as future-dated (after now + skew)."""
+    signals rejected as stale and as future-dated (after `ceiling`, which
+    defaults to now + skew; analyze() passes min(now, real clock) + skew so
+    the tolerance never stacks on a caller-supplied as_of)."""
     live = [s for s in signals if s.name == PRICE_SIGNAL and s.data_mode == "live"]
     if not live:
         return Leg("price", None, "No live price signal available."), None, 0, 0
-    latest_ok = now + _SKEW
+    latest_ok = ceiling if ceiling is not None else now + _SKEW
     oldest_ok = now - timedelta(days=MAX_PRICE_SIGNAL_AGE_DAYS)
     past = [s for s in live if _utc(s.as_of) <= latest_ok]
     future = len(live) - len(past)
@@ -376,6 +379,11 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
         raise FutureAsOfError(f"as_of {now.isoformat()} is in the future (current time {clock.isoformat()}); "
                               "divergence can only be computed for the present or the past.")
     historical = now < clock - _SKEW
+    # One ceiling for everything: nothing dated (or published) after the
+    # request time OR the actual clock, plus a single skew allowance. Using
+    # now + skew alone let an as_of accepted inside the tolerance add a second
+    # hour on top of the real clock.
+    ceiling = min(now, clock) + _SKEW
     if historical:
         warnings.append(f"Historical analysis as of {now.isoformat()}: the requested as_of is in the past, so these "
                         "legs and flags describe that date, not the present.")
@@ -393,7 +401,7 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
     if cached_count:
         warnings.append(f"{cached_count} cached record(s) ignored; only live data is compared.")
 
-    price, price_signal, stale_price, future_price = _price_leg(live_signals, now)
+    price, price_signal, stale_price, future_price = _price_leg(live_signals, now, ceiling)
     price_age_days = None
     if price_signal is not None:
         price_age_days = round((now - _utc(price_signal.as_of)).total_seconds() / 86400, 2)
@@ -412,7 +420,7 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
                             "the price leg is not compared and the window is anchored on the request time.")
     start = end_anchor - timedelta(days=lookback)
     # Never past the request time (+ skew): nothing from its future counts.
-    end = min(end_anchor + timedelta(days=RECENCY_FORWARD_GRACE_DAYS), now + _SKEW)
+    end = min(end_anchor + timedelta(days=RECENCY_FORWARD_GRACE_DAYS), ceiling)
 
     in_window: list[Evidence] = []
     form4_rows: list[_Form4Row] = []
@@ -422,9 +430,11 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of:
             invalid_date += 1
             continue
         t = _event_time(e)
+        published = _utc(e.published_at) if e.published_at else None
         if t is None:
             undated += 1
-        elif t > now + _SKEW:
+        elif t > ceiling or (published is not None and published > ceiling):
+            # Event dated in the future, or not even published yet: never compared.
             future_dated += 1
         elif _is_form4(e):
             row, outcome = _value_form4(e, start, end)
