@@ -15,9 +15,9 @@ import httpx
 
 from ..config import get_settings
 from .base import RawRecord, SourceAdapter, SourceUnavailableError
+from . import sec_tickers
 from .form4 import parse_form4
 
-TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 RELEVANT_FORMS = {"4", "8-K"}
 
@@ -121,9 +121,5 @@ class SecEdgarAdapter(SourceAdapter):
 
     @staticmethod
     def _lookup_cik(client: httpx.Client, symbol: str) -> int | None:
-        resp = client.get(TICKERS_URL)
-        resp.raise_for_status()
-        for entry in resp.json().values():
-            if entry.get("ticker", "").upper() == symbol.upper():
-                return int(entry["cik_str"])
-        return None
+        info = sec_tickers.lookup(symbol, client)  # cached: not re-downloaded on every ingest
+        return info.cik if info else None
