@@ -12,7 +12,6 @@ import {
   Globe2,
   Link2,
   Layers3,
-  RefreshCw,
 } from "lucide-react";
 import {
   AreaChart,
@@ -32,6 +31,7 @@ import {
   type Article,
 } from "@/lib/market";
 import { useApp } from "./shell";
+import { ResearchAssessment } from "./research-assessment";
 function Badge({ stance }: { stance: string }) {
   return (
     <span className={`badge ${stance.toLowerCase()}`}>
@@ -763,17 +763,6 @@ export function StockDetail({ symbol }: { symbol: string }) {
   const { demo } = useApp();
   const s = stocks.find((s) => s.symbol === symbol);
   const [range, setRange] = useState("1M");
-  const q = useQuery({
-    queryKey: ["research", symbol, demo],
-    queryFn: async () => {
-      const r = await fetch(
-        `/api/research?symbol=${encodeURIComponent(symbol)}&mode=${demo ? "sample" : "live"}`,
-      );
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error?.message || "Research unavailable");
-      return data;
-    },
-  });
   return (
     <>
       <Link className="back-link" href="/">
@@ -787,11 +776,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
             ? `${s.industry} · ${demo ? "Sample market snapshot" : "Research snapshot"}`
             : "Source-backed market research"
         }
-      >
-        <button className="outline-button" onClick={() => void q.refetch()}>
-          <RefreshCw size={14} /> Refresh
-        </button>
-      </PageHeader>
+      />
       {demo && s && (
         <section className="panel detail-chart">
           <div className="card-row">
@@ -838,65 +823,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
           </div>
         </section>
       )}
-      <SectionTitle title="The research perspective" />
-      {q.isPending ? (
-        <div className="panel empty-state" role="status">
-          Gathering research…
-        </div>
-      ) : q.isError ? (
-        <div className="error-box" role="alert">
-          {q.error.message}
-          <button className="text-button" onClick={() => void q.refetch()}>
-            Try again <RefreshCw size={14} />
-          </button>
-        </div>
-      ) : (
-        <div className="panel assessment">
-          <div className="card-row">
-            <Badge stance={q.data.assessment.label} />
-            <span className="tiny-tag">
-              {q.data.data_mode} ·{" "}
-              {new Date(
-                q.data.snapshot?.as_of || q.data.freshness?.as_of,
-              ).toLocaleDateString()}
-            </span>
-          </div>
-          <h3>{q.data.assessment.explanation}</h3>
-          <p>{q.data.assessment.uncertainty}</p>
-          {q.data.signals?.map(
-            (v: { id: string; name: string; value: number; unit: string }) => (
-              <div className="signal" key={v.id}>
-                <span>{v.name}</span>
-                <strong>
-                  {v.value} {v.unit}
-                </strong>
-              </div>
-            ),
-          )}
-          {q.data.evidence?.map(
-            (e: {
-              id: string;
-              title: string;
-              summary: string;
-              source_name: string;
-              source_url?: string;
-            }) => (
-              <div className="evidence" key={e.id}>
-                <strong>{e.title}</strong>
-                <p>{e.summary}</p>
-                <span className="muted">{e.source_name}</span>
-                {e.source_url &&
-                  /^https?:\/\//i.test(e.source_url) &&
-                  !e.source_url.includes("example.invalid") && (
-                    <a href={e.source_url} target="_blank" rel="noreferrer">
-                      Read source <ArrowUpRight size={14} />
-                    </a>
-                  )}
-              </div>
-            ),
-          )}
-        </div>
-      )}
+      <ResearchAssessment symbol={symbol} />
       {demo && (
         <>
           <SectionTitle title="Related stories" />
