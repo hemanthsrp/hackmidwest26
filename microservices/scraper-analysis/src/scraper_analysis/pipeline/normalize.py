@@ -158,6 +158,11 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
                 "notification_lag_days": payload.get("notification_lag_days"),
             }
         )
+    elif payload.get("date_issue"):
+        # Senate: the adapter rejected the trade date; divergence excludes records
+        # with details.date_issue (never dated).
+        details["date_issue"] = payload["date_issue"]
+        details["transaction_date_reported"] = payload.get("transaction_date")
     return Evidence(
         symbol=record.symbol,
         title=title,
