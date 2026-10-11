@@ -1,6 +1,6 @@
 # Jet handoff — A1 backend feasibility and contract checkpoint
 
-> Historical A1 handoff. Since this was written, the volatility source project was imported as a standalone service in `microservices/volatility-surface-builder`. It remains separate from the research assessment route; see [its README](../microservices/volatility-surface-builder/README.md).
+> Historical A1 handoff. The "Current repository state" section below is out of date: `microservices/decision-maker/` is now an implemented package (task A3 in [TASKS.md](TASKS.md)). Since this was written, the volatility source project was imported as a standalone service in `microservices/volatility-surface-builder`. It remains separate from the research assessment route; see [its README](../microservices/volatility-surface-builder/README.md).
 
 **Purpose:** prepare the project-owned Python backend to integrate Akamai's workshop inference service without making the project depend on the untracked workshop repository. This is an A1 discovery/contract task, not authorization to deploy, provision cloud resources, or start A2 implementation before Gate 0.
 

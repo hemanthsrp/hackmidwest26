@@ -6,8 +6,9 @@ Start with [the project brief](docs/PROJECT_BRIEF.md), [current architecture](do
 
 | Component | Current capability |
 |---|---|
-| [Research API](microservices/research-api/README.md) | Local sample research snapshot; standalone Akamai inference and Jev adapter seams |
-| [Scraper analysis](microservices/scraper-analysis/README.md) | Source adapters, fixtures, normalized evidence and market signals |
+| [Research API](microservices/research-api/README.md) | `POST /v0/research-assessments`: labeled sample snapshot, `sample_decision` mode, and a `live` mode that runs the decision maker when `DATABASE_URL` is set |
+| [Decision maker](microservices/decision-maker/README.md) | Fixed-rule combiner over evidence legs, Strands explanation on Akamai inference, Jev review; run live for AAPL, not yet reviewed by the other lanes |
+| [Scraper analysis](microservices/scraper-analysis/README.md) | Source adapters with labeled fixtures, evidence store, signals, divergence, Form 4 insider direction, strict ingest, optional scheduler and briefing; optional Jev judgment and grading |
 | [Jev tool](microservices/jev-tool/README.md) | Shared Python/MCP judgments and offline tests |
 | [Volatility surface builder](microservices/volatility-surface-builder/README.md) | Imported Black–Scholes/SVI option diagnostics, charts, tests, and a standalone sample/live HTTP endpoint |
 | [Yahoo Finance MCP](microservices/yahoo-finance-mcp/README.md) | Project-owned MCP server exposing realized price-change and market-data signals with sample fixtures |

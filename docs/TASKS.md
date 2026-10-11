@@ -74,6 +74,9 @@
 
 ## Agent B — evidence and quant (Cai lane)
 
+**Status as of 2026-10-11 (Cai via Claude Code):** B1/B2 are in practice delivered by `microservices/scraper-analysis` on `main` (source adapters, evidence store, signals, divergence, Form 4 insider direction, strict `/ingest/run`, `/briefing`, optional scheduler whose status reports what was persisted). Accepted gaps: House disclosures (scanned PDFs), USDA/NASS/WASDE, Reddit (403, fixture-only, flag off), X/Twitter dropped. Still pending: Jet's review is not recorded for these, and the owner's review of A-J4/A-J5 (above) is outstanding.
+- **Shared DB:** the SEC re-key migration (`python -m scraper_analysis.storage.migrations`, dry run by default) needs Jet's authorization before `--apply` on the shared Akamai DB. Until then keep the scheduler off and persist only with `fallback=false`. A connection check from Cai's machine on 2026-10-11 was closed by the server during handshake, so the DB's current state is unverified (likely an access-list issue; not investigated).
+
 **B1 — Source/data feasibility** (unclaimed; independent discovery)
 - Compare one permitted news source and one historical-market data source, including licensing/rate limits, fields and failure modes. Audit whether existing baseline code is useful for adapters (coordinate C1); propose normalization/dedup/timestamp rules.
 - **Done when:** selected sources and restrictions are documented for Gate 0; no paywall bypass or unauthorized scraping.
