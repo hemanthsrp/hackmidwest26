@@ -34,6 +34,7 @@ services:
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
       RESEARCH_DATABASE_URL: ${DATABASE_URL}
       SCRAPER_ANALYSIS_URL: http://scraper:8001
+      SCRAPER_API_URL: http://scraper:8001
       VOL_SURFACE_URL: http://volatility:8002
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
     ports: ["127.0.0.1:8000:8000"]
