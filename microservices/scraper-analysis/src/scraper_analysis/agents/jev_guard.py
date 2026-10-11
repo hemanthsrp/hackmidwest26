@@ -23,7 +23,7 @@ from ..config import get_settings
 from ..models.briefing import Briefing
 from ..models.evidence import Evidence
 from ..pipeline.jev_judge import JUDGED_SOURCE_TYPES, _get_tool
-from ..sources.base import sanitize_error
+from ..sources.base import describe_exception, sanitize_error
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +40,16 @@ def review_briefing(briefing: Briefing, evidence: list[Evidence], tool=None) -> 
         except ImportError:
             logger.warning("JEV_ENABLED is set but jev-tool is not installed; skipping briefing review")
             return None
+        except Exception as exc:
+            # A constructor that raises: same fallback (briefing unreviewed). Never exc_info.
+            logger.warning("jev tool could not be built; returning the briefing unreviewed: %s",
+                           describe_exception(exc))
+            return None
     try:
         return _review(briefing, evidence, tool)
-    except Exception:
-        logger.warning("jev briefing review failed; returning the briefing unreviewed", exc_info=True)
+    except Exception as exc:
+        # Never exc_info: provider exception text can carry the API key or a tokened URL.
+        logger.warning("jev briefing review failed; returning the briefing unreviewed: %s", describe_exception(exc))
         return None
 
 

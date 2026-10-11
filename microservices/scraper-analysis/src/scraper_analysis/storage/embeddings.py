@@ -9,6 +9,7 @@ import logging
 import httpx
 
 from ..config import get_settings
+from ..sources.base import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ def get_embedding(text: str) -> list[float] | None:
         resp.raise_for_status()
         data = resp.json()
         return data["data"][0]["embedding"]
-    except (httpx.HTTPError, KeyError, IndexError, ValueError):
-        logger.warning("embedding request failed; storing evidence without a vector", exc_info=True)
+    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+        # httpx errors embed the request URL; never log the raw exception.
+        logger.warning("embedding request failed; storing evidence without a vector: %s", describe_exception(exc))
         return None

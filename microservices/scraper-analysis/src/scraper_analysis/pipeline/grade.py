@@ -25,11 +25,16 @@ Freshness is deliberately not stored, because it changes by the hour:
 enabled, so with JEV_ENABLED unset records are unchanged.
 """
 
+import logging
+import math
 from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..models.evidence import Evidence
-from .jev_judge import request_enabled
+from ..sources.base import describe_exception
+from .jev_judge import request_enabled, same_story_ids, valid_judgment
+
+logger = logging.getLogger(__name__)
 
 GRADE_VERSION = "grade-v1"
 
@@ -54,25 +59,68 @@ TONE_MIN_STORIES = 3
 
 
 def _jev(evidence: Evidence) -> dict | None:
+    """The stored judgment, only if it is one grading can use (see jev_judge.valid_judgment).
+    Anything else -- unavailable, missing, malformed, never sent -- is unknown, not a number."""
     judgment = evidence.details.get("jev")
-    return judgment if judgment and judgment.get("engine") == "jev" else None
+    return judgment if valid_judgment(judgment) else None
 
 
-def grade_record(evidence: Evidence, relevance_gate: float) -> dict:
-    credibility = evidence.credibility.overall_score
-    credibility = DEFAULT_CREDIBILITY if credibility is None else credibility
+def _finite_unit(value) -> float | None:
+    """A finite number in 0..1, else None. Used on every stored number a reader ranks by:
+    rows written by older code were never validated, and one NaN in a sort key scrambles
+    the whole order (and cannot be serialised as JSON)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value) if 0.0 <= value <= 1.0 else None
+
+
+def _grade(evidence: Evidence) -> dict | None:
+    grade = evidence.details.get("grade")
+    return grade if isinstance(grade, dict) else None
+
+
+def stored_strength(evidence: Evidence) -> float | None:
+    """The stored grade strength when it is a finite number in 0..1, else None (unknown)."""
+    grade = _grade(evidence)
+    return None if grade is None else _finite_unit(grade.get("strength"))
+
+
+def jev_status(evidence: Evidence) -> str:
+    """ok / unavailable / malformed / missing / failed for a record sent to Jev,
+    "not_sent" for one that never was (filings, Jev off at ingest)."""
+    judgment = evidence.details.get("jev")
+    if not isinstance(judgment, dict):
+        return "not_sent"
+    if judgment.get("engine") == "jev":
+        return "ok" if valid_judgment(judgment) else "malformed"  # re-checked: older rows were not validated
+    status = judgment.get("status")
+    return status if isinstance(status, str) else "unavailable"
+
+
+def _credibility(evidence: Evidence) -> float:
+    value = evidence.credibility.overall_score
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return DEFAULT_CREDIBILITY
+    return min(1.0, max(0.0, value))
+
+
+def grade_record(evidence: Evidence, relevance_gate: float, known_ids=None) -> dict:
+    credibility = _credibility(evidence)
     judgment = _jev(evidence)
     if judgment is None:
+        # Unknown, not neutral: graded on the source alone, never gated, and (in news_tone)
+        # never a vote -- the same treatment as a filing Jev never saw.
         return {
             "version": GRADE_VERSION,
             "basis": "source_only",
+            "jev_status": jev_status(evidence),
             "strength": round(credibility, 4),
             "gated": False,
             "gate_reasons": [],
             "factors": {"credibility": credibility},
         }
 
-    same_story = len(judgment.get("same_story_as", []))
+    same_story = len(same_story_ids(judgment, self_id=evidence.id, known_ids=known_ids))
     factors = {
         "relevance": judgment["relevant"],
         "credibility": credibility,
@@ -93,6 +141,7 @@ def grade_record(evidence: Evidence, relevance_gate: float) -> dict:
     return {
         "version": GRADE_VERSION,
         "basis": "jev",
+        "jev_status": "ok",
         "strength": round(min(1.0, strength), 4),
         "gated": bool(reasons),
         "gate_reasons": reasons,
@@ -106,25 +155,37 @@ def grade_evidence(items: list[Evidence]) -> list[Evidence]:
     settings = get_settings()
     if not request_enabled() or not settings.jev_configured:
         return items
+    known_ids = {e.id for e in items}
     for evidence in items:
-        evidence.details["grade"] = grade_record(evidence, settings.jev_relevance_gate)
+        try:
+            evidence.details["grade"] = grade_record(evidence, settings.jev_relevance_gate, known_ids)
+        except Exception as exc:
+            # Grading is optional. One record that can't be graded stays ungraded
+            # (readers already treat that as "no grade"); it must never abort the
+            # ingest and lose the whole batch.
+            logger.warning("could not grade record %s; leaving it ungraded: %s", evidence.id, describe_exception(exc))
     return items
 
 
 def is_gated(evidence: Evidence) -> bool:
     """True when the record was graded as off-topic or unusable for its symbol.
     Ungraded records are never gated."""
-    return bool(evidence.details.get("grade", {}).get("gated"))
+    grade = _grade(evidence)
+    return grade is not None and grade.get("gated") is True
 
 
 def agent_view(evidence: Evidence) -> dict:
     """The few fields an LLM reader should see first, surfaced at the top level of a
     tool row. Empty for ungraded records, so rows are unchanged when Jev is off."""
-    grade = evidence.details.get("grade")
+    grade = _grade(evidence)
     if not grade:
         return {}
     judgment = _jev(evidence)
-    view = {"strength": grade["strength"], "off_topic_for_symbol": "off_topic" in grade["gate_reasons"]}
+    reasons = grade.get("gate_reasons")
+    view = {
+        "strength": stored_strength(evidence),  # None when the stored value is unusable
+        "off_topic_for_symbol": isinstance(reasons, list) and "off_topic" in reasons,
+    }
     if judgment:
         view["relevance_to_symbol"] = judgment["relevant"]
     return view
@@ -143,16 +204,24 @@ def freshness(evidence: Evidence, as_of: datetime | None = None) -> float:
 
 
 def current_strength(evidence: Evidence, as_of: datetime | None = None) -> float | None:
-    """Stored strength with freshness applied. None for ungraded records."""
-    grade = evidence.details.get("grade")
-    if not grade:
+    """Stored strength with freshness applied. None for ungraded records and for a stored
+    strength that is not a finite number in 0..1 (legacy rows): unknown, never NaN."""
+    strength = stored_strength(evidence)
+    if strength is None:
         return None
-    return round(grade["strength"] * freshness(evidence, as_of), 4)
+    value = strength * freshness(evidence, as_of)
+    return round(value, 4) if math.isfinite(value) else None
 
 
 def rank(items: list[Evidence], as_of: datetime | None = None) -> list[Evidence]:
-    """Strongest first. Ungraded records keep their order after the graded ones."""
-    return sorted(items, key=lambda e: current_strength(e, as_of) or -1.0, reverse=True)
+    """Strongest first. Ungraded records, and records whose stored strength is unusable,
+    keep their original order after the graded ones. The sort key never holds a NaN."""
+    strengths = [current_strength(e, as_of) for e in items]
+    graded = sorted(
+        (i for i, s in enumerate(strengths) if s is not None), key=lambda i: (-strengths[i], i)
+    )
+    unknown = [i for i, s in enumerate(strengths) if s is None]
+    return [items[i] for i in graded + unknown]
 
 
 def news_tone(items: list[Evidence], as_of: datetime | None = None) -> dict:
@@ -163,8 +232,11 @@ def news_tone(items: list[Evidence], as_of: datetime | None = None) -> dict:
     repeated by several outlets, or a pile of unrelated feed items, cannot swing
     it. A heuristic summary of reported tone, never a forecast.
     """
-    judged = [e for e in items if _jev(e) and "grade" in e.details]
-    usable = [e for e in judged if not is_gated(e)]
+    judged = [e for e in items if _jev(e) and _grade(e) is not None]
+    # A judgment may carry no direction (or one outside TONE_VALUE); such a record can't
+    # vote on tone, but is still reported, not silently dropped or allowed to raise.
+    gated = [e for e in judged if is_gated(e)]
+    usable = [e for e in judged if not is_gated(e) and e.details["jev"].get("direction") in TONE_VALUE]
     by_id = {e.id: e for e in usable}
     seen: set[str] = set()
     stories: list[Evidence] = []
@@ -172,14 +244,15 @@ def news_tone(items: list[Evidence], as_of: datetime | None = None) -> dict:
         if evidence.id in seen:
             continue
         seen.add(evidence.id)
-        seen.update(i for i in evidence.details["jev"].get("same_story_as", []) if i in by_id)
+        seen.update(same_story_ids(evidence.details["jev"], self_id=evidence.id, known_ids=by_id))
         stories.append(evidence)
 
     total = sum(current_strength(e, as_of) or 0.0 for e in stories)
     result = {
         "version": GRADE_VERSION,
         "records_judged": len(judged),
-        "records_gated": len(judged) - len(usable),
+        "records_gated": len(gated),
+        "records_without_direction": len(judged) - len(gated) - len(usable),
         "stories_used": len(stories),
         "by_direction": {},
         "tone": None,

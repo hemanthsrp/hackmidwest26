@@ -33,6 +33,7 @@ _SECRET_SETTINGS = (
     "aws_secret_access_key",
     "aws_session_token",
     "database_url",
+    "typesafe_api_key",
 )
 MAX_ERROR_CHARS = 300
 
@@ -66,10 +67,34 @@ def sanitize_error(error: object) -> str:
     return text
 
 
+def describe_exception(exc: BaseException) -> str:
+    """One sanitized line for logging a provider failure (Jev/TypeSafe, Bedrock,
+    embeddings): the exception type plus sanitize_error() of its text.
+
+    Use this instead of ``exc_info=True`` / ``logger.exception`` wherever the
+    exception can carry provider text: a traceback prints the raw message (and
+    any chained cause), which can include API keys and tokened URLs."""
+    text = sanitize_error(f"{type(exc).__name__}: {exc}")
+    return " ".join(text.split())
+
+
+class LiveRecords(list):
+    """A live fetch's items plus an optional coverage note. An adapter returns
+    this instead of a plain list when the source answered but only partly
+    (e.g. some House PTR PDFs could not be read); resolve() puts the note in
+    FetchResult.error while the status stays "live". Notes must be fixed,
+    adapter-written text (they are still sanitized)."""
+
+    def __init__(self, items=(), note: str | None = None):
+        super().__init__(items)
+        self.note = note
+
+
 @dataclass
 class FetchResult:
     """What a fetch actually did. `status` keeps substitution visible:
-    live      real source answered
+    live      real source answered (a non-null `error` on a live result is a
+              partial-coverage note: the data is real but incomplete)
     sample    fixtures, because the caller asked for them (live=false)
     fallback  live failed and fixtures were substituted (data_mode "sample")
     unavailable  live failed and the caller refused fixtures (no items)"""
@@ -84,7 +109,9 @@ def resolve(live_fn, sample_fn, allow_live: bool, fallback: bool) -> FetchResult
     if not allow_live:
         return FetchResult(sample_fn(), "sample", "sample")
     try:
-        return FetchResult(live_fn(), "live", "live")
+        items = live_fn()
+        note = getattr(items, "note", None)
+        return FetchResult(list(items), "live", "live", sanitize_error(note) if note else None)
     except SourceUnavailableError as exc:
         error = sanitize_error(exc)
         if fallback:
