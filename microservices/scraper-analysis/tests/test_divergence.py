@@ -21,19 +21,19 @@ def price(value, mode="live"):
 
 def form4(buy=0.0, sell=0.0, plan=False, mode="live"):
     return Evidence(symbol="AAPL", title="f4", source_name="SEC EDGAR", source_type="sec_filing",
-                    retrieved_at=NOW, data_mode=mode,
+                    retrieved_at=NOW, observed_at=NOW, data_mode=mode,
                     details={"buy_shares": 1, "sell_shares": 1, "buy_value_usd": buy,
                              "sell_value_usd": sell, "is_10b5_1": plan})
 
 
 def senate(kind):
     return Evidence(symbol="AAPL", title="s", source_name="Senate eFD", source_type="congressional_disclosure",
-                    retrieved_at=NOW, details={"transaction_type": kind})
+                    retrieved_at=NOW, observed_at=NOW, data_mode="live", details={"transaction_type": kind})
 
 
 def news(direction, score=0.8, cred=0.5):
     return Evidence(symbol="AAPL", title="n", source_name="CNBC", source_type="general_news", retrieved_at=NOW,
-                    sentiment={"direction": direction, "score": score}, credibility={"overall_score": cred})
+                    published_at=NOW, data_mode="live", sentiment={"direction": direction, "score": score}, credibility={"overall_score": cred})
 
 
 def flag_ids(result):
@@ -55,7 +55,7 @@ def test_insiders_buying_into_weakness():
 
 def test_10b5_1_sales_are_excluded_and_explained():
     r = dv.analyze("AAPL", [form4(sell=60_000_000, plan=True)], [price(9.0)])
-    assert r["legs"]["insider"]["direction"] == "neutral"
+    assert r["legs"]["insider"]["direction"] is None
     assert "insiders_selling_into_rally" not in flag_ids(r)
     assert any("10b5-1" in n for n in r["notes"])
 
@@ -92,9 +92,9 @@ def test_news_tone_is_credibility_weighted():
 
 
 def test_congress_vs_insiders():
-    r = dv.analyze("AAPL", [senate("Purchase"), senate("Purchase"), form4(sell=300_000)], [])
+    r = dv.analyze("AAPL", [senate("Purchase"), senate("Purchase"), form4(sell=300_000)], [], as_of=NOW)
     assert flag_ids(r) == {"congress_buying_insiders_selling"}
-    r = dv.analyze("AAPL", [senate("Sale (Partial)"), form4(buy=300_000)], [])
+    r = dv.analyze("AAPL", [senate("Sale (Partial)"), form4(buy=300_000)], [], as_of=NOW)
     assert flag_ids(r) == {"congress_selling_insiders_buying"}
 
 
@@ -117,13 +117,13 @@ def test_deterministic_and_reports_thresholds():
     assert "Not a prediction" in a["disclaimer"]
 
 
-def test_latest_live_price_wins_and_fixture_loses():
+def test_latest_live_price_wins_and_fixture_never_counts():
     old = price(9.0)
     live_new = Signal(symbol="AAPL", name="30-day price change", value=-7.0, unit="percent", window="30d",
                       as_of=datetime(2026, 10, 11, tzinfo=timezone.utc), source="yf", data_mode="live")
     fixture = price(50.0, mode="sample")
     assert dv._price_leg([old, live_new, fixture]).direction == "down"
-    assert dv._price_leg([fixture]).direction == "up"  # fixture only if nothing live
+    assert dv._price_leg([fixture]).direction is None  # fixtures never fill the price leg
 
 
 @pytest.fixture
@@ -169,9 +169,10 @@ def test_synthesis_tool_exposes_divergences_and_registers_citable_ids(store):
 
 def test_filings_with_no_open_market_trades_do_not_count():
     withholding = Evidence(symbol="AAPL", title="f4", source_name="SEC EDGAR", source_type="sec_filing",
-                           retrieved_at=NOW, details={"buy_shares": 0.0, "sell_shares": 0.0,
+                           retrieved_at=NOW, observed_at=NOW, data_mode="live",
+                           details={"buy_shares": 0.0, "sell_shares": 0.0,
                                                       "buy_value_usd": 0.0, "sell_value_usd": 0.0,
                                                       "is_10b5_1": False, "other_codes": {"F": 40.0}})
     leg, _ = dv._insider_leg([withholding])
-    assert leg.direction == "neutral" and leg.evidence_ids == []
+    assert leg.direction is None and leg.evidence_ids == []
     assert "5 filing" not in leg.summary

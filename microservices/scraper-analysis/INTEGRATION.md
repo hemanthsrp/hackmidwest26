@@ -21,7 +21,7 @@ Storage is in-memory unless `DATABASE_URL` is set (then Postgres + pgvector; run
 | `POST /ingest/run?symbol=AAPL&live=true&fallback=true&tag=true` | Collect from all sources, score, dedupe, store. Returns **only newly stored** items, `signals`, a per-source `sources` report and `warnings`; a repeat run returns `evidence: []`. `live=false` forces fixtures; `fallback=false` refuses fixtures (see below); `tag=false` skips the Bedrock tagging call |
 | `GET /evidence?symbol=AAPL` | Everything stored for the symbol. `status` is `ok` or `insufficient_data` |
 | `GET /signals?symbol=AAPL` | Stored quant signals, same `status` convention |
-| `GET /divergence?symbol=AAPL` | Where independent source types disagree (price vs discretionary insider trades vs Senate trades vs news tone). Deterministic, thresholds returned in the response |
+| `GET /divergence?symbol=AAPL` | Where independent source types disagree (price vs discretionary insider trades vs Senate trades vs news tone). Live, recent data only; deterministic, thresholds returned in the response |
 | `POST /briefing?symbol=AAPL` | Cited research briefing from stored data (one Bedrock call, hence POST) |
 | `GET /health` | Liveness |
 
@@ -101,7 +101,10 @@ Staleness is the caller's decision: compare `retrieved_at` / `published_at` to y
 
 ## Divergence
 
-`GET /divergence` compares the **direction** of four legs, each backed by cited records, and flags the pairs that disagree: `price` (30-day change), `insider` (discretionary Form 4 open-market net; pre-scheduled 10b5-1 trades and tax withholding are excluded and explained in `notes`), `congress` (Senate purchases vs sales) and `news` (credibility-weighted tone of Bedrock-tagged items, needs at least 3). Response: `status` (`ok` needs 2+ usable legs, else `insufficient_data`), `legs`, `flags[]` (each with the legs involved and `evidence_ids`), `notes`, `thresholds`, `data_modes`. Fixtures are ignored whenever any live record exists. The synthesis agent can call the same analysis as a tool.
+`GET /divergence` compares the **direction** of four legs, each backed by cited records, and flags the pairs that disagree: `price` (30-day change), `insider` (discretionary Form 4 open-market P/S net; filings that are only pre-scheduled 10b5-1 trades, tax withholding, option exercises or grants do not make the leg usable and are explained in `notes`), `congress` (Senate purchases vs sales) and `news` (credibility-weighted tone of Bedrock-tagged items, needs at least 3). Response: `status` (`ok` needs 2+ usable legs, else `insufficient_data`), `legs`, `flags[]` (each with the legs involved and `evidence_ids`), `notes`, `warnings`, `excluded` (`sample`, `out_of_window`, `undated` counts), `window`, `thresholds`, `data_modes`.
+
+- **Live only.** Fixture (`data_mode: "sample"`) records never contribute to any leg or flag. If only fixtures are stored the response is `insufficient_data` with a sample-only warning.
+- **Recency window.** Each evidence record must fall between `RECENCY_LOOKBACK_DAYS` (45) before and `RECENCY_FORWARD_GRACE_DAYS` (3) after the anchor: the latest live price signal's `as_of`, or the request time when there is no price signal. The event date is `observed_at` (Form 4 / Senate trade date), falling back to `published_at` (news). Senate trades are windowed on the trade date even though they are disclosed up to 45 days later, so the congress leg is often empty; that is deliberate (no stale pairings). Out-of-window and undated records are not counted and are reported in `excluded` and `warnings`. The synthesis agent can call the same analysis as a tool.
 
 This is deliberately **not** the README's social-volume z-score "squeeze engine": that needs a social feed (Reddit is blocked, X was dropped) and a history baseline we don't have, so the number would be invented precision. A flag means "these sources point different ways", never that a price will move, and it is not a score.
 

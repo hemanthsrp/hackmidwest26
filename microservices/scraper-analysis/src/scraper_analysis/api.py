@@ -125,7 +125,8 @@ def get_signals(symbol: str = Query(...)) -> dict:
 def get_divergence(symbol: str = Query(...)) -> dict:
     """Where independent source types disagree (price vs insiders vs Senate
     vs news). Deterministic and rule-based; thresholds are in the response.
-    Fixtures are ignored whenever any live record exists."""
+    Only live records inside the recency window around the price signal can
+    contribute to a flag; fixtures never do (see pipeline/divergence.py)."""
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:

@@ -17,11 +17,33 @@ independent legs, each backed by cited records:
   news       credibility-weighted tone of Bedrock-tagged news items
 
 and flag the pairs that disagree. Every threshold is a named constant and is
-returned in the response. This is a research aid: a flag says "these sources
+returned in the response.
+
+Input hygiene, applied inside analyze() so no caller can bypass it:
+
+  * live only -- records with data_mode "sample" (fixtures) are dropped
+    before any leg is computed, so a fixture can never contribute to a flag,
+    even when nothing live exists (status is then insufficient_data);
+  * recency -- every evidence record must fall inside a bounded window
+    around the anchor (the price signal's as_of, else the caller's as_of,
+    else now): at most RECENCY_LOOKBACK_DAYS before it and
+    RECENCY_FORWARD_GRACE_DAYS after it. The event date is observed_at
+    (Form 4 / Senate trade date) falling back to published_at (news).
+    Congressional disclosures are filed up to 45 days after the trade; we
+    still window on the trade date, because that is when the senator acted,
+    and accept that the congress leg will often be empty (a false negative
+    is preferred to pairing a months-old trade with today's price move).
+    Undated evidence cannot be placed in the window and is dropped;
+  * insider -- only discretionary open-market P/S counts. A filing that is
+    a 10b5-1 plan trade, tax withholding (F), an option exercise (M), a
+    grant, etc. leaves the insider leg unusable (direction None).
+
+Every exclusion is counted in `excluded` and explained in `warnings`. This is a research aid: a flag says "these sources
 point different ways", never that a price will move, and it is not a score.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from ..models.evidence import Evidence
 from ..models.signal import Signal
@@ -31,13 +53,22 @@ INSIDER_NET_USD = 100_000.0
 MIN_TAGGED_NEWS = 3
 NEWS_TONE_THRESHOLD = 0.25
 DEFAULT_CREDIBILITY = 0.5
+# Evidence must sit within this window of the anchor (price signal as_of).
+# 45 days covers the 30-day price window plus ingest slack; a few days of
+# forward grace absorbs clock/ingest skew between price and other sources.
+RECENCY_LOOKBACK_DAYS = 45
+RECENCY_FORWARD_GRACE_DAYS = 3
 
 THRESHOLDS = {
     "price_move_pct": PRICE_MOVE_PCT,
     "insider_net_usd": INSIDER_NET_USD,
     "min_tagged_news": MIN_TAGGED_NEWS,
     "news_tone_threshold": NEWS_TONE_THRESHOLD,
+    "recency_lookback_days": RECENCY_LOOKBACK_DAYS,
+    "recency_forward_grace_days": RECENCY_FORWARD_GRACE_DAYS,
 }
+
+PRICE_SIGNAL = "30-day price change"
 
 @dataclass
 class Leg:
@@ -58,11 +89,10 @@ class Flag:
 
 
 def _price_leg(signals: list[Signal]) -> Leg:
-    candidates = [s for s in signals if s.name == "30-day price change" and s.data_mode != "sample"] or [
-        s for s in signals if s.name == "30-day price change"
-    ]
+    # Callers pass live-only signals (see analyze); never fall back to fixtures.
+    candidates = [s for s in signals if s.name == PRICE_SIGNAL and s.data_mode != "sample"]
     if not candidates:
-        return Leg("price", None, "No price signal available.")
+        return Leg("price", None, "No live price signal available.")
     s = max(candidates, key=lambda x: x.as_of)
     if s.value >= PRICE_MOVE_PCT:
         direction = "up"
@@ -94,7 +124,9 @@ def _insider_leg(evidence: list[Evidence]) -> tuple[Leg, list[str]]:
             "from insider direction: they were decided in advance and carry little current-conviction signal."
         )
     if not discretionary:
-        return Leg("insider", "neutral", "No discretionary open-market insider activity (only pre-scheduled 10b5-1 trades, tax withholding or option exercises).",
+        # Excluded activity must not make the leg usable: no direction at all.
+        return Leg("insider", None, "No discretionary open-market insider activity in the window (only pre-scheduled "
+                   "10b5-1 trades, tax withholding, option exercises or grants).",
                    [], {"discretionary_net_usd": 0.0, "planned_sell_usd": planned_sell}), notes
 
     net = sum(e.details.get("buy_value_usd", 0.0) - e.details.get("sell_value_usd", 0.0) for e in discretionary)
@@ -177,15 +209,60 @@ def _flags(legs: dict[str, Leg]) -> list[Flag]:
     return flags
 
 
-def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal]) -> dict:
-    """Pure function: same inputs, same output. Callers decide which records
-    (live vs sample) to pass in."""
-    insider, notes = _insider_leg(evidence)
+def _event_time(e: Evidence) -> datetime | None:
+    t = e.observed_at or e.published_at
+    if t is not None and t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t
+
+
+def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal], as_of: datetime | None = None) -> dict:
+    """Deterministic for fixed inputs (pass as_of to pin the anchor when no
+    price signal exists). Sample records and out-of-window evidence are
+    dropped here, whatever the caller passes in."""
+    warnings: list[str] = []
+    sample_count = sum(1 for i in [*evidence, *signals] if i.data_mode == "sample")
+    live_evidence = [e for e in evidence if e.data_mode != "sample"]
+    live_signals = [s for s in signals if s.data_mode != "sample"]
+    if sample_count:
+        if not live_evidence and not live_signals:
+            warnings.append(f"Only sample (fixture) data is stored ({sample_count} record(s)); fixtures never "
+                            "contribute to divergence flags.")
+        else:
+            warnings.append(f"{sample_count} sample (fixture) record(s) ignored; only live data is compared.")
+
+    price = _price_leg(live_signals)
+    if price.direction is not None:
+        anchor = datetime.fromisoformat(price.inputs["as_of"])
+    else:
+        anchor = as_of or datetime.now(timezone.utc)
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+    start = anchor - timedelta(days=RECENCY_LOOKBACK_DAYS)
+    end = anchor + timedelta(days=RECENCY_FORWARD_GRACE_DAYS)
+
+    in_window: list[Evidence] = []
+    out_of_window = undated = 0
+    for e in live_evidence:
+        t = _event_time(e)
+        if t is None:
+            undated += 1
+        elif start <= t <= end:
+            in_window.append(e)
+        else:
+            out_of_window += 1
+    if out_of_window:
+        warnings.append(f"{out_of_window} live record(s) fall outside the comparison window "
+                        f"({start.date()} to {end.date()}) and were not counted.")
+    if undated:
+        warnings.append(f"{undated} live record(s) have no observed/published date and were not counted.")
+
+    insider, notes = _insider_leg(in_window)
     legs = {
-        "price": _price_leg(signals),
+        "price": price,
         "insider": insider,
-        "congress": _congress_leg(evidence),
-        "news": _news_leg(evidence),
+        "congress": _congress_leg(in_window),
+        "news": _news_leg(in_window),
     }
     usable = [leg.name for leg in legs.values() if leg.direction is not None]
     unavailable = [f"{leg.name}: {leg.summary}" for leg in legs.values() if leg.direction is None]
@@ -199,6 +276,15 @@ def analyze(symbol: str, evidence: list[Evidence], signals: list[Signal]) -> dic
         "legs": {name: leg.__dict__ for name, leg in legs.items()},
         "flags": [f.__dict__ for f in flags],
         "notes": notes + [f"Unavailable -- {u}" for u in unavailable],
+        "warnings": warnings,
+        "excluded": {"sample": sample_count, "out_of_window": out_of_window, "undated": undated},
+        "window": {
+            "anchor": anchor.isoformat(),
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "lookback_days": RECENCY_LOOKBACK_DAYS,
+            "forward_grace_days": RECENCY_FORWARD_GRACE_DAYS,
+        },
         "thresholds": THRESHOLDS,
         "disclaimer": "Heuristic comparison of source directions. Not a prediction, score, or recommendation.",
     }
