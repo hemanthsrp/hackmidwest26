@@ -21,7 +21,9 @@ Storage is in-memory unless `DATABASE_URL` is set (then Postgres + pgvector; run
 | `POST /ingest/run?symbol=AAPL&live=true&fallback=true&tag=true` | Collect from all sources, score, dedupe, store. Returns **only newly stored** items, `signals`, a per-source `sources` report and `warnings`; a repeat run returns `evidence: []`. `live=false` forces fixtures; `fallback=false` refuses fixtures (see below); `tag=false` skips the Bedrock tagging call |
 | `GET /evidence?symbol=AAPL` | Everything stored for the symbol. `status` is `ok` or `insufficient_data` |
 | `GET /signals?symbol=AAPL` | Stored quant signals, same `status` convention |
+| `GET /divergence?symbol=AAPL` | Where independent source types disagree (price vs discretionary insider trades vs congressional (Senate and House) trades vs news tone). Live, recent data only; deterministic, thresholds returned in the response |
 | `POST /briefing?symbol=AAPL` | Cited research briefing from stored data (one Bedrock call, hence POST) |
+| `GET /scheduler/status` | Whether the background scheduler is on, its interval, and each symbol's last run (new items, per-source status, error) |
 | `GET /health` | Liveness |
 
 Symbols are validated (`^[A-Z]{1,5}(\.[A-Z])?$`); invalid input returns `400 {"detail": ...}`. `/briefing` errors use the contract's envelope: `503 {"error": {"code": "briefing_unavailable", "message": ..., "retryable": true}}`.
@@ -92,15 +94,34 @@ Realized, historical measures only, never forecasts.
 
 Fixtures are persisted like any other record (labeled), so a store that has ever seen a fallback run can hold `sample` rows next to live ones: filter on `data_mode` when reading `/evidence`. `/briefing` decides once across evidence and signals together: if any live record of either kind exists, every fixture (evidence and signal) is excluded.
 
-Staleness is the caller's decision: compare `retrieved_at` / `published_at` to your freshness window. There is no scheduler yet, so data only refreshes when `/ingest/run` is called.
+Staleness is the caller's decision: compare `retrieved_at` / `published_at` to your freshness window. Data refreshes when `/ingest/run` is called or, if enabled, when the optional scheduler runs (see below).
 
 ## Briefing
 
 `POST /briefing` returns `{status, briefing, meta, warnings}`. `briefing` has `headline`, `overall_tone`, `points[]` (each with `theme`, `text`, `direction`, `evidence_ids`), `conflicts[]`, `data_gaps[]`, `uncertainty`. It never gives a recommendation or score. Citations are verified server-side: IDs the agent did not actually retrieve are stripped, and uncited points are dropped (reported in `warnings`). Fixture records (evidence and signals) are excluded whenever any live evidence or signal exists. Model or agent-setup failures return the `503 briefing_unavailable` envelope, never a 500. With no stored data it returns `status: "insufficient_data"` without calling the model.
 
+## Scheduler
+
+Optional background ingestion so data refreshes without calling `/ingest/run`. **Off by default**; enable with `ENABLE_SCHEDULER=true` plus `SCHEDULER_SYMBOLS` (comma-separated), `SCHEDULER_INTERVAL_MINUTES`, `SCHEDULER_OFFHOURS_FACTOR` (interval multiplier on weekends and outside 08:00-18:00 New York) and `SCHEDULER_TAG`. It writes to whatever `DATABASE_URL` points at, so on the shared cluster enable it deliberately and only after the SEC re-key migration (`python -m scraper_analysis.storage.migrations --apply`) has been run; before that, any live ingest re-inserts SEC filings under their new IDs.
+
+- **Strict:** live data only, fixtures are never substituted or persisted; a failed source is omitted and reported in `/scheduler/status`. One symbol failing never stops the others, and stored errors are sanitized.
+- **Config validation:** interval and off-hours factor must be finite numbers greater than 0; `nan`, `inf`, `0` or negatives fail settings validation at startup. Positive values below the floors are clamped (interval to 5 minutes, factor to 1).
+- **Symbols** are trimmed, upper-cased, validated and de-duplicated in order (`aapl, AAPL , Aapl` runs once as `AAPL`); invalid entries are skipped and listed under `skipped_invalid_symbols`.
+- **Single owner, one process only.** Within a process, only one scheduler can run (a second one reports `start_error` and stays idle), and a process-wide guard means two scheduled ingests never run at the same time, including a new scheduler started while the old one's ingest is still finishing (the newcomer skips that symbol and says so in its status). **This is not enforced across processes:** with several uvicorn workers (`--workers N`) or replicas, set `ENABLE_SCHEDULER=true` on exactly one of them. Manual `/ingest/run` calls are also not serialized against scheduled runs.
+- **Shutdown:** on app shutdown the scheduler raises a stop flag that ingestion checks immediately before every database write, then waits up to 30 s for the in-flight ingest to finish. After shutdown returns, no new write starts; the only write that can still land is one already in progress when the flag was raised that outlives that wait. An interrupted symbol shows `ok: false` with a shutdown error, and the run counts under `runs_interrupted`, not `runs_completed`.
+
+## Divergence
+
+`GET /divergence` compares the **direction** of four legs, each backed by cited records, and flags the pairs that disagree: `price` (30-day change), `insider` (discretionary Form 4 open-market P/S net; filings that are only pre-scheduled 10b5-1 trades, tax withholding, option exercises or grants do not make the leg usable and are explained in `notes`), `congress` (Senate and House purchases vs sales, any `details.chamber`) and `news` (credibility-weighted tone of Bedrock-tagged items, needs at least 3). Response: `status` (`ok` needs 2+ usable legs, else `insufficient_data`), `legs`, `flags[]` (each with the legs involved and `evidence_ids`), `notes`, `warnings`, `excluded` (`sample`, `out_of_window`, `undated` counts), `window`, `thresholds`, `data_modes`.
+
+- **Live only.** Fixture (`data_mode: "sample"`) records never contribute to any leg or flag. If only fixtures are stored the response is `insufficient_data` with a sample-only warning.
+- **Recency window.** Each evidence record must fall between `RECENCY_LOOKBACK_DAYS` (45) before and `RECENCY_FORWARD_GRACE_DAYS` (3) after the anchor: the latest live price signal's `as_of`, or the request time when there is no price signal. The event date is `observed_at` (Form 4 / Senate trade date), falling back to `published_at` (news). Congressional trades are windowed on the trade date even though they are disclosed up to 45 days later, so the congress leg is often empty; that is deliberate (no stale pairings). Out-of-window and undated records are not counted and are reported in `excluded` and `warnings`. The synthesis agent can call the same analysis as a tool.
+
+This is deliberately **not** the README's social-volume z-score "squeeze engine": that needs a social feed (Reddit is blocked, X was dropped) and a history baseline we don't have, so the number would be invented precision. A flag means "these sources point different ways", never that a price will move, and it is not a score.
+
 ## Do not claim
 
-- Credibility scores, tone, or the briefing as validated or predictive.
+- Credibility scores, tone, divergence flags, or the briefing as validated or predictive.
 - Coverage of Bloomberg/WSJ/Reuters (excluded: no sanctioned access).
 - Complete House coverage: scanned/paper PTRs have no text layer and are skipped (no OCR), assets without a ticker (bonds, funds, LLCs) are ignored, and only the newest 30 filings in a 45-day window are read. Treat House trades as a best-effort sample, not a full ledger. Lines starting with a PTR field marker (`F S:`, `S O:`, `D:`, `C:`, `L:`) are never parsed as trades, but a multi-line description whose later line looks exactly like a trade row cannot be told apart from one.
 - Reddit data: the adapter exists but Reddit blocks it (403); it is off by default.

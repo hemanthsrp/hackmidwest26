@@ -1,14 +1,49 @@
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from .agents import synthesis_agent
+from .config import get_settings
+from .pipeline import divergence
 from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
+from .scheduler import Scheduler
 from .sources.base import sanitize_error
 from .storage.store import get_store
 
-app = FastAPI(title="scraper-analysis", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    app.state.scheduler = None
+    if settings.enable_scheduler:
+        scheduler = Scheduler(
+            # Scheduler normalizes, validates and de-duplicates these.
+            symbols=[s for s in settings.scheduler_symbols.split(",") if s.strip()],
+            interval_minutes=settings.scheduler_interval_minutes,
+            offhours_factor=settings.scheduler_offhours_factor,
+            tag=settings.scheduler_tag,
+        )
+        # start() refuses (start_error in /scheduler/status) if another
+        # scheduler already owns this process; it never runs two at once.
+        scheduler.start()
+        app.state.scheduler = scheduler
+    try:
+        yield
+    finally:
+        if app.state.scheduler is not None:
+            await app.state.scheduler.stop()
+
+
+app = FastAPI(title="scraper-analysis", version="0.1.0", lifespan=lifespan)
+
+
+@app.get("/scheduler/status")
+def scheduler_status() -> dict:
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler is None:
+        return {"enabled": False}
+    return scheduler.status()
 
 
 @app.post("/briefing")
@@ -118,3 +153,22 @@ def get_signals(symbol: str = Query(...)) -> dict:
         "status": "ok" if items else "insufficient_data",
         "signals": [s.model_dump(mode="json") for s in items],
     }
+
+
+@app.get("/divergence")
+def get_divergence(symbol: str = Query(...)) -> dict:
+    """Where independent source types disagree (price vs insiders vs Senate
+    vs news). Deterministic and rule-based; thresholds are in the response.
+    Only live records inside the recency window around the price signal can
+    contribute to a flag; fixtures never do (see pipeline/divergence.py)."""
+    try:
+        validated = validate_symbol(symbol)
+    except InvalidSymbolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store = get_store()
+    evidence, signals = synthesis_agent.select_briefing_records(
+        store.query_evidence(validated), store.query_signals(validated)
+    )
+    result = divergence.analyze(validated, evidence, signals)
+    result["data_modes"] = sorted({e.data_mode for e in evidence} | {s.data_mode for s in signals})
+    return result
