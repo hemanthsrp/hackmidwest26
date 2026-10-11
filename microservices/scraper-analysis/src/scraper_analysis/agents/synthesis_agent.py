@@ -56,6 +56,9 @@ strings the tools returned.
 - Weigh sources: official filings (sec_filing, congressional_disclosure) are verified; social \
 posts are low credibility. Pre-scheduled 10b5-1 insider sales are weak signals; open-market \
 purchases are stronger than sales. Congressional trades are disclosed with a lag.
+- A congressional record with date_valid false has an invalid or missing trade date (the reason \
+is in details.date_issue). Do not present it as dated buying or selling, and never as a signal; \
+at most mention it as a data-quality gap.
 - Note when records have data_mode "sample" (fixture, not live) or are stale.
 - Name genuine conflicts between sources, and list what is missing (data_gaps).
 
@@ -74,7 +77,7 @@ class BriefingUnavailableError(Exception):
 
 
 def _evidence_row(e: Evidence) -> dict:
-    return {
+    row = {
         "id": e.id,
         "source": e.source_name,
         "type": e.source_type,
@@ -85,6 +88,13 @@ def _evidence_row(e: Evidence) -> dict:
         "credibility": e.credibility.overall_score,
         "details": e.details,
     }
+    if e.source_type == "congressional_disclosure":
+        # Same rule as divergence: a trade counts only with a valid trade date
+        # (observed_at), never the filing date, and never with a date_issue.
+        valid = e.observed_at is not None and not (e.details or {}).get("date_issue")
+        row["date_valid"] = valid
+        row["direction_usable"] = valid
+    return row
 
 
 def prefer_real(items: list) -> list:

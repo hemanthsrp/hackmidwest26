@@ -123,6 +123,10 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
     )
     if timing:
         title += f" -- {timing}"
+    elif payload.get("date_issue"):
+        # The reported trade date was rejected (see house_clerk); say so in the
+        # title too, so no consumer reads it as a dated buy/sell.
+        title += " -- invalid trade date, not dated"
     summary = f"{payload.get('asset_name', '')} ({payload.get('asset_type', '')}), owner: {payload.get('owner', '')}"
     details = {
         "chamber": payload.get("chamber", "Senate"),

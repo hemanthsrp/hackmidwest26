@@ -45,7 +45,9 @@ F S: New
 
 @pytest.fixture(scope="module")
 def rows():
-    return {r["ticker"]: r for r in h.parse_ptr_text(SAMPLE_TEXT)}
+    # Live PDFs are parsed from positioned words (SAMPLE_LAYOUT, defined
+    # below, is SAMPLE_TEXT with the real form geometry).
+    return {r["ticker"]: r for r in parse_layout(SAMPLE_LAYOUT)}
 
 
 def test_ticker_in_parens_before_the_type(rows):
@@ -83,14 +85,16 @@ def test_wrapped_amount_range_is_completed_not_dropped(rows):
 
 def test_assets_without_a_ticker_are_skipped_not_guessed():
     # The Treasury bill and the municipal bond have no ticker: 6 tickered rows only.
-    parsed = h.parse_ptr_text(SAMPLE_TEXT)
+    parsed = parse_layout(SAMPLE_LAYOUT)
     assert len(parsed) == 6
+    parsed += h.parse_ptr_text(SAMPLE_TEXT)
     assert all("Treasury" not in r["asset_name"] and "Indiana" not in r["asset_name"] for r in parsed)
 
 
 def test_tickers_inside_description_blocks_are_not_rows(rows):
     # The D: block mentions AAPL; it must not create a second AAPL row.
-    assert len([r for r in h.parse_ptr_text(SAMPLE_TEXT) if r["ticker"] == "AAPL"]) == 1
+    assert len([r for r in parse_layout(SAMPLE_LAYOUT) if r["ticker"] == "AAPL"]) == 1
+    assert len([r for r in h.parse_ptr_text(SAMPLE_TEXT) if r["ticker"] == "AAPL"]) <= 1
 
 
 def test_scanned_or_empty_text_yields_nothing():
@@ -210,7 +214,7 @@ def test_pdf_parses_are_cached(monkeypatch):
             calls.append(url)
             return Resp()
 
-    monkeypatch.setattr(h, "_extract_pdf_text", lambda content: SAMPLE_TEXT)
+    monkeypatch.setattr(h, "_extract_pdf_lines", lambda content: h.lines_from_pages(to_pages(SAMPLE_LAYOUT)))
     f = filing("555", 2)
     first = h._load_transactions(Client(), f)
     second = h._load_transactions(Client(), f)
@@ -241,7 +245,7 @@ def test_text_less_pdf_is_cached_as_empty_not_retried(monkeypatch):
         def get(self, url):
             return Resp()
 
-    monkeypatch.setattr(h, "_extract_pdf_text", lambda content: "")
+    monkeypatch.setattr(h, "_extract_pdf_lines", lambda content: [])
     assert h._load_transactions(Client(), filing("557", 2)) == []
 
 
@@ -446,13 +450,20 @@ def test_description_continuation_followed_by_a_real_row_keeps_the_real_row():
         "F S: New\n"
     )
     parsed = h.parse_ptr_text(text)
-    assert [r["ticker"] for r in parsed] == ["MSFT", "GOOGL"]
+    # Plain text cannot tell the Self-owned GOOGL row after the C: block from
+    # comment prose that copies a row (PR #17 third review), so it is skipped;
+    # with word positions it parses (test_real_self_row_directly_after_a_d_block...).
+    assert [r["ticker"] for r in parsed] == ["MSFT"]
     assert parsed[0]["owner"] == "Spouse"
 
 
 def test_sample_text_rows_survive_the_description_state_rule():
-    # Every real row in the sample follows a field block; all six still parse.
-    assert sorted(r["ticker"] for r in h.parse_ptr_text(SAMPLE_TEXT)) == ["AAPL", "AMZN", "BRK.B", "DIA", "MSFT", "T"]
+    # Every real row in the sample follows a field block; with word positions
+    # (the live path) all six parse. In plain text the Self-owned AAPL row
+    # directly after a D: block is indistinguishable from description prose,
+    # so it is skipped (under-count, never a fabricated trade).
+    assert sorted(r["ticker"] for r in parse_layout(SAMPLE_LAYOUT)) == ["AAPL", "AMZN", "BRK.B", "DIA", "MSFT", "T"]
+    assert sorted(r["ticker"] for r in h.parse_ptr_text(SAMPLE_TEXT)) == ["AMZN", "BRK.B", "DIA", "MSFT", "T"]
 
 
 def test_partial_pdf_failures_are_surfaced_on_a_live_result(adapter, monkeypatch):
@@ -483,13 +494,15 @@ def test_partial_pdf_failures_are_surfaced_on_a_live_result(adapter, monkeypatch
 
     def extract(content):
         if content.endswith(b"/2.pdf"):
-            return ""  # scanned: no text layer
+            return []  # scanned: no text layer
         if content.endswith(b"/3.pdf"):
             raise ValueError("pdfminer choked on https://x/3.pdf")
-        return "Apple Inc. (AAPL) [ST] P 09/15/2026 09/16/2026 $1,001 - $15,000\nF S: New\n"
+        return h.lines_from_pages(to_pages(HEADER + [
+            row_at("Apple Inc. (AAPL) [ST]", "P", "09/15/2026", "09/16/2026", "$1,001 - $15,000"),
+            text_at(104, "F S: New")]))
 
     monkeypatch.setattr(h.httpx, "Client", Client)
-    monkeypatch.setattr(h, "_extract_pdf_text", extract)
+    monkeypatch.setattr(h, "_extract_pdf_lines", extract)
     result = adapter.fetch_result("AAPL", fallback=False)
     assert result.status == "live" and len(result.items) == 1
     assert result.error is not None
@@ -542,3 +555,179 @@ def test_invalid_trade_date_contract_divergence_relies_on(adapter, monkeypatch):
     assert ev.observed_at is None and ev.details["date_issue"] == "future"
     assert ev.details["transaction_date_reported"] == _d(-5)
     assert ev.published_at is not None and ev.data_mode == "live"
+
+
+# --- PR #17 third review (hbot on 1877783) ------------------------------------
+# Real e-filed PTR geometry (pdfplumber extract_words on two public 2026 PTRs):
+# header words "Transaction" x0=262, "Date" 326, "Notification" 382, "Amount"
+# 446; row tokens type 260-261, trade date 324-326, notification 381, amount
+# 445-446; owner code x0=65; asset text and every field block (F S:, S O:,
+# D:) and its wrapped continuation start at the asset column, x0=104-105. So
+# indentation cannot tell a description continuation from a Self-owned asset
+# row; column alignment of the type/date/date/amount run can: free text puts
+# those tokens wherever the sentence flows, a real row puts them under the
+# header columns.
+
+HEADER_WORDS = [(25, "ID"), (65, "Owner"), (104, "Asset"), (262, "Transaction"), (326, "Date"),
+                (382, "Notification"), (446, "Amount"), (525, "Cap.")]
+
+
+def text_at(x, text):
+    """Free text starting at x0, flowing like a sentence."""
+    return [(x, text)]
+
+
+def row_at(asset, kind, tx, notified, amount, owner=None, trailing=None):
+    """A real form row: tokens under the header columns."""
+    segs = [(65, owner)] if owner else []
+    segs += [(104, asset), (261, kind), (326, tx), (381, notified), (446, amount)]
+    if trailing:
+        segs.append((525, trailing))
+    return segs
+
+
+def to_pages(*pages):
+    out = []
+    for lines in pages:
+        words = []
+        for i, segs in enumerate(lines):
+            for x, text in segs:
+                for word in text.split():
+                    words.append({"x0": float(x), "top": 100.0 + 12 * i, "text": word})
+                    x += 5 * len(word) + 3
+        out.append(words)
+    return out
+
+
+def parse_layout(*pages):
+    return h.parse_ptr_lines(h.lines_from_pages(to_pages(*pages)))
+
+
+HEADER = [HEADER_WORDS]
+
+# SAMPLE_TEXT laid out as the PDF actually positions it (see geometry above).
+SAMPLE_LAYOUT = HEADER + [
+    row_at("Amazon.com, Inc. - Common", "S (partial)", "03/16/2026", "03/16/2026", "$1,001 - $15,000"),
+    text_at(104, "Stock (AMZN) [ST]"),
+    text_at(104, "F\x00\x00 S\x00\x00: New"),
+    text_at(104, "S\x00\x00 O\x00: Brokerage"),
+    text_at(104, "D\x00\x00: The full transaction included the following sales: AAPL - 20 shares"),
+    text_at(104, "sold @ $253.45/share"),
+    row_at("Apple Inc. - Common (AAPL)", "S (partial)", "03/16/2026", "03/16/2026", "$1,001 - $15,000"),
+    text_at(104, "[ST]"),
+    text_at(104, "F S: New"),
+    row_at("AT&T Inc. (T) [ST]", "P", "03/17/2026", "03/17/2026", "$15,001 - $50,000"),
+    text_at(104, "F S: New"),
+    row_at("Berkshire Hathaway Inc. New", "P", "03/18/2026", "03/18/2026", "$50,001 - $100,000", owner="SP"),
+    text_at(104, "York Class B (BRK/B) [ST]"),
+    text_at(104, "F S: New"),
+    row_at("DIA - State Street SPDR", "S", "03/19/2026", "03/19/2026", "$1,001 - $15,000"),
+    text_at(104, "DIA [OT]"),
+    text_at(104, "F S: New"),
+    row_at("Microsoft Corporation -", "E", "03/20/2026", "03/20/2026", "$15,001 -", owner="JT"),
+    text_at(104, "Common Stock (MSFT) [ST]") + [(446, "$50,000")],
+    text_at(104, "F S: New"),
+    row_at("U.S. Treasury Bill [GS]", "P", "03/21/2026", "03/21/2026", "$250,001 - $500,000"),
+    text_at(104, "F S: New"),
+]
+
+# The reviewer's shape: a D: block continuation that carries a full row,
+# including the "[ST]" asset-type code, on an unmarked line.
+REVIEWER_D_BLOCK = "D: proceeds of\nApple Inc. (AAPL) [ST] P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+
+
+def test_reviewer_shape_st_inside_a_d_block_is_not_a_purchase_plain_text():
+    text = "Amazon.com (AMZN) [ST] S 03/16/2026 03/16/2026 $1,001 - $15,000\nF S: New\n" + REVIEWER_D_BLOCK
+    assert [r["ticker"] for r in h.parse_ptr_text(text)] == ["AMZN"]
+
+
+def test_reviewer_shape_st_inside_a_d_block_is_not_a_purchase_layout():
+    rows_ = parse_layout(HEADER + [
+        row_at("Amazon.com (AMZN) [ST]", "S", "03/16/2026", "03/16/2026", "$1,001 - $15,000"),
+        text_at(104, "F S: New"),
+        text_at(104, "D: proceeds of"),
+        text_at(104, "Apple Inc. (AAPL) [ST] P 03/17/2026 03/17/2026 $1,001 - $15,000"),
+    ])
+    assert [r["ticker"] for r in rows_] == ["AMZN"]
+
+
+def test_wrapped_multi_line_description_is_never_a_row():
+    plain = (
+        "D: The full transaction included the following lots which were\n"
+        "reinvested the same day as follows\n"
+        "Apple Inc. - Common Stock (AAPL) P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+        "[ST] and the remainder was held in cash.\n"
+    )
+    assert h.parse_ptr_text(plain) == []
+    layout = parse_layout(HEADER + [
+        text_at(104, "D: The full transaction included the following lots which were"),
+        text_at(104, "reinvested the same day as follows"),
+        text_at(104, "Apple Inc. - Common Stock (AAPL) P 03/17/2026 03/17/2026 $1,001 - $15,000"),
+        text_at(104, "[ST] and the remainder was held in cash."),
+    ])
+    assert layout == []
+
+
+def test_real_self_row_directly_after_a_d_block_still_parses_with_layout():
+    rows_ = parse_layout(HEADER + [
+        row_at("Amazon.com (AMZN) [ST]", "S", "03/16/2026", "03/16/2026", "$1,001 - $15,000"),
+        text_at(104, "F S: New"),
+        text_at(104, "D: proceeds of the sale were"),
+        text_at(104, "reinvested."),
+        row_at("Apple Inc. (AAPL) [ST]", "P", "03/17/2026", "03/17/2026", "$1,001 - $15,000"),
+        text_at(104, "F S: New"),
+        text_at(104, "C: comment that wraps"),
+        row_at("Alphabet Inc. - Class A", "S", "03/20/2026", "03/20/2026", "$1,001 - $15,000"),
+        text_at(104, "Common Stock (GOOGL) [ST]"),
+        text_at(104, "F S: New"),
+    ])
+    assert [(r["ticker"], r["transaction_type"], r["owner"]) for r in rows_] == [
+        ("AMZN", "Sale (Full)", "Self"), ("AAPL", "Purchase", "Self"), ("GOOGL", "Sale (Full)", "Self")]
+
+
+def test_owner_prefixed_row_after_a_d_block_still_parses_in_plain_text():
+    text = REVIEWER_D_BLOCK + "SP Microsoft Corporation (MSFT) [ST] P 03/18/2026 03/18/2026 $15,001 - $50,000\nF S: New\n"
+    parsed = h.parse_ptr_text(text)
+    assert [(r["ticker"], r["owner"]) for r in parsed] == [("MSFT", "Spouse")]
+
+
+def test_layout_sample_parses_every_real_row():
+    by = {r["ticker"]: r for r in parse_layout(SAMPLE_LAYOUT)}
+    assert sorted(by) == ["AAPL", "AMZN", "BRK.B", "DIA", "MSFT", "T"]
+    assert by["AAPL"]["transaction_type"] == "Sale (Partial)"  # the row right after a D: block
+    assert by["MSFT"]["amount_range"] == "$15,001 - $50,000" and by["MSFT"]["owner"] == "Joint"
+
+
+def test_header_found_on_page_one_applies_to_later_pages():
+    rows_ = parse_layout(
+        HEADER + [row_at("Apple Inc. (AAPL) [ST]", "P", "03/17/2026", "03/17/2026", "$1,001 - $15,000")],
+        [text_at(104, "D: wraps onto page two"),
+         text_at(104, "Tesla (TSLA) [ST] P 03/17/2026 03/17/2026 $1,001 - $15,000"),
+         row_at("Microsoft (MSFT) [ST]", "S", "03/18/2026", "03/18/2026", "$1,001 - $15,000", owner="SP")],
+    )
+    assert [r["ticker"] for r in rows_] == ["AAPL", "MSFT"]
+
+
+def test_ticker_and_asset_type_after_the_amount_on_the_same_line():
+    plain = "Apple Inc. P 03/17/2026 03/18/2026 $1,001 - $15,000 (AAPL) [ST]\nF S: New\n"
+    (r,) = h.parse_ptr_text(plain)
+    assert (r["ticker"], r["asset_type_code"], r["asset_name"]) == ("AAPL", "ST", "Apple Inc.")
+    assert (r["transaction_type"], r["amount_range"]) == ("Purchase", "$1,001 - $15,000")
+    (r2,) = parse_layout(HEADER + [row_at("Apple Inc.", "P", "03/17/2026", "03/18/2026", "$1,001 - $15,000",
+                                          trailing="(AAPL) [ST]")])
+    assert (r2["ticker"], r2["asset_type_code"]) == ("AAPL", "ST")
+
+
+def test_trailing_text_without_a_ticker_is_still_skipped_not_guessed():
+    assert h.parse_ptr_text("Apple Inc. P 03/17/2026 03/18/2026 $1,001 - $15,000 [ST]\n") == []
+
+
+def test_type_letter_glued_to_a_word_is_not_an_anchor():
+    # "...ETFS 03/17/2026 ..." must not read the trailing S as a sale.
+    assert h.parse_ptr_text("Vanguard ETFS 03/17/2026 03/17/2026 $1,001 - $15,000 (VTI) [ST]\n") == []
+
+
+def test_pdf_words_are_grouped_into_lines_in_reading_order():
+    pages = [[{"x0": 300.0, "top": 50.4, "text": "b"}, {"x0": 100.0, "top": 50.0, "text": "a"},
+              {"x0": 100.0, "top": 70.0, "text": "c"}]]
+    assert [ln.text for ln in h.lines_from_pages(pages)] == ["a b", "c"]

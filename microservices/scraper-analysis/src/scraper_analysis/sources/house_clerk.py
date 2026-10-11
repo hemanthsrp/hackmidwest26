@@ -56,17 +56,95 @@ PDF_CACHE_SIZE = 256
 TYPE_LABELS = {"P": "Purchase", "S": "Sale (Full)", "S (partial)": "Sale (Partial)", "E": "Exchange"}
 OWNER_LABELS = {"SP": "Spouse", "DC": "Dependent Child", "JT": "Joint"}
 
+# (?<!\S): the type code is its own word, so "...ETFS 03/17/2026" is not a sale.
 _ANCHOR_RE = re.compile(
-    r"(?P<type>S \(partial\)|S|P|E)\s+(?P<tx>\d{2}/\d{2}/\d{4})\s+(?P<notified>\d{2}/\d{2}/\d{4})\s+"
+    r"(?<!\S)(?P<type>S \(partial\)|S|P|E)\s+(?P<tx>\d{2}/\d{2}/\d{4})\s+(?P<notified>\d{2}/\d{2}/\d{4})\s+"
     r"(?P<amount>\$[\d,]+\s*-\s*\$[\d,]+|\$[\d,]+\s*-|Over\s+\$[\d,]+)"
 )
 _MONEY_RE = re.compile(r"\$[\d,]+")
 _MARKER_RE = re.compile(r"^(F\s*S|S\s*O|D|C|L)\s*:")  # filing-status / sub-owner / description / comment / location blocks
+_FREE_TEXT_MARKER_RE = re.compile(r"^(D|C)\s*:")  # description / comment: filer prose, can wrap many lines
 _TICKER_PAREN_RE = re.compile(r"\(([A-Z]{1,5}(?:[./-][A-Z])?)\)")
 _TICKER_BARE_RE = re.compile(r"^([A-Z]{1,5}(?:[./-][A-Z])?)\s*\[")
 _ASSET_TYPE_RE = re.compile(r"\[([A-Z]{2})\]")
 _OWNER_RE = re.compile(r"^(SP|DC|JT)\s+")
 MAX_CONTINUATION_LINES = 3
+# Column geometry of the e-filed PTR form (pdfplumber word x0, points). Live
+# PTRs put the header words "Transaction" (type), "Date", "Notification" and
+# "Amount" at x0 262/326/382/446, and each row's type/date/date/amount tokens
+# within ~2pt of those. Description text wraps at the asset column and flows
+# like a sentence, so its tokens land wherever the prose puts them.
+COLUMN_TOLERANCE_PT = 8.0
+LINE_TOLERANCE_PT = 3.0
+
+
+@dataclass(frozen=True)
+class PtrLine:
+    """One text line of a PTR. anchor_aligned says whether the line's
+    "type date date amount" run sits under the form's column headers: True /
+    False when word positions are known, None for plain text (or when no
+    header row was found), in which case the stricter text-only rules apply."""
+
+    text: str
+    anchor_aligned: bool | None = None
+
+
+def _header_columns(words: list[dict]) -> dict[str, float] | None:
+    texts = [w["text"] for w in words]
+    if not all(t in texts for t in ("Transaction", "Notification", "Amount")):
+        return None
+    i = texts.index("Transaction")
+    date_i = next((j for j in range(i + 1, len(texts)) if texts[j] == "Date"), None)
+    if date_i is None:
+        return None
+    return {"type": words[i]["x0"], "tx": words[date_i]["x0"],
+            "notified": words[texts.index("Notification")]["x0"], "amount": words[texts.index("Amount")]["x0"]}
+
+
+def _anchor_alignment(words: list[dict], columns: dict[str, float] | None) -> tuple[str, bool | None]:
+    """(line text, alignment) for one line of positioned words."""
+    starts, pos = [], 0
+    for w in words:
+        starts.append(pos)
+        pos += len(w["text"]) + 1
+    text = " ".join(w["text"] for w in words)
+    if columns is None:
+        return text, None
+    m = _ANCHOR_RE.search(text)
+    if m is None:
+        return text, None
+    for group in ("type", "tx", "notified", "amount"):
+        if m.start(group) not in starts:
+            return text, False  # token glued inside a word: not a form column
+        x0 = words[starts.index(m.start(group))]["x0"]
+        if abs(x0 - columns[group]) > COLUMN_TOLERANCE_PT:
+            return text, False
+    return text, True
+
+
+def lines_from_pages(pages: list[list[dict]]) -> list[PtrLine]:
+    """Group pdfplumber words ({"x0", "top", "text"}) into reading-order
+    lines, tagging each anchor run with whether it is column-aligned. The
+    header row's column positions carry over to later pages (the form
+    template is the same on every page; a repeated header refreshes them)."""
+    out: list[PtrLine] = []
+    columns: dict[str, float] | None = None
+    for words in pages:
+        # NULs are glyph padding in the form's field labels ("F\x00\x00 S\x00:").
+        words = [{**w, "text": w["text"].replace("\x00", "")} for w in words]
+        words = [w for w in words if w["text"]]
+        groups: list[list[dict]] = []
+        for w in sorted(words, key=lambda w: (w["top"], w["x0"])):
+            if groups and abs(w["top"] - groups[-1][0]["top"]) <= LINE_TOLERANCE_PT:
+                groups[-1].append(w)
+            else:
+                groups.append([w])
+        for g in groups:
+            g.sort(key=lambda w: w["x0"])
+            columns = _header_columns(g) or columns
+            text, aligned = _anchor_alignment(g, columns)
+            out.append(PtrLine(text, aligned))
+    return out
 
 
 @dataclass(frozen=True)
@@ -105,41 +183,57 @@ def _normalize_ticker(raw: str) -> str:
 
 
 def parse_ptr_text(text: str) -> list[dict]:
-    """Extract transaction rows from a PTR's text. A row is anchored by its
-    'type, transaction date, notification date, amount' run; the asset name
-    and ticker sit on the same line and up to a few continuation lines, and
-    description blocks (F S:, S O:, D:, C:, L:) end the row and are never
-    rows themselves.
+    """Plain-text entry point (no word positions): see parse_ptr_lines."""
+    return parse_ptr_lines([PtrLine(ln) for ln in text.replace("\x00", "").split("\n")])
 
-    Field blocks can wrap onto later lines that carry no marker, so after a
-    marker line every following line belongs to that block until one is
-    unambiguously a new asset row: an anchor run *plus* the asset-type code
-    the Clerk's form prints for every asset ("[ST]", "[OP]", "[GS]", ...), on
-    the anchor line or its continuation lines. A trade-shaped line inside a
-    block without that code is skipped, never turned into a trade."""
-    lines = [ln.strip() for ln in text.replace("\x00", "").split("\n")]
+
+def parse_ptr_lines(ptr_lines: list[PtrLine]) -> list[dict]:
+    """Extract transaction rows from a PTR. A row is anchored by its 'type,
+    transaction date, notification date, amount' run; the asset name, owner
+    and ticker sit on the same line (before the run, or after it) and up to
+    a few continuation lines. Field blocks (F S:, S O:, D:, C:, L:) end the
+    row and are never rows themselves, and they can wrap onto later lines
+    that carry no marker.
+
+    Deciding where a block ends, strongest signal first:
+    - word positions (live PDFs): a trade-shaped line is a row only if its
+      type/date/date/amount tokens sit under the form's column headers
+      (PtrLine.anchor_aligned True). Wrapped description prose that happens
+      to contain such a run -- even with "(AAPL) [ST]" -- is not aligned and
+      is skipped;
+    - plain text (no positions): after any marker, a new row also needs the
+      asset-type code the form prints for every asset ("[ST]", "[OP]", ...);
+      after a free-text block (D:, C:) it additionally needs an owner code
+      (SP/DC/JT) at the line start, because plain text cannot tell a
+      Self-owned row from a description line that copies one. Such rows are
+      skipped (under-count) rather than risk a fabricated trade.
+    """
+    lines = [PtrLine(ln.text.replace("\x00", "").strip(), ln.anchor_aligned) for ln in ptr_lines]
     rows = []
-    in_field = False
-    for i, line in enumerate(lines):
+    block = None  # None outside a field block, else "free" (D:/C:) or "field"
+    for i, pl in enumerate(lines):
+        line = pl.text
         if _MARKER_RE.match(line):
-            # Field blocks (F S:, S O:, D:, C:, L:) are free text written by the
-            # filer; one that happens to contain a "type date date amount" run
-            # is still a description, never a transaction.
-            in_field = True
+            block = "free" if _FREE_TEXT_MARKER_RE.match(line) else "field"
             continue
         m = _ANCHOR_RE.search(line)
         if not m:
             continue
+        if pl.anchor_aligned is False:
+            continue  # trade-shaped prose (not under the form columns): never a row
         left = line[: m.start()].strip()
-        asset_lines = [left]
+        trailing = line[m.end():].strip()  # e.g. "... $15,000 (AAPL) [ST]"
+        asset_lines = [left] + ([trailing] if trailing else [])
         for nxt in lines[i + 1 : i + 1 + MAX_CONTINUATION_LINES]:
-            if not nxt or _MARKER_RE.match(nxt) or _ANCHOR_RE.search(nxt):
+            if not nxt.text or _MARKER_RE.match(nxt.text) or _ANCHOR_RE.search(nxt.text):
                 break
-            asset_lines.append(nxt)
-        if in_field:
+            asset_lines.append(nxt.text)
+        if block is not None and pl.anchor_aligned is None:
             if not any(_ASSET_TYPE_RE.search(part) for part in asset_lines):
                 continue  # trade-shaped text inside a field block: ambiguous, skip
-            in_field = False  # a real asset row starts here, even if it is skipped below
+            if block == "free" and not _OWNER_RE.match(left):
+                continue  # could be description prose copying a row: skip, never guess
+        block = None  # a real asset row starts here, even if it is skipped below
         amount = re.sub(r"\s+", " ", m.group("amount"))
         if amount.endswith("-"):
             # The range wrapped ("$15,001 -" then "$50,000" on a later line):
@@ -169,7 +263,7 @@ def parse_ptr_text(text: str) -> list[dict]:
         rows.append(
             {
                 "ticker": _normalize_ticker(raw_ticker),
-                "asset_name": _TICKER_PAREN_RE.sub("", _ASSET_TYPE_RE.sub("", asset_text)).strip(" -"),
+                "asset_name": " ".join(_TICKER_PAREN_RE.sub("", _ASSET_TYPE_RE.sub("", asset_text)).split()).strip(" -"),
                 "asset_type_code": ac.group(1) if ac else None,
                 "transaction_type": TYPE_LABELS[m.group("type")],
                 "transaction_date": m.group("tx"),
@@ -190,11 +284,11 @@ ISSUE_DOWNLOAD = "download failed"
 _index_cache: dict[int, tuple[float, list[HouseFiling]]] = {}
 
 
-def _extract_pdf_text(content: bytes) -> str:
+def _extract_pdf_lines(content: bytes) -> list[PtrLine]:
     import pdfplumber  # imported lazily: heavy, and only needed for live House scans
 
     with pdfplumber.open(io.BytesIO(content)) as pdf:
-        return "\n".join((page.extract_text() or "") for page in pdf.pages)
+        return lines_from_pages([page.extract_words() for page in pdf.pages])
 
 
 def _load_index(client: httpx.Client, year: int) -> list[HouseFiling]:
@@ -230,16 +324,16 @@ def _load_transactions(client: httpx.Client, filing: HouseFiling) -> list[dict] 
     try:
         resp = client.get(PDF_URL.format(year=filing.year, doc_id=filing.doc_id))
         resp.raise_for_status()
-        text = _extract_pdf_text(resp.content)
+        lines = _extract_pdf_lines(resp.content)
     except httpx.HTTPError:
         return None
     except Exception:  # pdfminer raises assorted errors on malformed PDFs
         logger.info("House PTR %s unreadable; skipping", filing.doc_id, exc_info=True)
-        text, issue = "", ISSUE_UNREADABLE
-    if issue is None and not text.strip():
+        lines, issue = [], ISSUE_UNREADABLE
+    if issue is None and not any(ln.text.strip() for ln in lines):
         logger.info("House PTR %s has no text layer (scanned?); skipping", filing.doc_id)
         issue = ISSUE_NO_TEXT
-    rows = parse_ptr_text(text)
+    rows = parse_ptr_lines(lines)
     _pdf_cache[key] = (rows, issue)
     while len(_pdf_cache) > PDF_CACHE_SIZE:
         _pdf_cache.popitem(last=False)
