@@ -92,6 +92,10 @@
 - Add minimal deployment configuration, health/logging, safe example environment names and a repeatable smoke test. Deploy only with approval; verify actual frontend/backend and Akamai use before claiming them. Local fallback remains runnable.
 - **Done when:** local smoke actually runs, and remote URL/health/log evidence is provided if deployed; failures and remaining manual steps are explicit.
 
+**D4 — Agentic-search retrieval boundary** (claimed 2026-10-10: Allen/D; review-fix branch `allen/d4-review-fixes`; integration owner: Jet)
+- Define and implement a project-owned, fixture-first Exa Search API boundary with bounded symbol/date/domain/result filters, explicit live/provider failure behavior, and a documented storage seam. Scope is limited to a new isolated adapter package, safe configuration templates, and retrieval/storage documentation; it does not modify Cai's scraper API, Jet's API routes, or the database schema without their accepted contract.
+- **Done when:** deterministic adapter tests and one local HTTP-contract smoke pass; the documented storage contract keeps evidence metadata in PostgreSQL and reserves pgvector(1024) for optional semantic ranking after metadata/time filters. Live calls require a team-provided server-only `EXA_API_KEY` and remain unavailable otherwise.
+
 ## Integration lead checklist
 
 - [ ] Confirm MVP and selected demo symbol(s) with teammates.
