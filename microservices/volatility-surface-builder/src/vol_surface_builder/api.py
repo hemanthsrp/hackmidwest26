@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .pipeline import UnsupportedSampleSymbol, build_snapshot
+from .pipeline import NoUsableOptionData, UnsupportedSampleSymbol, build_snapshot
 
 app = FastAPI(title="Volatility Surface Builder", version="0.3.0")
 SYMBOL_RE = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
@@ -18,7 +18,7 @@ class SurfaceRequest(BaseModel):
 
     symbol: str
     mode: Literal["sample", "live"] = "sample"
-    spot: float = Field(default=602.0, gt=0, allow_inf_nan=False)
+    spot: float = Field(default=602.0, ge=25.0, le=10_000.0, allow_inf_nan=False)
 
 
 def _error(status: int, code: str, message: str, retryable: bool = False) -> JSONResponse:
@@ -40,6 +40,8 @@ def create_surface(request: SurfaceRequest):
         return _error(400, "invalid_symbol", "symbol must be a ticker containing 1 to 5 letters")
     try:
         return build_snapshot(symbol=symbol, mode=request.mode, spot=request.spot)
+    except NoUsableOptionData as exc:
+        return _error(422, "no_usable_option_data", str(exc))
     except UnsupportedSampleSymbol as exc:
         return _error(400, "unsupported_sample_symbol", str(exc))
     except (ImportError, RuntimeError, ValueError):
