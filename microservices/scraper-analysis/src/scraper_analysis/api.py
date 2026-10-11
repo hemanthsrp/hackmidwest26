@@ -121,6 +121,13 @@ def ingest_run(
             + f" ({s['error']})"
             for s in sources
             if s["status"] in ("fallback", "unavailable")
+        ]
+        + [
+            # Live but incomplete (e.g. some House PTR PDFs unreadable): the
+            # data is real, but coverage is partial and must not look complete.
+            f"{s['name']}: live source returned partial coverage ({s['error']})"
+            for s in sources
+            if s["status"] == "live" and s["error"]
         ],
     }
 

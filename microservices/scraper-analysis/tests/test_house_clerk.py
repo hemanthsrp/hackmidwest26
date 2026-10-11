@@ -415,3 +415,130 @@ def test_house_trades_feed_the_divergence_congress_leg_with_neutral_labels():
     assert leg.direction == "selling"
     assert "Senate" not in (leg.summary or "")
     assert "House" in _congress_leg([]).summary  # empty-leg text names both chambers
+
+
+# --- PR #17 second review (hbot on eec8096) -----------------------------------
+
+
+def test_unmarked_description_continuation_shaped_like_a_trade_is_not_a_row():
+    # hbot: a D: description that wraps onto unmarked lines, one of which looks
+    # exactly like a trade row, must not become a (fabricated) purchase.
+    text = (
+        "Amazon.com, Inc. - Common Stock (AMZN) [ST] S 03/16/2026 03/16/2026 $1,001 - $15,000\n"
+        "F S: New\n"
+        "D: The full transaction included the following, reinvested into\n"
+        "Apple (AAPL) P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+        "per the advisor's instructions.\n"
+    )
+    assert [r["ticker"] for r in h.parse_ptr_text(text)] == ["AMZN"]
+
+
+def test_description_continuation_followed_by_a_real_row_keeps_the_real_row():
+    text = (
+        "D: proceeds went to\n"
+        "Apple (AAPL) P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+        "SP Microsoft Corporation (MSFT) [ST] P 03/18/2026 03/18/2026 $15,001 - $50,000\n"
+        "F S: New\n"
+        "C: comment that wraps\n"
+        "Tesla (TSLA) S 03/19/2026 03/19/2026 $1,001 - $15,000\n"
+        "Alphabet Inc. - Class A Common S 03/20/2026 03/20/2026 $1,001 - $15,000\n"
+        "Stock (GOOGL) [ST]\n"
+        "F S: New\n"
+    )
+    parsed = h.parse_ptr_text(text)
+    assert [r["ticker"] for r in parsed] == ["MSFT", "GOOGL"]
+    assert parsed[0]["owner"] == "Spouse"
+
+
+def test_sample_text_rows_survive_the_description_state_rule():
+    # Every real row in the sample follows a field block; all six still parse.
+    assert sorted(r["ticker"] for r in h.parse_ptr_text(SAMPLE_TEXT)) == ["AAPL", "AMZN", "BRK.B", "DIA", "MSFT", "T"]
+
+
+def test_partial_pdf_failures_are_surfaced_on_a_live_result(adapter, monkeypatch):
+    filings = [filing("1", 3), filing("2", 4), filing("3", 5), filing("4", 6)]
+    monkeypatch.setattr(h, "_load_index", lambda client, year: filings)
+
+    class Resp:
+        def __init__(self, url):
+            self.url = url
+            self.content = url.encode()
+
+        def raise_for_status(self):
+            if self.url.endswith("/1.pdf"):
+                raise httpx.HTTPStatusError("503 for url 'https://x/1.pdf?token=SECRET'", request=None, response=None)
+
+    class Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url):
+            return Resp(url)
+
+    def extract(content):
+        if content.endswith(b"/2.pdf"):
+            return ""  # scanned: no text layer
+        if content.endswith(b"/3.pdf"):
+            raise ValueError("pdfminer choked on https://x/3.pdf")
+        return "Apple Inc. (AAPL) [ST] P 09/15/2026 09/16/2026 $1,001 - $15,000\nF S: New\n"
+
+    monkeypatch.setattr(h.httpx, "Client", Client)
+    monkeypatch.setattr(h, "_extract_pdf_text", extract)
+    result = adapter.fetch_result("AAPL", fallback=False)
+    assert result.status == "live" and len(result.items) == 1
+    assert result.error is not None
+    assert "3 of 4" in result.error
+    assert "no text layer" in result.error and "unreadable" in result.error and "download" in result.error
+    assert "http" not in result.error and "SECRET" not in result.error
+
+    # Cached failures stay visible on the next run (no re-download needed).
+    again = adapter.fetch_result("AAPL", fallback=False)
+    assert again.error is not None and "no text layer" in again.error and "unreadable" in again.error
+
+
+def test_full_coverage_live_result_has_no_partial_note(adapter, monkeypatch):
+    monkeypatch.setattr(h, "_load_index", lambda client, year: [filing("1", 3)])
+    monkeypatch.setattr(h, "_load_transactions", lambda client, f: [row("AAPL")])
+    result = adapter.fetch_result("AAPL", fallback=False)
+    assert (result.status, result.error, len(result.items)) == ("live", None, 1)
+
+
+def test_partial_coverage_reaches_ingest_run_sources_and_warnings(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from scraper_analysis.api import app
+    from scraper_analysis.pipeline import ingest
+    from scraper_analysis.sources import market_signals
+    from scraper_analysis.storage import store as store_module
+
+    monkeypatch.setattr(store_module, "_store", store_module.InMemoryEvidenceStore())
+    monkeypatch.setattr(market_signals, "fetch_live",
+                        lambda sym: (_ for _ in ()).throw(SourceUnavailableError("yf down")))
+    h._pdf_cache.clear()
+    monkeypatch.setattr(h, "_load_index", lambda client, year: [filing("1", 3), filing("2", 4)])
+    monkeypatch.setattr(h, "_load_transactions", lambda client, f: None if f.doc_id == "1" else [row("AAPL")])
+    monkeypatch.setattr(ingest, "build_adapters", lambda: [h.HouseClerkAdapter()])
+    try:
+        resp = TestClient(app).post("/ingest/run?symbol=AAPL&fallback=false&tag=false")
+    finally:
+        monkeypatch.setattr(store_module, "_store", None)
+    assert resp.status_code == 200
+    body = resp.json()
+    (src,) = [s for s in body["sources"] if s["name"] == "house_clerk"]
+    assert src["status"] == "live" and src["count"] == 1 and "1 of 2" in src["error"]
+    assert any(w.startswith("house_clerk:") and "partial" in w for w in body["warnings"])
+
+
+def test_invalid_trade_date_contract_divergence_relies_on(adapter, monkeypatch):
+    # The divergence fix keys off this: rejected House dates mean
+    # observed_at is None and details.date_issue says why.
+    (ev,) = _ev(adapter, monkeypatch, [dated_row(_d(-5), _d(-5))])
+    assert ev.observed_at is None and ev.details["date_issue"] == "future"
+    assert ev.details["transaction_date_reported"] == _d(-5)
+    assert ev.published_at is not None and ev.data_mode == "live"

@@ -85,7 +85,7 @@ Realized, historical measures only, never forecasts.
 
 | status | meaning |
 |---|---|
-| `live` | the real source answered |
+| `live` | the real source answered. If `error` is also set, the answer was partial (e.g. `house_clerk`: `partial: 3 of 30 House PTR filings skipped (2 no text layer, 1 download failed)`); the records are real but coverage is incomplete, and the source is also listed in `warnings`. It still counts as live for strict mode |
 | `sample` | fixtures, because you passed `live=false` |
 | `fallback` | the live source failed and its fixture was substituted (records are `data_mode: "sample"`); also listed in `warnings` |
 | `unavailable` | the live source failed and you passed `fallback=false`; nothing was substituted |
@@ -123,7 +123,7 @@ This is deliberately **not** the README's social-volume z-score "squeeze engine"
 
 - Credibility scores, tone, divergence flags, or the briefing as validated or predictive.
 - Coverage of Bloomberg/WSJ/Reuters (excluded: no sanctioned access).
-- Complete House coverage: scanned/paper PTRs have no text layer and are skipped (no OCR), assets without a ticker (bonds, funds, LLCs) are ignored, and only the newest 30 filings in a 45-day window are read. Treat House trades as a best-effort sample, not a full ledger. Lines starting with a PTR field marker (`F S:`, `S O:`, `D:`, `C:`, `L:`) are never parsed as trades, but a multi-line description whose later line looks exactly like a trade row cannot be told apart from one.
+- Complete House coverage: scanned/paper PTRs have no text layer and are skipped (no OCR), assets without a ticker (bonds, funds, LLCs) are ignored, and only the newest 30 filings in a 45-day window are read. Treat House trades as a best-effort sample, not a full ledger. Lines starting with a PTR field marker (`F S:`, `S O:`, `D:`, `C:`, `L:`) are never parsed as trades, and neither are the unmarked lines a field block wraps onto: after a marker, a trade-shaped line only starts a new row if it also carries the asset-type code the form prints for every asset (`[ST]`, `[OP]`, `[GS]`, ...); otherwise it is skipped. Residual risk: free text that reproduces a full row *including* a bracketed asset-type code on an unmarked continuation line still cannot be told apart from a real row. Filings skipped for no text layer, an unreadable PDF or a failed download are counted in that run's `sources[].error` note (see `live` above).
 - Reddit data: the adapter exists but Reddit blocks it (403); it is off by default.
 - Commodity fundamentals (WASDE/stocks-to-use, crop yield, soil moisture): not collected.
 

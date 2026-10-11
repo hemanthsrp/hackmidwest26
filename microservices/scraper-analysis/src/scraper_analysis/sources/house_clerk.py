@@ -9,7 +9,10 @@ have a real text layer, so no OCR is involved -- the README's "vision LLM"
 fallback is not needed for these.
 
 Limits, stated rather than hidden:
-- Scanned/paper filings have no text layer and are skipped (logged), not OCR'd.
+- Scanned/paper filings have no text layer and are skipped, not OCR'd. Those,
+  unreadable PDFs and failed downloads are counted and reported on the live
+  result (FetchResult.error, e.g. "partial: 3 of 30 House PTR filings
+  skipped (...)"), so partial coverage is never presented as complete.
 - Rows are matched by ticker. Assets with no ticker (bonds, funds named only
   in words) are ignored, so this under-counts rather than guesses.
 - Only the newest MAX_FILINGS_TO_SCAN filings in the lookback are read, the
@@ -37,7 +40,7 @@ from xml.etree import ElementTree
 import httpx
 
 from ..config import get_settings
-from .base import RawRecord, SourceAdapter, SourceUnavailableError
+from .base import LiveRecords, RawRecord, SourceAdapter, SourceUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -106,14 +109,23 @@ def parse_ptr_text(text: str) -> list[dict]:
     'type, transaction date, notification date, amount' run; the asset name
     and ticker sit on the same line and up to a few continuation lines, and
     description blocks (F S:, S O:, D:, C:, L:) end the row and are never
-    rows themselves."""
+    rows themselves.
+
+    Field blocks can wrap onto later lines that carry no marker, so after a
+    marker line every following line belongs to that block until one is
+    unambiguously a new asset row: an anchor run *plus* the asset-type code
+    the Clerk's form prints for every asset ("[ST]", "[OP]", "[GS]", ...), on
+    the anchor line or its continuation lines. A trade-shaped line inside a
+    block without that code is skipped, never turned into a trade."""
     lines = [ln.strip() for ln in text.replace("\x00", "").split("\n")]
     rows = []
+    in_field = False
     for i, line in enumerate(lines):
         if _MARKER_RE.match(line):
             # Field blocks (F S:, S O:, D:, C:, L:) are free text written by the
             # filer; one that happens to contain a "type date date amount" run
             # is still a description, never a transaction.
+            in_field = True
             continue
         m = _ANCHOR_RE.search(line)
         if not m:
@@ -124,6 +136,10 @@ def parse_ptr_text(text: str) -> list[dict]:
             if not nxt or _MARKER_RE.match(nxt) or _ANCHOR_RE.search(nxt):
                 break
             asset_lines.append(nxt)
+        if in_field:
+            if not any(_ASSET_TYPE_RE.search(part) for part in asset_lines):
+                continue  # trade-shaped text inside a field block: ambiguous, skip
+            in_field = False  # a real asset row starts here, even if it is skipped below
         amount = re.sub(r"\s+", " ", m.group("amount"))
         if amount.endswith("-"):
             # The range wrapped ("$15,001 -" then "$50,000" on a later line):
@@ -165,7 +181,12 @@ def parse_ptr_text(text: str) -> list[dict]:
     return rows
 
 
-_pdf_cache: "OrderedDict[tuple[int, str], list[dict]]" = OrderedDict()
+# (rows, issue): issue is None, ISSUE_NO_TEXT or ISSUE_UNREADABLE. Failed
+# downloads are not cached, so they are retried next run.
+_pdf_cache: "OrderedDict[tuple[int, str], tuple[list[dict], str | None]]" = OrderedDict()
+ISSUE_NO_TEXT = "no text layer"
+ISSUE_UNREADABLE = "unreadable"
+ISSUE_DOWNLOAD = "download failed"
 _index_cache: dict[int, tuple[float, list[HouseFiling]]] = {}
 
 
@@ -199,11 +220,13 @@ def _load_index(client: httpx.Client, year: int) -> list[HouseFiling]:
 
 def _load_transactions(client: httpx.Client, filing: HouseFiling) -> list[dict] | None:
     """Parsed rows for one filing, cached. None = could not be read right now
-    (network); [] = read fine but nothing usable (e.g. no text layer)."""
+    (network); [] = read fine but nothing usable (e.g. no text layer -- see
+    _filing_issue for why)."""
     key = (filing.year, filing.doc_id)
     if key in _pdf_cache:
         _pdf_cache.move_to_end(key)
-        return _pdf_cache[key]
+        return _pdf_cache[key][0]
+    issue = None
     try:
         resp = client.get(PDF_URL.format(year=filing.year, doc_id=filing.doc_id))
         resp.raise_for_status()
@@ -212,14 +235,30 @@ def _load_transactions(client: httpx.Client, filing: HouseFiling) -> list[dict] 
         return None
     except Exception:  # pdfminer raises assorted errors on malformed PDFs
         logger.info("House PTR %s unreadable; skipping", filing.doc_id, exc_info=True)
-        text = ""
-    if not text.strip():
+        text, issue = "", ISSUE_UNREADABLE
+    if issue is None and not text.strip():
         logger.info("House PTR %s has no text layer (scanned?); skipping", filing.doc_id)
+        issue = ISSUE_NO_TEXT
     rows = parse_ptr_text(text)
-    _pdf_cache[key] = rows
+    _pdf_cache[key] = (rows, issue)
     while len(_pdf_cache) > PDF_CACHE_SIZE:
         _pdf_cache.popitem(last=False)
     return rows
+
+
+def _filing_issue(filing: HouseFiling) -> str | None:
+    """Why a filing that loaded yielded nothing usable (cached result only)."""
+    cached = _pdf_cache.get((filing.year, filing.doc_id))
+    return cached[1] if cached else None
+
+
+def _coverage_note(issues: list[str], scanned: int) -> str | None:
+    """Fixed-vocabulary summary of skipped filings; never upstream text or URLs."""
+    if not issues:
+        return None
+    counts = {k: issues.count(k) for k in (ISSUE_NO_TEXT, ISSUE_UNREADABLE, ISSUE_DOWNLOAD) if k in issues}
+    detail = ", ".join(f"{n} {k}" for k, n in counts.items())
+    return f"partial: {len(issues)} of {scanned} House PTR filings skipped ({detail})"
 
 
 def _parse_date(value: str | None) -> datetime | None:
@@ -263,7 +302,7 @@ class HouseClerkAdapter(SourceAdapter):
     source_type: ClassVar[str] = "congressional_disclosure"
     fixture_file: ClassVar[str] = "congressional_house_sample.json"
 
-    def fetch_live(self, symbol: str) -> list[RawRecord]:
+    def fetch_live(self, symbol: str) -> LiveRecords:
         headers = {"User-Agent": get_settings().sec_edgar_user_agent}
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(days=LOOKBACK_DAYS)
@@ -276,18 +315,21 @@ class HouseClerkAdapter(SourceAdapter):
                 recent = recent[:MAX_FILINGS_TO_SCAN]
 
                 records: list[RawRecord] = []
-                unreadable = 0
+                issues: list[str] = []
                 for filing in recent:
                     rows = _load_transactions(client, filing)
                     if rows is None:
-                        unreadable += 1
+                        issues.append(ISSUE_DOWNLOAD)
                         continue
+                    issue = _filing_issue(filing)
+                    if issue is not None:
+                        issues.append(issue)
                     records += [self._record(filing, row, occurrence, symbol, now)
                                 for row, occurrence in _with_occurrence(rows)
                                 if row["ticker"].upper() == symbol.upper()]
-                if recent and unreadable == len(recent):
+                if recent and issues.count(ISSUE_DOWNLOAD) == len(recent):
                     raise SourceUnavailableError("no House PTR PDF could be downloaded")
-                return records
+                return LiveRecords(records, note=_coverage_note(issues, len(recent)))
         except (httpx.HTTPError, zipfile.BadZipFile, ElementTree.ParseError, UnicodeDecodeError) as exc:
             raise SourceUnavailableError(f"House Clerk: {type(exc).__name__}") from exc
 
