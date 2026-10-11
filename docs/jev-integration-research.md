@@ -1,5 +1,7 @@
 # Jev integration research
 
+> Repository-status update (2026-10-10): the volatility-surface project is now implemented locally under [`microservices/volatility-surface-builder`](../microservices/volatility-surface-builder/README.md). The dated scaffold description in §2 is historical; the Jev usage guidance remains that numeric options calculations stay in code.
+
 > **Status:** Research reference, not a decision record and not an implementation. Nothing here has been called, installed or provisioned. Recommendations are proposals for the team; confirmed choices belong in [DECISIONS.md](DECISIONS.md).
 >
 > **Research date:** 2026-10-10 · **Versions observed:** model `jev-1.13.0` (aliases `jev-latest`, `jev-preview`), Python SDK `typesafe-sdk` 0.7.3 (released 2026-10-09), HTTP API `v1`.
