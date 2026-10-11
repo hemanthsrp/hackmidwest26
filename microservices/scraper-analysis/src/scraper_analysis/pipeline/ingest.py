@@ -4,6 +4,7 @@ congressional disclosures, and -- feature-flagged -- Reddit. Commodities
 the pipeline don't change."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..agents.tagging_agent import tag_evidence
@@ -45,6 +46,25 @@ class InvalidSymbolError(ValueError):
     pass
 
 
+class IngestCancelled(RuntimeError):
+    """Raised instead of persisting when the caller's should_stop() is true
+    (the background scheduler is shutting down). ``persisted`` counts what was
+    already saved before the check, so the caller can report it accurately."""
+
+    def __init__(self, message: str, evidence_saved: int = 0, signals_saved: int = 0) -> None:
+        super().__init__(message)
+        self.evidence_saved = evidence_saved
+        self.signals_saved = signals_saved
+
+
+StopCheck = Callable[[], bool] | None
+
+
+def _check_stop(should_stop: StopCheck, stage: str, evidence_saved: int = 0) -> None:
+    if should_stop is not None and should_stop():
+        raise IngestCancelled(f"cancelled by shutdown before {stage}", evidence_saved=evidence_saved)
+
+
 def validate_symbol(symbol: str) -> str:
     normalized = symbol.strip().upper()
     if not SYMBOL_RE.match(normalized):
@@ -74,7 +94,8 @@ class IngestResult:
 
 
 def ingest_evidence(
-    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True
+    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True,
+    should_stop: StopCheck = None,
 ) -> tuple[list[Evidence], list[SourceReport]]:
     symbol = validate_symbol(symbol)
     all_evidence: list[Evidence] = []
@@ -97,12 +118,15 @@ def ingest_evidence(
     new_items = store.filter_new_evidence(deduped)
     if tag:
         new_items = [tag_evidence(e) for e in new_items]
+    # Last check before the write: a shutting-down scheduler must not persist.
+    _check_stop(should_stop, "saving evidence")
     store.save_evidence(new_items)
     return new_items, reports
 
 
 def ingest_signals(
-    symbol: str, allow_live: bool = True, fallback: bool = True
+    symbol: str, allow_live: bool = True, fallback: bool = True,
+    should_stop: StopCheck = None, evidence_saved: int = 0,
 ) -> tuple[list[Signal], list[SourceReport]]:
     symbol = validate_symbol(symbol)
     fetchers = [("market_signals", market_signals.fetch_result)]
@@ -114,15 +138,19 @@ def ingest_signals(
         result = fetch_result(symbol, allow_live=allow_live, fallback=fallback)
         signals += result.items
         reports.append(SourceReport(name, result.status, len(result.items), result.error))
+    _check_stop(should_stop, "saving signals", evidence_saved)
     get_store().save_signals(signals)
     return signals, reports
 
 
 def ingest_symbol(
-    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True
+    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True,
+    should_stop: StopCheck = None,
 ) -> IngestResult:
-    evidence, ev_reports = ingest_evidence(symbol, allow_live, tag, fallback)
-    signals, sig_reports = ingest_signals(symbol, allow_live, fallback)
+    """``should_stop`` (optional) is checked immediately before each persist;
+    when it returns True, IngestCancelled is raised instead of writing."""
+    evidence, ev_reports = ingest_evidence(symbol, allow_live, tag, fallback, should_stop)
+    signals, sig_reports = ingest_signals(symbol, allow_live, fallback, should_stop, len(evidence))
     return IngestResult(evidence, signals, ev_reports + sig_reports)
 
 

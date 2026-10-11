@@ -17,11 +17,14 @@ async def lifespan(app: FastAPI):
     app.state.scheduler = None
     if settings.enable_scheduler:
         scheduler = Scheduler(
-            symbols=[s.strip() for s in settings.scheduler_symbols.split(",") if s.strip()],
+            # Scheduler normalizes, validates and de-duplicates these.
+            symbols=[s for s in settings.scheduler_symbols.split(",") if s.strip()],
             interval_minutes=settings.scheduler_interval_minutes,
             offhours_factor=settings.scheduler_offhours_factor,
             tag=settings.scheduler_tag,
         )
+        # start() refuses (start_error in /scheduler/status) if another
+        # scheduler already owns this process; it never runs two at once.
         scheduler.start()
         app.state.scheduler = scheduler
     try:

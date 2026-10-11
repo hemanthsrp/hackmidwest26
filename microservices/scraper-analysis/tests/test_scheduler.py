@@ -23,7 +23,7 @@ def result(live=True, ev=2, sig=1):
 def make(symbols=("AAPL",), ingest=None, now=MARKET_OPEN, **kw):
     calls, sleeps = [], []
 
-    def default_ingest(symbol, allow_live, tag, fallback):
+    def default_ingest(symbol, allow_live, tag, fallback, should_stop=None):
         calls.append((symbol, allow_live, tag, fallback))
         return result()
 
@@ -63,7 +63,7 @@ async def test_runs_are_always_strict_live_only():
 
 
 async def test_one_symbol_failing_does_not_stop_the_others():
-    def flaky(symbol, *a):
+    def flaky(symbol, *a, **kw):
         if symbol == "AAPL":
             raise RuntimeError("boom")
         return result()
@@ -76,7 +76,7 @@ async def test_one_symbol_failing_does_not_stop_the_others():
 
 
 async def test_errors_are_sanitized_before_being_stored():
-    def leaky(symbol, *a):
+    def leaky(symbol, *a, **kw):
         raise RuntimeError("401 for url 'https://api.marketaux.com/v1/news?api_token=SECRETVALUE123'")
 
     s, _, _ = make(ingest=leaky)
@@ -87,7 +87,7 @@ async def test_errors_are_sanitized_before_being_stored():
 
 async def test_no_live_source_counts_as_a_failure_and_recovers():
     outcomes = iter([result(live=False), result(live=False), result(live=True)])
-    s, _, _ = make(ingest=lambda *a: next(outcomes))
+    s, _, _ = make(ingest=lambda *a, **kw: next(outcomes))
     await s.run_once()
     await s.run_once()
     assert s.statuses["AAPL"].consecutive_failures == 2 and s.statuses["AAPL"].ok is False
@@ -100,7 +100,7 @@ async def test_runs_never_overlap():
     count = []
     s, _, _ = make()
 
-    def slow_ingest(*a):
+    def slow_ingest(*a, **kw):
         count.append(1)
         return result()
 

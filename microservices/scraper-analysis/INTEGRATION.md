@@ -93,7 +93,7 @@ Realized, historical measures only, never forecasts.
 
 Fixtures are persisted like any other record (labeled), so a store that has ever seen a fallback run can hold `sample` rows next to live ones: filter on `data_mode` when reading `/evidence`. `/briefing` decides once across evidence and signals together: if any live record of either kind exists, every fixture (evidence and signal) is excluded.
 
-Staleness is the caller's decision: compare `retrieved_at` / `published_at` to your freshness window. There is no scheduler yet, so data only refreshes when `/ingest/run` is called.
+Staleness is the caller's decision: compare `retrieved_at` / `published_at` to your freshness window. Data refreshes when `/ingest/run` is called or, if enabled, when the optional scheduler runs (see below).
 
 ## Briefing
 
@@ -101,7 +101,13 @@ Staleness is the caller's decision: compare `retrieved_at` / `published_at` to y
 
 ## Scheduler
 
-Optional background ingestion so data refreshes without calling `/ingest/run`. **Off by default**; enable with `ENABLE_SCHEDULER=true` plus `SCHEDULER_SYMBOLS` (comma-separated), `SCHEDULER_INTERVAL_MINUTES` (floor 5), `SCHEDULER_OFFHOURS_FACTOR` (interval multiplier on weekends and outside 08:00-18:00 New York) and `SCHEDULER_TAG`. It is **always strict**: live data only, fixtures are never substituted or persisted, and a failed source is omitted and reported in `/scheduler/status`. Runs never overlap, one symbol failing never stops the others, and errors are sanitized. It writes to whatever `DATABASE_URL` points at, so on the shared cluster enable it deliberately and only after the SEC re-key migration (`python -m scraper_analysis.storage.migrations --apply`) has been run; before that, any live ingest re-inserts SEC filings under their new IDs.
+Optional background ingestion so data refreshes without calling `/ingest/run`. **Off by default**; enable with `ENABLE_SCHEDULER=true` plus `SCHEDULER_SYMBOLS` (comma-separated), `SCHEDULER_INTERVAL_MINUTES`, `SCHEDULER_OFFHOURS_FACTOR` (interval multiplier on weekends and outside 08:00-18:00 New York) and `SCHEDULER_TAG`. It writes to whatever `DATABASE_URL` points at, so on the shared cluster enable it deliberately and only after the SEC re-key migration (`python -m scraper_analysis.storage.migrations --apply`) has been run; before that, any live ingest re-inserts SEC filings under their new IDs.
+
+- **Strict:** live data only, fixtures are never substituted or persisted; a failed source is omitted and reported in `/scheduler/status`. One symbol failing never stops the others, and stored errors are sanitized.
+- **Config validation:** interval and off-hours factor must be finite numbers greater than 0; `nan`, `inf`, `0` or negatives fail settings validation at startup. Positive values below the floors are clamped (interval to 5 minutes, factor to 1).
+- **Symbols** are trimmed, upper-cased, validated and de-duplicated in order (`aapl, AAPL , Aapl` runs once as `AAPL`); invalid entries are skipped and listed under `skipped_invalid_symbols`.
+- **Single owner, one process only.** Within a process, only one scheduler can run (a second one reports `start_error` and stays idle), and a process-wide guard means two scheduled ingests never run at the same time, including a new scheduler started while the old one's ingest is still finishing (the newcomer skips that symbol and says so in its status). **This is not enforced across processes:** with several uvicorn workers (`--workers N`) or replicas, set `ENABLE_SCHEDULER=true` on exactly one of them. Manual `/ingest/run` calls are also not serialized against scheduled runs.
+- **Shutdown:** on app shutdown the scheduler raises a stop flag that ingestion checks immediately before every database write, then waits up to 30 s for the in-flight ingest to finish. After shutdown returns, no new write starts; the only write that can still land is one already in progress when the flag was raised that outlives that wait. An interrupted symbol shows `ok: false` with a shutdown error, and the run counts under `runs_interrupted`, not `runs_completed`.
 
 ## Do not claim
 
