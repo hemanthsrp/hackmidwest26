@@ -43,7 +43,9 @@ INVALID_ROWS = [
     _house_row("02/30/2026", _d(12), "Self"),  # impossible calendar date
     _house_row(_d(-5), _d(-5), "Spouse"),  # after retrieval
     _house_row(_d(5), _d(5), "Joint"),  # after the filing date
-    _house_row(_d(15), _d(20), "Dependent Child"),  # after the notification date
+    _house_row("not a date", _d(12), "Dependent Child"),  # unparseable text
+    # (A notification date before the trade is a notification-date issue and
+    # keeps the valid trade date: see test_house_notification_date.py.)
 ]
 
 

@@ -150,6 +150,12 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
                 "filing_row": payload.get("filing_row", 0),
                 "transaction_date_reported": payload.get("transaction_date"),
                 "date_issue": payload.get("date_issue"),
+                # Notification date: validated on its own; an issue here
+                # leaves the (valid) trade date and its timing untouched.
+                "notification_date_reported": payload.get("notification_date_reported"),
+                "notification_date": payload.get("notification_date"),
+                "notification_date_issue": payload.get("notification_date_issue"),
+                "notification_lag_days": payload.get("notification_lag_days"),
             }
         )
     return Evidence(
