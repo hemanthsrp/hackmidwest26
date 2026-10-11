@@ -30,7 +30,6 @@ from strands import tool
 from ..config import get_settings
 from ..models.briefing import Briefing
 from ..models.evidence import Evidence
-from ..pipeline import grade
 from ..storage.store import EvidenceStore, get_store
 from .strands_setup import build_bedrock_agent
 from .tagging_agent import _extract_json
@@ -78,6 +77,8 @@ class BriefingUnavailableError(Exception):
 
 
 def _evidence_row(e: Evidence) -> dict:
+    from ..pipeline import grade
+
     return {
         "id": e.id,
         "source": e.source_name,

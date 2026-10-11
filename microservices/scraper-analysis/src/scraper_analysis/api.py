@@ -4,7 +4,6 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from .agents import synthesis_agent
-from .pipeline import grade
 from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
 from .sources.base import sanitize_error
 from .storage.store import get_store
@@ -57,7 +56,10 @@ def ingest_run(
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback, judge=judge)
+    from .pipeline import jev_judge
+
+    with jev_judge.for_request(judge):
+        result = ingest_symbol(validated, allow_live=live, tag=tag, fallback=fallback)
     # Adapters already sanitize via sources.base.resolve(); repeat it at the
     # API boundary so no future source path can return raw upstream text.
     sources = [
@@ -113,6 +115,8 @@ def get_evidence(
     items = get_store().query_evidence(validated)
     if ranked or relevant_only:
         # Opt-in views over the stored grade; the default response below is unchanged.
+        from .pipeline import grade
+
         shown = [e for e in items if not grade.is_gated(e)] if relevant_only else items
         if ranked:
             shown = grade.rank(shown)

@@ -76,7 +76,7 @@ class IngestResult:
 
 
 def ingest_evidence(
-    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True, judge: bool = True
+    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True
 ) -> tuple[list[Evidence], list[SourceReport]]:
     symbol = validate_symbol(symbol)
     all_evidence: list[Evidence] = []
@@ -97,11 +97,10 @@ def ingest_evidence(
     apply_credibility(deduped)
     store = get_store()
     new_items = store.filter_new_evidence(deduped)
+    # Optional Jev judgment and grade (details["jev"], details["grade"]); a no-op unless JEV_ENABLED.
+    new_items = grade_evidence(judge_evidence(new_items))
     if tag:
         new_items = [tag_evidence(e) for e in new_items]
-    if judge:
-        # Optional and additive (details["jev"], details["grade"]); a no-op unless JEV_ENABLED.
-        new_items = grade_evidence(judge_evidence(new_items))
     store.save_evidence(new_items)
     return new_items, reports
 
@@ -124,9 +123,9 @@ def ingest_signals(
 
 
 def ingest_symbol(
-    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True, judge: bool = True
+    symbol: str, allow_live: bool = True, tag: bool = True, fallback: bool = True
 ) -> IngestResult:
-    evidence, ev_reports = ingest_evidence(symbol, allow_live, tag, fallback, judge)
+    evidence, ev_reports = ingest_evidence(symbol, allow_live, tag, fallback)
     signals, sig_reports = ingest_signals(symbol, allow_live, fallback)
     return IngestResult(evidence, signals, ev_reports + sig_reports)
 

@@ -125,10 +125,10 @@ With `JEV_ENABLED=true` and `TYPESAFE_API_KEY` set (and the shared package insta
 | `*_confidence` | 0 to 1: how peaked Jev's answer was; treat low-confidence answers as unknown |
 
 - **Additive only.** Nothing is filtered or dropped, and `sentiment`, `entities` and `credibility` are not touched. With Jev off (the default) records are byte-for-byte what they were before.
-- **One opt-in exception: `JEV_FILL_SENTIMENT=true`.** Where the tagging agent left `sentiment.direction` empty (Bedrock off or failed) and Jev's direction confidence is at least 0.5, `sentiment` is filled: positive → `Bullish`, negative → `Bearish`, neutral and mixed → `Neutral`, with `score` set to Jev's confidence. A value written by the tagging agent is never overwritten. Off by default.
+- **One opt-in exception: `JEV_FILL_SENTIMENT=true`.** Only when Bedrock is not configured at all (so the tagging agent cannot run) and Jev's direction confidence is at least 0.5, `sentiment` is filled: positive → `Bullish`, negative → `Bearish`, neutral and mixed → `Neutral`, with `score` set to Jev's confidence. A value written by the tagging agent is never overwritten. Off by default.
 - **`engine` must be checked.** If Jev was enabled but did not answer, the record carries `{"engine": "unavailable", "error": "..."}` and no judgment fields. A record with no `details.jev` at all was not sent to Jev.
 - **Filings are skipped.** `sec_filing` and `congressional_disclosure` records are never sent: they are parsed deterministically here, and Jev is unreliable with numbers and dates.
-- **Judged once.** Only newly stored records are judged, so a repeat run costs nothing. A record stored while Jev was off or unavailable is not judged later.
+- **Runs just before tagging, and is judged once.** The Jev step does not read or depend on the tagging agent's output, and tagging runs on every record exactly as before. Only newly stored records are judged, so a repeat run costs nothing. A record stored while Jev was off or unavailable is not judged later.
 - **Text leaves the service.** The record's `title` and `summary` are sent to TypeSafe's API. Do not enable this for sources whose terms forbid passing content to a third party.
 - **Heuristic, not validated.** These are model judgments checked only on a small hand-written sample (`microservices/jev-tool/evals/`). None is a probability that a price will move.
 - **The briefing sees it.** `/briefing` already passes `details` to the synthesis agent, so judged records reach it with their Jev judgment attached.

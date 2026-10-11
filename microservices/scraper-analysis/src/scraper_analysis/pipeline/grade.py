@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..models.evidence import Evidence
+from .jev_judge import request_enabled
 
 GRADE_VERSION = "grade-v1"
 
@@ -103,7 +104,7 @@ def grade_record(evidence: Evidence, relevance_gate: float) -> dict:
 def grade_evidence(items: list[Evidence]) -> list[Evidence]:
     """Attach ``details["grade"]`` to every record. A no-op unless Jev is enabled."""
     settings = get_settings()
-    if not settings.jev_configured:
+    if not request_enabled() or not settings.jev_configured:
         return items
     for evidence in items:
         evidence.details["grade"] = grade_record(evidence, settings.jev_relevance_gate)

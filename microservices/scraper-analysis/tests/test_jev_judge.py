@@ -159,10 +159,8 @@ def test_ingest_calls_judge_only_when_asked(monkeypatch):
     seen = []
     monkeypatch.setattr(ingest, "judge_evidence", lambda items: seen.append(len(items)) or items)
 
-    ingest.ingest_evidence("AAPL", allow_live=False, tag=False, judge=False)
-    assert seen == []
-    ingest.ingest_evidence("AAPL", allow_live=False, tag=False, judge=True)
-    assert len(seen) == 1
+    ingest.ingest_evidence("AAPL", allow_live=False, tag=False)
+    assert len(seen) == 1  # the hook itself always runs; the Jev step decides whether to act
 
 
 def test_ingest_endpoint_exposes_judgment_when_enabled(monkeypatch):
@@ -207,6 +205,7 @@ def test_sentiment_is_left_alone_unless_opted_in(monkeypatch):
 
 def test_sentiment_fill_only_touches_empty_sentiment(monkeypatch):
     monkeypatch.setattr(get_settings(), "jev_fill_sentiment", True)
+    monkeypatch.setattr(get_settings(), "aws_access_key_id", None)  # tagger cannot run
     untagged = make_evidence(id="u", sentiment=Sentiment())
     tagged = make_evidence(id="t", sentiment=Sentiment(direction="Bearish", score=0.6))
 
@@ -220,6 +219,7 @@ def test_sentiment_fill_only_touches_empty_sentiment(monkeypatch):
 
 def test_sentiment_fill_skips_low_confidence(monkeypatch):
     monkeypatch.setattr(get_settings(), "jev_fill_sentiment", True)
+    monkeypatch.setattr(get_settings(), "aws_access_key_id", None)
     untagged = make_evidence(sentiment=Sentiment())
     jev_judge.judge_evidence([untagged], tool=FakeJev(direction_confidence=0.3))
     assert untagged.sentiment.direction is None
@@ -248,3 +248,28 @@ def test_same_story_below_threshold_marks_nothing():
     b = make_evidence(id="b", source_name="MarketWatch")
     jev_judge.judge_evidence([a, b], tool=FakeJev(same=0.1))
     assert "same_story_as" not in a.details["jev"] and "same_story_as" not in b.details["jev"]
+
+
+def test_sentiment_is_not_filled_when_the_tagger_can_run(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "jev_fill_sentiment", True)
+    monkeypatch.setattr(settings, "aws_access_key_id", "key")
+    monkeypatch.setattr(settings, "aws_secret_access_key", "secret")
+    untagged = make_evidence(sentiment=Sentiment())
+    jev_judge.judge_evidence([untagged], tool=FakeJev())
+    assert untagged.sentiment.direction is None and "filled_sentiment" not in untagged.details["jev"]
+
+
+def test_request_switch_turns_the_jev_step_off(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "jev_enabled", True)
+    monkeypatch.setattr(settings, "typesafe_api_key", "test-key")
+    monkeypatch.setattr(jev_judge, "_get_tool", lambda: FakeJev())
+    on, off = make_evidence(id="on"), make_evidence(id="off")
+
+    with jev_judge.for_request(False):
+        jev_judge.judge_evidence([off])
+    jev_judge.judge_evidence([on])
+
+    assert "jev" not in off.details and on.details["jev"]["engine"] == "jev"
+    assert jev_judge.request_enabled() is True  # reset after the block
