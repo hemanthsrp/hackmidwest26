@@ -67,7 +67,7 @@ def trigger_ingestion(symbol: str, environ: Mapping[str, str] = os.environ) -> N
     try:
         response = httpx.post(
             base_url.rstrip("/") + "/ingest/run",
-            params={"symbol": symbol, "live": "true", "fallback": "false", "judge": "true"},
+            params={"symbol": symbol, "live": "true", "fallback": "false", "tag": "true", "judge": "true"},
             timeout=float(environ.get("INGEST_TIMEOUT_SECONDS", "90")),
         )
     except httpx.HTTPError as error:

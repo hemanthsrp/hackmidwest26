@@ -85,7 +85,7 @@ The safety boundary remains unchanged:
 ## Local checks
 
 ```bash
-python -m pip install -e '.[dev]'
+python -m pip install -r requirements-dev-local.txt
 python -m pytest
 python -m uvicorn research_api.app:app --app-dir src --port 8000
 ```
