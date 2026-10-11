@@ -2,6 +2,8 @@ import logging
 import os
 import re
 import uuid
+from copy import deepcopy
+from time import monotonic
 from typing import Literal
 
 from fastapi import FastAPI
@@ -81,6 +83,19 @@ _SAMPLE_AS_OF = "2026-10-10T20:00:00Z"
 _SAMPLE_RETRIEVED_AT = "2026-10-10T20:00:05Z"
 
 _DECISION_ERROR_STATUS = {"invalid_symbol": 400, "provider_unavailable": 503, "stale_data": 409}
+_LIVE_ASSESSMENT_CACHE: dict[tuple[str, str | None, str, str], tuple[float, dict[str, object]]] = {}
+
+
+def clear_assessment_cache() -> None:
+    """Forget process-local live snapshots (tests and operator restarts)."""
+    _LIVE_ASSESSMENT_CACHE.clear()
+
+
+def assessment_cache_seconds() -> int:
+    try:
+        return max(0, min(int(os.environ.get("ASSESSMENT_CACHE_SECONDS", "300")), 900))
+    except ValueError:
+        return 300
 
 
 def _providers_unavailable() -> JSONResponse:
@@ -105,6 +120,26 @@ def _decide(request: ResearchAssessmentRequest, symbol: str) -> JSONResponse:
     if maker is None:
         return _providers_unavailable()
 
+    cache_seconds = assessment_cache_seconds()
+    cache_key = (symbol, request.query, request.preferences.horizon, request.preferences.risk_profile)
+    cached = _LIVE_ASSESSMENT_CACHE.get(cache_key) if not sample and cache_seconds else None
+    if cached and cached[0] > monotonic():
+        body = deepcopy(cached[1])
+        body["data_mode"] = "cached"
+        assessment_body = body.get("assessment")
+        if isinstance(assessment_body, dict):
+            assessment_body["data_mode"] = "cached"
+        warnings = body.setdefault("warnings", [])
+        if isinstance(warnings, list):
+            warnings.append(
+                {
+                    "code": "live_assessment_cache",
+                    "message": "A recent live research snapshot is shown while its cache remains valid.",
+                    "retryable": False,
+                }
+            )
+        return JSONResponse(content=body)
+
     from decision_maker import DecisionError
 
     try:
@@ -128,7 +163,10 @@ def _decide(request: ResearchAssessmentRequest, symbol: str) -> JSONResponse:
                 "request_id": f"req-{uuid.uuid4().hex}",
             },
         )
-    return JSONResponse(content=response.model_dump(mode="json"))
+    body = response.model_dump(mode="json")
+    if not sample and cache_seconds:
+        _LIVE_ASSESSMENT_CACHE[cache_key] = (monotonic() + cache_seconds, deepcopy(body))
+    return JSONResponse(content=body)
 
 
 @app.get("/health")

@@ -10,13 +10,19 @@ import pytest  # noqa: E402
 def no_live_providers(monkeypatch):
     """Keep every test offline: no evidence store from the shell, no cached decision maker."""
     from research_api import assessment
+    from research_api.app import clear_assessment_cache
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("VOL_SURFACE_URL", raising=False)
+    monkeypatch.delenv("ROBINHOOD_MCP_ENABLED", raising=False)
+    monkeypatch.delenv("BROKER_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("ROBINHOOD_REDIRECT_URI", raising=False)
     from research_api import recommendations
 
     assessment.reset()
     recommendations.reset()
+    clear_assessment_cache()
     yield
     assessment.reset()
     recommendations.reset()
+    clear_assessment_cache()

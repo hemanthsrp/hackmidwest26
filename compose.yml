@@ -33,6 +33,7 @@ services:
     environment:
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
       RESEARCH_DATABASE_URL: ${DATABASE_URL}
+      ASSESSMENT_CACHE_SECONDS: ${ASSESSMENT_CACHE_SECONDS:-300}
       SCRAPER_ANALYSIS_URL: http://scraper:8001
       SCRAPER_API_URL: http://scraper:8001
       VOL_SURFACE_URL: http://volatility:8002
