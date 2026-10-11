@@ -9,10 +9,12 @@ Purely advisory and additive: it never edits or drops a point. Findings are
 returned for ``meta["jev_review"]`` and as extra ``warnings``. With JEV_ENABLED
 unset it returns None and the briefing is exactly what it was before.
 
-Limits: only ``title`` and ``summary`` of the cited evidence are compared, so a
-point that rests on ``details`` (for example Form 4 totals) or on quantitative
-signals can score as unsupported while being correct. Points that cite only
-signals are not checked. These are heuristic model judgments, not verification.
+Scope: only points that cite news or social records are checked, against those
+records' ``title`` and ``summary``. Points resting on filings, congressional
+disclosures or quantitative signals are not checked: their facts live in
+structured ``details`` and numbers, which this comparison cannot see (in live
+runs it flagged correct filing points almost every time). These are heuristic
+model judgments, not verification.
 """
 
 import logging
@@ -20,12 +22,12 @@ import logging
 from ..config import get_settings
 from ..models.briefing import Briefing
 from ..models.evidence import Evidence
-from ..pipeline.jev_judge import _get_tool
+from ..pipeline.jev_judge import JUDGED_SOURCE_TYPES, _get_tool
 from ..sources.base import sanitize_error
 
 logger = logging.getLogger(__name__)
 
-SUPPORT_FLOOR = 0.5
+SUPPORT_FLOOR = 0.3
 FLAG_THRESHOLD = 0.5
 
 
@@ -57,9 +59,15 @@ def _review(briefing: Briefing, evidence: list[Evidence], tool) -> dict:
     model = version = None
 
     for index, point in enumerate(briefing.points):
-        cited = [by_id[i] for i in point.evidence_ids if i in by_id]
+        cited = [
+            by_id[i]
+            for i in point.evidence_ids
+            if i in by_id and by_id[i].source_type in JUDGED_SOURCE_TYPES
+        ]
         if not cited:
-            points.append({"index": index, "status": "not_checked", "reason": "cites only quantitative signals"})
+            points.append(
+                {"index": index, "status": "not_checked", "reason": "cites no news or social records"}
+            )
             continue
         check = tool.check_explanation(
             point.text, [{"id": e.id, "title": e.title, "summary": e.summary} for e in cited]

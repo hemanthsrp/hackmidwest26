@@ -85,7 +85,7 @@ def test_points_citing_only_signals_are_not_checked():
     fake = FakeJev()
     review = jev_guard.review_briefing(briefing(point("Price rose 8.8 percent in 30 days.", "signal-1")), EVIDENCE, tool=fake)
     assert review["points"] == [
-        {"index": 0, "status": "not_checked", "reason": "cites only quantitative signals"}
+        {"index": 0, "status": "not_checked", "reason": "cites no news or social records"}
     ]
     assert len(fake.calls) == 1  # only the framing check
 

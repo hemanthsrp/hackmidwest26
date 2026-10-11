@@ -47,6 +47,11 @@
 - Checked to merge cleanly with the open `achen/scraper-divergence`, `achen/scraper-house` and `achen/scraper-scheduler` branches as of 2026-10-10.
 - **Done when:** scraper tests pass with Jev off (done: 153 passed, 132 before plus 21 new) and one real run over the fixtures returns judgments and a briefing review (done); the scraper's owner accepts the change (not done).
 
+**A-J5 — Evidence grading and final Jev pass in `scraper-analysis`** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-scraper-final`; built and run live with Bedrock; awaiting the scraper owner's review)
+- New `pipeline/grade.py`: `details.grade` stored at ingestion (strength, factors, `off_topic` / `unusable_content` labels; nothing dropped), `news_tone`, ranking helpers. Opt-in `ranked` / `relevant_only` on `GET /evidence`. Briefing agent rows show `strength`, `relevance_to_symbol`, `off_topic_for_symbol`, with one added prompt rule. Briefing review now covers news and social points only, warning below 0.3.
+- Bedrock tagging is unchanged and still runs on every article; the grade is what tells a reader an article may not be about the symbol.
+- **Done when:** scraper tests pass (done: 165 passed) and a live run with Bedrock tagging, grading and reviewed briefings is recorded (done: `jev-integration-research.md` section 17); owner's review (not done).
+
 ## Agent B — evidence and quant (Cai lane)
 
 **B1 — Source/data feasibility** (unclaimed; independent discovery)

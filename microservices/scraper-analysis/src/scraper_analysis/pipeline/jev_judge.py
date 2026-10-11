@@ -20,6 +20,8 @@ none of the values is a probability that a price will move.
 """
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from ..config import get_settings
 from ..models.evidence import Evidence, Sentiment
@@ -56,6 +58,24 @@ SAME_STORY_THRESHOLD = 0.5
 
 _tool = None
 
+# Per-request switch (the `judge` flag on /ingest/run), kept out of the ingest
+# function signatures so this feature does not widen them.
+_request_enabled: ContextVar[bool] = ContextVar("jev_request_enabled", default=True)
+
+
+@contextmanager
+def for_request(enabled: bool):
+    """Turn the Jev step off (or leave it on) for the ingestion run inside this block."""
+    token = _request_enabled.set(enabled)
+    try:
+        yield
+    finally:
+        _request_enabled.reset(token)
+
+
+def request_enabled() -> bool:
+    return _request_enabled.get()
+
 
 def _get_tool():
     """Built lazily so the service imports and runs without jev-tool installed."""
@@ -80,7 +100,7 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
     so the gap is visible downstream rather than looking like a judgment.
     """
     targets = [e for e in items if e.source_type in JUDGED_SOURCE_TYPES]
-    if not targets:
+    if not targets or not request_enabled():
         return items
     if tool is None:
         if not get_settings().jev_configured:
@@ -120,8 +140,13 @@ def judge_evidence(items: list[Evidence], tool=None) -> list[Evidence]:
 
 
 def _fill_sentiment(evidence: Evidence, judgment) -> None:
-    """Opt-in: only where tagging left sentiment empty, and never over an existing value."""
-    if not get_settings().jev_fill_sentiment or evidence.sentiment.direction is not None:
+    """Opt-in, and only when the tagging agent cannot run at all (Bedrock not configured):
+    this step runs before tagging, so it must not write a value the tagger would replace.
+    Never overwrites an existing value."""
+    settings = get_settings()
+    if not settings.jev_fill_sentiment or settings.bedrock_configured:
+        return
+    if evidence.sentiment.direction is not None:
         return
     confidence = judgment.direction_confidence or 0.0
     if confidence < FILL_SENTIMENT_MIN_CONFIDENCE:
