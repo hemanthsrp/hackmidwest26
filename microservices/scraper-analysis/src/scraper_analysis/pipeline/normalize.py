@@ -113,7 +113,9 @@ def _normalize_general_news(record: RawRecord, data_mode: str) -> Evidence:
 def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
     payload = record.payload
     lag_days = _reporting_lag_days(record.published_at, record.observed_at)
-    timing = classify_congressional_timing(lag_days) if lag_days is not None else None
+    # A negative lag (trade dated after its filing) is a data error; it gets
+    # no timing class rather than a misleading "Recent Disclosure".
+    timing = classify_congressional_timing(lag_days) if lag_days is not None and lag_days >= 0 else None
     title = (
         f"{'Rep.' if payload.get('chamber') == 'House' else 'Sen.'} {payload.get('filer_name', 'Unknown')} reported "
         f"{payload.get('transaction_type', 'a transaction')} of {payload.get('ticker', record.symbol)} "
@@ -122,19 +124,31 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
     if timing:
         title += f" -- {timing}"
     summary = f"{payload.get('asset_name', '')} ({payload.get('asset_type', '')}), owner: {payload.get('owner', '')}"
+    details = {
+        "chamber": payload.get("chamber", "Senate"),
+        "filer": payload.get("filer_name"),
+        "owner": payload.get("owner"),
+        "ticker": payload.get("ticker"),
+        "transaction_type": payload.get("transaction_type"),
+        "amount_range": payload.get("amount_range"),
+        "timing": timing,
+    }
+    if details["chamber"] == "House":
+        # Row-identity fields (see dedup._fingerprint) and why a row has no
+        # trade date / timing, when the adapter rejected the reported date.
+        details.update(
+            {
+                "asset_name": payload.get("asset_name"),
+                "filing_row": payload.get("filing_row", 0),
+                "transaction_date_reported": payload.get("transaction_date"),
+                "date_issue": payload.get("date_issue"),
+            }
+        )
     return Evidence(
         symbol=record.symbol,
         title=title,
         summary=summary,
-        details={
-            "chamber": payload.get("chamber", "Senate"),
-            "filer": payload.get("filer_name"),
-            "owner": payload.get("owner"),
-            "ticker": payload.get("ticker"),
-            "transaction_type": payload.get("transaction_type"),
-            "amount_range": payload.get("amount_range"),
-            "timing": timing,
-        },
+        details=details,
         source_name=record.source_name,
         source_type=record.source_type,
         source_url=record.url,

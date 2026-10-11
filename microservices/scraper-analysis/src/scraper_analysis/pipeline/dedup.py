@@ -22,7 +22,16 @@ def _fingerprint(evidence: Evidence) -> str:
         # URL alone is not enough: one Senate PTR page holds several
         # distinct transactions, so title (type/ticker/amount) and the
         # transaction date are part of the identity too.
-        return f"{evidence.source_url.strip().lower()}::{title}::{day}"
+        fp = f"{evidence.source_url.strip().lower()}::{title}::{day}"
+        details = evidence.details or {}
+        if evidence.source_type == "congressional_disclosure" and details.get("chamber") == "House":
+            # One House PTR PDF can list same-day rows that differ only in
+            # owner (Self/Spouse/Joint), asset wording, or are repeated lots;
+            # the title omits those. Senate fingerprints are deliberately left
+            # as they were so stored Senate IDs are not re-keyed.
+            asset = _normalize_title(str(details.get("asset_name") or ""))
+            fp += f"::owner={str(details.get('owner') or '').lower()}::asset={asset}::row={details.get('filing_row', 0)}"
+        return fp
     return f"{evidence.symbol.upper()}::{evidence.source_name}::{title}::{day}"
 
 

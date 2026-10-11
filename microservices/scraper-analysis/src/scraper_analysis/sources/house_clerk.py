@@ -105,10 +105,16 @@ def parse_ptr_text(text: str) -> list[dict]:
     """Extract transaction rows from a PTR's text. A row is anchored by its
     'type, transaction date, notification date, amount' run; the asset name
     and ticker sit on the same line and up to a few continuation lines, and
-    description blocks (F S:, S O:, D:) end the row."""
+    description blocks (F S:, S O:, D:, C:, L:) end the row and are never
+    rows themselves."""
     lines = [ln.strip() for ln in text.replace("\x00", "").split("\n")]
     rows = []
     for i, line in enumerate(lines):
+        if _MARKER_RE.match(line):
+            # Field blocks (F S:, S O:, D:, C:, L:) are free text written by the
+            # filer; one that happens to contain a "type date date amount" run
+            # is still a description, never a transaction.
+            continue
         m = _ANCHOR_RE.search(line)
         if not m:
             continue
@@ -176,11 +182,17 @@ def _load_index(client: httpx.Client, year: int) -> list[HouseFiling]:
         return cached[1]
     resp = client.get(INDEX_URL.format(year=year))
     resp.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-        name = next((n for n in z.namelist() if n.lower().endswith(".xml")), None)
-        if name is None:
-            raise SourceUnavailableError("House FD index zip has no XML")
-        filings = parse_index(z.read(name).decode("utf-8-sig"))
+    try:
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            name = next((n for n in z.namelist() if n.lower().endswith(".xml")), None)
+            if name is None:
+                raise SourceUnavailableError("House FD index zip has no XML")
+            filings = parse_index(z.read(name).decode("utf-8-sig"))
+    except (UnicodeDecodeError, zipfile.BadZipFile, zipfile.LargeZipFile, ElementTree.ParseError,
+            KeyError, ValueError, EOFError, OSError) as exc:
+        # A corrupt index is an unavailable source, not a crash. Fixed text:
+        # decoder/parser messages quote upstream bytes and are not returned.
+        raise SourceUnavailableError(f"House FD index unreadable ({type(exc).__name__})") from exc
     _index_cache[year] = (time.monotonic(), filings)
     return filings
 
@@ -210,6 +222,42 @@ def _load_transactions(client: httpx.Client, filing: HouseFiling) -> list[dict] 
     return rows
 
 
+def _parse_date(value: str | None) -> datetime | None:
+    try:
+        return datetime.strptime((value or "").strip(), "%m/%d/%Y").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _validate_trade_date(row: dict, filed: datetime, now: datetime) -> tuple[datetime | None, str | None]:
+    """(trade date, None) when usable, else (None, reason). A trade cannot
+    happen after it was reported, after the member was notified of it, or
+    after we retrieved the report; such dates are filer/parse errors and
+    would yield a negative or meaningless reporting lag."""
+    traded = _parse_date(row.get("transaction_date"))
+    if traded is None:
+        return None, "unparseable"
+    if traded > now:
+        return None, "future"
+    if traded.date() > filed.date():
+        return None, "after_filing"
+    notified = _parse_date(row.get("notification_date"))
+    if notified is not None and traded > notified:
+        return None, "after_notification"
+    return traded, None
+
+
+def _with_occurrence(rows: list[dict]) -> list[tuple[dict, int]]:
+    seen: dict[tuple, int] = {}
+    out = []
+    for row in rows:
+        key = (row.get("owner"), row.get("asset_name"), row.get("ticker"), row.get("transaction_type"),
+               row.get("transaction_date"), row.get("amount_range"))
+        out.append((row, seen.get(key, 0)))
+        seen[key] = seen.get(key, 0) + 1
+    return out
+
+
 class HouseClerkAdapter(SourceAdapter):
     name: ClassVar[str] = "house_clerk"
     source_type: ClassVar[str] = "congressional_disclosure"
@@ -234,21 +282,17 @@ class HouseClerkAdapter(SourceAdapter):
                     if rows is None:
                         unreadable += 1
                         continue
-                    records += [self._record(filing, row, symbol, now) for row in rows
+                    records += [self._record(filing, row, occurrence, symbol, now)
+                                for row, occurrence in _with_occurrence(rows)
                                 if row["ticker"].upper() == symbol.upper()]
                 if recent and unreadable == len(recent):
                     raise SourceUnavailableError("no House PTR PDF could be downloaded")
                 return records
-        except (httpx.HTTPError, zipfile.BadZipFile, ElementTree.ParseError) as exc:
+        except (httpx.HTTPError, zipfile.BadZipFile, ElementTree.ParseError, UnicodeDecodeError) as exc:
             raise SourceUnavailableError(f"House Clerk: {type(exc).__name__}") from exc
 
-    def _record(self, filing: HouseFiling, row: dict, symbol: str, now: datetime) -> RawRecord:
-        def parse(d: str) -> datetime | None:
-            try:
-                return datetime.strptime(d, "%m/%d/%Y").replace(tzinfo=timezone.utc)
-            except ValueError:
-                return None
-
+    def _record(self, filing: HouseFiling, row: dict, occurrence: int, symbol: str, now: datetime) -> RawRecord:
+        traded, date_issue = _validate_trade_date(row, filing.filed, now)
         return RawRecord(
             source_name="House Clerk",
             source_type=self.source_type,
@@ -262,9 +306,16 @@ class HouseClerkAdapter(SourceAdapter):
                 "asset_type": row["asset_type_code"],
                 "transaction_type": row["transaction_type"],
                 "amount_range": row["amount_range"],
+                "transaction_date": row["transaction_date"],
+                "date_issue": date_issue,
+                # Nth identical row (same owner/asset/type/date/amount) in this
+                # filing, so two real lots never collapse into one evidence ID.
+                "filing_row": occurrence,
             },
             retrieved_at=now,
             published_at=filing.filed,
-            observed_at=parse(row["transaction_date"]) or filing.filed,
+            # No valid trade date -> no observed_at, so no reporting lag or
+            # timing class is computed from a date we know is wrong.
+            observed_at=traded,
             url=PDF_URL.format(year=filing.year, doc_id=filing.doc_id),
         )

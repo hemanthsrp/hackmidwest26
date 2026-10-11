@@ -248,3 +248,150 @@ def test_text_less_pdf_is_cached_as_empty_not_retried(monkeypatch):
 def test_fetch_sample_and_fallback(adapter):
     records, mode = adapter.fetch("AAPL", allow_live=False)
     assert mode == "sample" and len(records) == 1 and records[0].payload["chamber"] == "House"
+
+
+# --- PR #17 review regressions -----------------------------------------------
+
+
+def test_description_line_shaped_like_a_trade_is_not_a_row():
+    # A D: (description) block whose text happens to contain a full
+    # "type date date amount" run must never become a transaction.
+    text = (
+        "U.S. Treasury Bill [GS] S 03/16/2026 03/16/2026 $250,001 - $500,000\n"
+        "D: proceeds allocated to Apple (AAPL) P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+        "F S: New\n"
+        "S O: Brokerage (MSFT) S 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+        "C: see Alphabet (GOOGL) P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+        "L: Austin (TSLA) P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+        "F\x00\x00 S\x00\x00: New (NVDA) P 03/17/2026 03/17/2026 $1,001 - $15,000\n"
+    )
+    assert h.parse_ptr_text(text) == []
+
+
+def _zip_with(member_name: str, data: bytes) -> bytes:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(member_name, data)
+    return buf.getvalue()
+
+
+def _fake_client(monkeypatch, content: bytes):
+    class Resp:
+        def __init__(self):
+            self.content = content
+
+        def raise_for_status(self):
+            pass
+
+    class Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url):
+            return Resp()
+
+    monkeypatch.setattr(h.httpx, "Client", Client)
+    h._index_cache.clear()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        _zip_with("2026FD.xml", b"<FinancialDisclosure>\xff\xfe\xfa</FinancialDisclosure>"),  # invalid UTF-8
+        _zip_with("2026FD.xml", b"<FinancialDisclosure><Member>"),  # truncated XML
+        b"not a zip at all https://disclosures-clerk.house.gov/x?token=SECRET",
+    ],
+    ids=["bad-utf8", "bad-xml", "bad-zip"],
+)
+def test_malformed_index_is_unavailable_with_a_fixed_message(adapter, monkeypatch, content):
+    _fake_client(monkeypatch, content)
+    result = adapter.fetch_result("AAPL", fallback=False)
+    assert result.status == "unavailable" and result.items == []
+    assert "http" not in result.error and "SECRET" not in result.error and "0xff" not in result.error
+    fallback = adapter.fetch_result("AAPL")
+    assert fallback.status == "fallback" and fallback.data_mode == "sample"
+
+
+def _ev(adapter, monkeypatch, rows_, filed_days_ago=10):
+    from scraper_analysis.pipeline.dedup import assign_stable_ids
+
+    monkeypatch.setattr(h, "_load_index", lambda client, year: [filing("999", filed_days_ago)])
+    monkeypatch.setattr(h, "_load_transactions", lambda client, f: rows_)
+    evs = [normalize(r, "live") for r in adapter.fetch_live("AAPL")]
+    assign_stable_ids(evs)
+    return evs
+
+
+def _d(days_ago: int) -> str:
+    return (NOW - timedelta(days=days_ago)).strftime("%m/%d/%Y")
+
+
+def dated_row(tx, notified, owner="Spouse", **kw):
+    r = row("AAPL")
+    r.update(transaction_date=tx, notification_date=notified, owner=owner, **kw)
+    return r
+
+
+def test_valid_trade_date_still_gets_lag_and_timing(adapter, monkeypatch):
+    (ev,) = _ev(adapter, monkeypatch, [dated_row(_d(20), _d(19))])
+    assert ev.reporting_lag_days == pytest.approx(10, abs=1)
+    assert ev.details["timing"] == "Recent Disclosure" and not ev.details.get("date_issue")
+
+
+@pytest.mark.parametrize(
+    "tx,notified,filed_days_ago,issue",
+    [
+        ("02/30/2026", "03/01/2026", 10, "unparseable"),  # impossible calendar date
+        ("garbage", "03/01/2026", 10, "unparseable"),
+        (_d(-5), _d(-5), 10, "future"),  # after retrieval
+        (_d(5), _d(5), 10, "after_filing"),  # after the filing date
+        (_d(15), _d(20), 10, "after_notification"),  # traded after the member was notified of it
+    ],
+)
+def test_invalid_trade_dates_never_produce_lag_or_timing(adapter, monkeypatch, tx, notified, filed_days_ago, issue):
+    (ev,) = _ev(adapter, monkeypatch, [dated_row(tx, notified)], filed_days_ago)
+    assert ev.reporting_lag_days is None and ev.details["timing"] is None
+    assert ev.details["date_issue"] == issue
+    assert ev.observed_at is None  # never guessed (e.g. silently replaced by the filing date)
+    assert "Recent Disclosure" not in ev.title and "Historical" not in ev.title
+
+
+def test_negative_lag_never_gets_a_timing_class():
+    from scraper_analysis.sources.base import RawRecord
+
+    rec = RawRecord("Senate eFD", "congressional_disclosure", "AAPL", {"ticker": "AAPL"},
+                    published_at=NOW - timedelta(days=5), observed_at=NOW - timedelta(days=1))
+    ev = normalize(rec, "live")
+    assert ev.details["timing"] is None
+
+
+def test_distinct_same_day_rows_keep_distinct_ids_and_reingest_is_idempotent(adapter, monkeypatch):
+    from scraper_analysis.pipeline.dedup import dedup_evidence
+
+    rows_ = [
+        dated_row(_d(20), _d(19), owner="Spouse"),
+        dated_row(_d(20), _d(19), owner="Joint"),
+        dated_row(_d(20), _d(19), owner="Joint"),  # a second identical lot in the same filing
+    ]
+    first = _ev(adapter, monkeypatch, rows_)
+    assert len({e.id for e in first}) == 3 and len(dedup_evidence(first)) == 3
+    again = _ev(adapter, monkeypatch, [dict(r) for r in rows_])
+    assert [e.id for e in again] == [e.id for e in first]
+
+
+def test_senate_fingerprints_are_unchanged():
+    from scraper_analysis.pipeline.dedup import _fingerprint
+    from scraper_analysis.sources.congressional import SenateEfdAdapter
+
+    ev = normalize(SenateEfdAdapter().fetch_sample("AAPL")[0], "sample")
+    day = ev.observed_at.date().isoformat()
+    assert _fingerprint(ev) == f"{ev.source_url.strip().lower()}::{' '.join(ev.title.lower().split())}::{day}"
