@@ -60,6 +60,33 @@ class TestBuildSurface:
         grad_smooth = np.max(np.abs(np.diff(IV_smooth, axis=0)))
         assert grad_smooth <= grad_raw
 
+    def test_duplicate_quotes_produce_order_invariant_surface(self):
+        """Put/call quotes at the same coordinates must not depend on input order."""
+        points = pd.DataFrame(
+            [
+                (90.0, 0.25, 0.40), (90.0, 0.25, 0.20),
+                (100.0, 0.25, 0.25), (100.0, 0.25, 0.23),
+                (110.0, 0.25, 0.22), (110.0, 0.25, 0.24),
+                (90.0, 0.50, 0.35), (100.0, 0.50, 0.22), (110.0, 0.50, 0.20),
+            ],
+            columns=["strike", "T", "iv"],
+        )
+        _, _, _, _, first = build_surface(points, n_k=7, n_t=5)
+        _, _, _, _, reversed_points = build_surface(points.iloc[::-1], n_k=7, n_t=5)
+
+        assert np.allclose(first, reversed_points)
+
+    def test_single_expiry_falls_back_to_finite_nearest_surface(self):
+        points = pd.DataFrame(
+            [(90.0, 0.25, 0.30), (100.0, 0.25, 0.25), (110.0, 0.25, 0.20)],
+            columns=["strike", "T", "iv"],
+        )
+
+        _, _, _, _, surface = build_surface(points, n_k=5, n_t=3)
+
+        assert surface.shape == (3, 5)
+        assert np.isfinite(surface).all()
+
 
 class TestExtractSlices:
 

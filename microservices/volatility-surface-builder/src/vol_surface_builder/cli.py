@@ -1,6 +1,7 @@
 """Generate local option-volatility charts from sample or explicit live data."""
 
 import argparse
+import math
 from pathlib import Path
 
 from .data_feed import get_option_data
@@ -22,6 +23,8 @@ def main() -> None:
     parser.add_argument("--no-html", action="store_true")
     args = parser.parse_args()
     ticker = args.ticker.strip().upper()
+    if not math.isfinite(args.spot) or args.spot <= 0:
+        parser.error("--spot must be a positive finite number")
     if args.source == "sample" and ticker != "SPY":
         parser.error("synthetic sample data is calibrated for SPY only")
 
