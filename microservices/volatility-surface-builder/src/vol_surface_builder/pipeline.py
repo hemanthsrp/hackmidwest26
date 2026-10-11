@@ -17,6 +17,10 @@ class UnsupportedSampleSymbol(ValueError):
     """The synthetic model is calibrated only for SPY-like illustration."""
 
 
+class NoUsableOptionData(ValueError):
+    """A live provider responded, but returned no usable option quotes."""
+
+
 def _finite_or_none(value: object) -> float | None:
     number = float(value)
     return number if math.isfinite(number) else None
@@ -47,6 +51,9 @@ def build_snapshot(
         if mode == "live":
             raise RuntimeError("Live option provider unavailable") from exc
         raise
+    if mode == "live" and frame.empty:
+        raise NoUsableOptionData("Live option provider returned no usable option data.")
+    dividend_yield = frame.attrs.get("dividend_yield_decimal") if mode == "live" else config.DIVIDEND_YIELD
     statistics = compute_surface_statistics(frame, actual_spot)
     strikes, maturities, _, _, iv_grid = build_surface(
         frame, n_k=grid_strikes, n_t=grid_maturities
@@ -62,7 +69,7 @@ def build_snapshot(
         "spot": float(actual_spot),
         "pricing_assumptions": {
             "risk_free_rate_decimal": config.RISK_FREE_RATE,
-            "dividend_yield_decimal": config.DIVIDEND_YIELD,
+            "dividend_yield_decimal": dividend_yield,
         },
         "statistics": {
             "n_points": int(statistics["n_points"]),

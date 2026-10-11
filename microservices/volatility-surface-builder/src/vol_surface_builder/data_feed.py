@@ -36,6 +36,16 @@ def _yearfrac(t0: datetime, t1: datetime) -> float:
     return (t1 - t0).total_seconds() / (365.25 * 24 * 3600)
 
 
+def _provider_dividend_yield(ticker: object) -> float:
+    """Return the provider's decimal dividend yield, or an explicit neutral fallback."""
+    try:
+        value = getattr(ticker, "info", {}).get("dividendYield")
+        yield_decimal = float(value)
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+    return yield_decimal if np.isfinite(yield_decimal) and yield_decimal >= 0 else 0.0
+
+
 def pull_live_chain(
     ticker: str = None,
     n_expiries: int = None,
@@ -69,8 +79,6 @@ def pull_live_chain(
         n_expiries = config.N_EXPIRIES
     if r is None:
         r = config.RISK_FREE_RATE
-    if q is None:
-        q = config.DIVIDEND_YIELD
 
     try:
         import yfinance as yf
@@ -81,6 +89,8 @@ def pull_live_chain(
         )
 
     tk = yf.Ticker(ticker)
+    if q is None:
+        q = _provider_dividend_yield(tk)
 
     # get spot price — use last 5 days to handle weekends
     hist = tk.history(period="5d")
@@ -156,6 +166,7 @@ def pull_live_chain(
         )
 
     df = pd.DataFrame(all_rows)
+    df.attrs["dividend_yield_decimal"] = float(q)
     return df, S
 
 
