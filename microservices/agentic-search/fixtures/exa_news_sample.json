@@ -1,0 +1,18 @@
+[
+  {
+    "symbol": "AAPL",
+    "title": "Apple guidance sample",
+    "url": "https://example.com/aapl-guidance",
+    "highlights": ["Deterministic fixture-only article summary for AAPL."],
+    "publishedDate": "2026-10-05T00:00:00Z",
+    "retrieved_at": "2026-10-10T18:05:00Z"
+  },
+  {
+    "symbol": "MSFT",
+    "title": "Other company sample",
+    "url": "https://other.example.com/market-update",
+    "highlights": ["Fixture-only market update for MSFT."],
+    "publishedDate": "2026-10-06T00:00:00Z",
+    "retrieved_at": "2026-10-10T18:05:00Z"
+  }
+]

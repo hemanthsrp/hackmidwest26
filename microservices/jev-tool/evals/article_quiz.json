@@ -25,7 +25,9 @@
         "materiality": 2,
         "content_type": "news_report",
         "event_type": "earnings_or_guidance",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -50,7 +52,9 @@
           "operations_or_supply",
           "product_or_service"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -78,7 +82,9 @@
           "operations_or_supply",
           "other"
         ],
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -100,7 +106,9 @@
         "materiality": 2,
         "content_type": "news_report",
         "event_type": "legal_or_regulatory",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -125,7 +133,9 @@
           "other"
         ],
         "event_type": null,
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -147,7 +157,9 @@
         "materiality": 2,
         "content_type": "news_report",
         "event_type": "earnings_or_guidance",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -169,7 +181,9 @@
         "materiality": 2,
         "content_type": "news_report",
         "event_type": "earnings_or_guidance",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -194,7 +208,9 @@
           "legal_or_regulatory",
           "market_or_macro"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -216,7 +232,9 @@
         "materiality": 0,
         "content_type": "news_report",
         "event_type": "management_or_workforce",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -238,7 +256,9 @@
         "materiality": null,
         "content_type": "news_report",
         "event_type": null,
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -260,7 +280,9 @@
         "materiality": 1,
         "content_type": "news_report",
         "event_type": "deal_or_partnership",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -285,7 +307,9 @@
           "product_or_service",
           "operations_or_supply"
         ],
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -310,7 +334,9 @@
           "operations_or_supply",
           "earnings_or_guidance"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -335,7 +361,9 @@
           "operations_or_supply",
           "legal_or_regulatory"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -364,7 +392,9 @@
           "operations_or_supply",
           "legal_or_regulatory"
         ],
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -392,7 +422,9 @@
           "product_or_service",
           "other"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -414,7 +446,9 @@
         "materiality": null,
         "content_type": "news_report",
         "event_type": null,
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -436,7 +470,9 @@
         "materiality": 2,
         "content_type": "news_report",
         "event_type": "earnings_or_guidance",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -458,7 +494,9 @@
         "materiality": null,
         "content_type": "news_report",
         "event_type": null,
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -480,7 +518,9 @@
         "materiality": 0,
         "content_type": "opinion_or_analysis",
         "event_type": "stock_or_valuation_view",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -508,7 +548,9 @@
         ],
         "content_type": "social_media_post",
         "event_type": "deal_or_partnership",
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": null,
+        "usable_content": true
       }
     },
     {
@@ -536,7 +578,9 @@
           "product_or_service",
           "other"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -561,7 +605,9 @@
         ],
         "content_type": "opinion_or_analysis",
         "event_type": "stock_or_valuation_view",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -583,7 +629,9 @@
         "materiality": null,
         "content_type": "social_media_post",
         "event_type": null,
-        "upcoming_event": null
+        "upcoming_event": null,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -611,7 +659,9 @@
           "other",
           "product_or_service"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -636,7 +686,9 @@
           "product_or_service",
           "operations_or_supply"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -661,7 +713,9 @@
         "materiality": 0,
         "content_type": "opinion_or_analysis",
         "event_type": "product_or_service",
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -689,7 +743,9 @@
           "company_announcement"
         ],
         "event_type": "earnings_or_guidance",
-        "upcoming_event": true
+        "upcoming_event": true,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -718,7 +774,9 @@
         ],
         "content_type": "news_report",
         "event_type": "legal_or_regulatory",
-        "upcoming_event": true
+        "upcoming_event": true,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -746,7 +804,9 @@
         ],
         "content_type": "news_report",
         "event_type": "product_or_service",
-        "upcoming_event": true
+        "upcoming_event": true,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -774,7 +834,9 @@
           "earnings_or_guidance",
           "stock_or_valuation_view"
         ],
-        "upcoming_event": false
+        "upcoming_event": false,
+        "sensational": false,
+        "usable_content": true
       }
     },
     {
@@ -802,7 +864,174 @@
         ],
         "content_type": "news_report",
         "event_type": "management_or_workforce",
-        "upcoming_event": true
+        "upcoming_event": true,
+        "sensational": false,
+        "usable_content": true
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-hype-001",
+        "symbol": "TSLA",
+        "title": "TESLA STOCK IS ABOUT TO EXPLODE!!! You won't BELIEVE what happens next",
+        "summary": "A post claims Tesla shares are guaranteed to skyrocket and urges readers to act before it is too late.",
+        "source_name": "Fixture Other",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-hype-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": [
+          0,
+          1
+        ],
+        "content_type": [
+          "social_media_post",
+          "opinion_or_analysis",
+          "other"
+        ],
+        "event_type": "stock_or_valuation_view",
+        "upcoming_event": false,
+        "sensational": true,
+        "usable_content": true
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-hype-001",
+        "symbol": "NVDA",
+        "title": "Nvidia DOOMED? Shocking report could DESTROY the chip giant",
+        "summary": "The article says an unnamed report suggests demand may slow, and describes the outlook as catastrophic.",
+        "source_name": "Fixture Other",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-hype-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "negative",
+        "materiality": [
+          0,
+          1
+        ],
+        "content_type": [
+          "news_report",
+          "opinion_or_analysis",
+          "other"
+        ],
+        "event_type": null,
+        "upcoming_event": false,
+        "sensational": true,
+        "usable_content": true
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-hype-001",
+        "symbol": "AAPL",
+        "title": "Apple's INSANE new feature changes EVERYTHING",
+        "summary": "A breathless write-up enthuses about a new software feature in Apple's latest update, calling it the biggest change in years.",
+        "source_name": "Fixture Other",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-hype-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": true,
+        "direction": "positive",
+        "materiality": [
+          0,
+          1
+        ],
+        "content_type": [
+          "opinion_or_analysis",
+          "other",
+          "news_report"
+        ],
+        "event_type": "product_or_service",
+        "upcoming_event": false,
+        "sensational": true,
+        "usable_content": true
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-aapl-junk-001",
+        "symbol": "AAPL",
+        "title": "Subscribe to continue reading",
+        "summary": "You have reached your limit of free articles. Subscribe now for unlimited access to our coverage of Apple and more.",
+        "source_name": "Fixture Other",
+        "source_url": "https://example.invalid/fixtures/sample-aapl-junk-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "other",
+        "event_type": null,
+        "upcoming_event": null,
+        "sensational": null,
+        "usable_content": false
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-nvda-junk-001",
+        "symbol": "NVDA",
+        "title": "Page not found",
+        "summary": "Sorry, the page you are looking for could not be found. It may have been moved or deleted.",
+        "source_name": "Fixture Other",
+        "source_url": "https://example.invalid/fixtures/sample-nvda-junk-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "other",
+        "event_type": null,
+        "upcoming_event": null,
+        "sensational": null,
+        "usable_content": false
+      }
+    },
+    {
+      "evidence": {
+        "id": "sample-tsla-junk-001",
+        "symbol": "TSLA",
+        "title": "Tesla",
+        "summary": "Accept cookies to continue. We use cookies to personalise content and ads and to analyse our traffic.",
+        "source_name": "Fixture Other",
+        "source_url": "https://example.invalid/fixtures/sample-tsla-junk-001",
+        "published_at": "2026-10-10T16:00:00Z",
+        "observed_at": "2026-10-10T16:02:00Z",
+        "retrieved_at": "2026-10-10T18:05:00Z",
+        "data_mode": "sample"
+      },
+      "expected": {
+        "relevant": false,
+        "direction": null,
+        "materiality": null,
+        "content_type": "other",
+        "event_type": null,
+        "upcoming_event": null,
+        "sensational": null,
+        "usable_content": false
       }
     }
   ]
