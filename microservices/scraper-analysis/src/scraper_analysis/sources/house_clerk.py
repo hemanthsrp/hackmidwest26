@@ -13,8 +13,10 @@ Limits, stated rather than hidden:
   unreadable PDFs and failed downloads are counted and reported on the live
   result (FetchResult.error, e.g. "partial: 3 of 30 House PTR filings
   skipped (...)"), so partial coverage is never presented as complete.
-- Rows are matched by ticker. Assets with no ticker (bonds, funds named only
-  in words) are ignored, so this under-counts rather than guesses.
+- Rows are matched by ticker: the parenthesized token printed right before
+  the asset-type code ("Fund (ETF) (VOO) [EF]" is VOO). Assets with no
+  ticker (bonds, funds named only in words) and rows whose ticker is
+  ambiguous are ignored, so this under-counts rather than guesses.
 - Only the newest MAX_FILINGS_TO_SCAN filings in the lookback are read, the
   same bounding rule as the Senate adapter and for the same reason: one
   request per filing, and an unbounded scan is slow and abusive to a
@@ -65,6 +67,8 @@ _MONEY_RE = re.compile(r"\$[\d,]+")
 _MARKER_RE = re.compile(r"^(F\s*S|S\s*O|D|C|L)\s*:")  # filing-status / sub-owner / description / comment / location blocks
 _FREE_TEXT_MARKER_RE = re.compile(r"^(D|C)\s*:")  # description / comment: filer prose, can wrap many lines
 _TICKER_PAREN_RE = re.compile(r"\(([A-Z]{1,5}(?:[./-][A-Z])?)\)")
+# The ticker is the parenthesized token immediately before the asset-type code.
+_TICKER_BEFORE_TYPE_RE = re.compile(r"\(([A-Z]{1,5}(?:[./-][A-Z])?)\)(?=\s*\[[A-Z]{2}\])")
 _TICKER_BARE_RE = re.compile(r"^([A-Z]{1,5}(?:[./-][A-Z])?)\s*\[")
 _ASSET_TYPE_RE = re.compile(r"\[([A-Z]{2})\]")
 _OWNER_RE = re.compile(r"^(SP|DC|JT)\s+")
@@ -182,6 +186,31 @@ def _normalize_ticker(raw: str) -> str:
     return raw.replace("/", ".").replace("-", ".")
 
 
+def _pick_ticker(asset_text: str, asset_lines: list[str]) -> tuple[str | None, tuple[int, int] | None]:
+    """(raw ticker, span of its "(XXX)" in asset_text) or (None, None).
+
+    The ticker is the parenthesized token printed right before the asset-type
+    code ("Fund (ETF) (VOO) [EF]" -> VOO), wherever the form put it (before
+    the type, after the amount, or wrapped onto the next line -- asset_text
+    joins them in order). Other parenthesized words in the asset name ("(ETF)",
+    "(Class A)") are not tickers. When that adjacency is missing, a lone
+    parenthesized token is used only if the row has no asset-type code at all;
+    otherwise the row is ambiguous and skipped (PR #17 review: the first
+    parenthesized token is not necessarily the ticker)."""
+    adjacent = list(_TICKER_BEFORE_TYPE_RE.finditer(asset_text))
+    if adjacent:
+        if len({m.group(1) for m in adjacent}) > 1:
+            return None, None  # two different tickers claim this row: never guess
+        return adjacent[0].group(1), adjacent[0].span(0)
+    parens = list(_TICKER_PAREN_RE.finditer(asset_text))
+    if len(parens) == 1 and not _ASSET_TYPE_RE.search(asset_text):
+        return parens[0].group(1), parens[0].span(0)
+    if parens:
+        return None, None  # parenthesized words but none adjacent to the asset type: ambiguous
+    bm = next((b for b in (_TICKER_BARE_RE.match(p) for p in asset_lines) if b), None)  # "DIA [OT]"
+    return (bm.group(1), None) if bm else (None, None)
+
+
 def parse_ptr_text(text: str) -> list[dict]:
     """Plain-text entry point (no word positions): see parse_ptr_lines."""
     return parse_ptr_lines([PtrLine(ln) for ln in text.replace("\x00", "").split("\n")])
@@ -253,19 +282,16 @@ def parse_ptr_lines(ptr_lines: list[PtrLine]) -> list[dict]:
             owner = OWNER_LABELS[om.group(1)]
             asset_text = asset_text[om.end():]
 
-        tm = _TICKER_PAREN_RE.search(asset_text)
-        raw_ticker = tm.group(1) if tm else None
-        if raw_ticker is None:
-            bm = next((b for b in (_TICKER_BARE_RE.match(p) for p in asset_lines) if b), None)
-            raw_ticker = bm.group(1) if bm else None
+        raw_ticker, ticker_span = _pick_ticker(asset_text, asset_lines)
         if raw_ticker is None:
             continue  # no usable ticker: skip rather than guess
 
         ac = _ASSET_TYPE_RE.search(asset_text)
+        name_text = asset_text[: ticker_span[0]] + " " + asset_text[ticker_span[1]:] if ticker_span else asset_text
         rows.append(
             {
                 "ticker": _normalize_ticker(raw_ticker),
-                "asset_name": " ".join(_TICKER_PAREN_RE.sub("", _ASSET_TYPE_RE.sub("", asset_text)).split()).strip(" -"),
+                "asset_name": " ".join(_ASSET_TYPE_RE.sub("", name_text).split()).strip(" -"),
                 "asset_type_code": ac.group(1) if ac else None,
                 "transaction_type": TYPE_LABELS[m.group("type")],
                 "transaction_date": m.group("tx"),
