@@ -13,7 +13,7 @@ independent legs, each backed by cited records:
   insider    discretionary Form 4 open-market flow (10b5-1 plan trades are
              excluded -- they were scheduled months ago and say little about
              current conviction; they are reported in notes instead)
-  congress   Senate periodic-transaction purchases vs sales
+  congress   congressional (Senate and House) periodic-transaction purchases vs sales
   news       credibility-weighted tone of Bedrock-tagged news items
 
 and flag the pairs that disagree. Every threshold is a named constant and is
@@ -28,7 +28,7 @@ Input hygiene, applied inside analyze() so no caller can bypass it:
     around the anchor (the price signal's as_of, else the caller's as_of,
     else now): at most RECENCY_LOOKBACK_DAYS before it and
     RECENCY_FORWARD_GRACE_DAYS after it. The event date is observed_at
-    (Form 4 / Senate trade date) falling back to published_at (news).
+    (Form 4 / congressional trade date) falling back to published_at (news).
     Congressional disclosures are filed up to 45 days after the trade; we
     still window on the trade date, because that is when the senator acted,
     and accept that the congress leg will often be empty (a false negative
@@ -149,7 +149,7 @@ def _congress_leg(evidence: list[Evidence]) -> Leg:
     buys = [e for e in trades if str(e.details.get("transaction_type", "")).lower().startswith("purchase")]
     sells = [e for e in trades if str(e.details.get("transaction_type", "")).lower().startswith("sale")]
     if not buys and not sells:
-        return Leg("congress", None, "No Senate trades in this symbol.")
+        return Leg("congress", None, "No congressional (Senate or House) trades in this symbol.")
     if len(buys) > len(sells):
         direction = "buying"
     elif len(sells) > len(buys):
@@ -201,10 +201,10 @@ def _flags(legs: dict[str, Leg]) -> list[Flag]:
         add("bearish_news_rising_price", "Bearish news, rising price",
             f"News tone is bearish ({news.summary}) but price {price.summary}", news, price)
     if congress.direction == "buying" and insider.direction == "selling":
-        add("congress_buying_insiders_selling", "Senate buying while insiders sell",
+        add("congress_buying_insiders_selling", "Members of Congress buying while insiders sell",
             f"{congress.summary} vs {insider.summary}", congress, insider)
     if congress.direction == "selling" and insider.direction == "buying":
-        add("congress_selling_insiders_buying", "Senate selling while insiders buy",
+        add("congress_selling_insiders_buying", "Members of Congress selling while insiders buy",
             f"{congress.summary} vs {insider.summary}", congress, insider)
     return flags
 

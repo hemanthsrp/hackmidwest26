@@ -395,3 +395,23 @@ def test_senate_fingerprints_are_unchanged():
     ev = normalize(SenateEfdAdapter().fetch_sample("AAPL")[0], "sample")
     day = ev.observed_at.date().isoformat()
     assert _fingerprint(ev) == f"{ev.source_url.strip().lower()}::{' '.join(ev.title.lower().split())}::{day}"
+
+
+def test_house_trades_feed_the_divergence_congress_leg_with_neutral_labels():
+    """After the stack merge, House records share source_type with Senate ones,
+    so the divergence congress leg must count them and not call them Senate."""
+    from datetime import datetime, timezone
+
+    from scraper_analysis.models.evidence import Evidence
+    from scraper_analysis.pipeline.divergence import _congress_leg
+
+    def house(tx_type):
+        return Evidence(symbol="AAPL", title=f"Rep. X {tx_type}", source_name="House Clerk",
+                        source_type="congressional_disclosure", data_mode="live",
+                        retrieved_at=datetime(2026, 10, 10, tzinfo=timezone.utc),
+                        details={"chamber": "House", "transaction_type": tx_type})
+
+    leg = _congress_leg([house("Sale (Full)"), house("Sale (Partial)"), house("Purchase")])
+    assert leg.direction == "selling"
+    assert "Senate" not in (leg.summary or "")
+    assert "House" in _congress_leg([]).summary  # empty-leg text names both chambers
