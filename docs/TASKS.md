@@ -1,6 +1,6 @@
 # Four-agent task board
 
-**Status:** Proposed, unclaimed. This is a scoped handoff board, not a record that work has started. Confirm human ownership and the MVP with the team. Each implementation task requires a branch/worktree, exact acceptance checks and an integration review under `AGENTS.md`.
+**Status:** Mixed. Several discovery and implementation branches have landed, while Gate 0 and the full product contract remain open. Confirm human ownership and the MVP with the team. Each remaining implementation task requires a branch/worktree, acceptance checks and an integration review under `AGENTS.md`.
 
 ## Gates and dependency order
 
@@ -73,9 +73,10 @@
 
 ## Agent C — frontend and baseline (Hemanth lane)
 
-**C1 — Existing baseline assessment + UX wireframe** (unclaimed; independent discovery)
+**C1 — Existing baseline assessment + UX wireframe** (baseline assessment/import complete in `vsb-integration`; stock-detail UX wireframe still open)
 - Inspect the actual `vol-surface-builder` repo with authorization and identify code worth reusing versus options-only math. Propose one stock detail flow and labeled demo states (loading, stale, sample, error, insufficient data).
 - **Done when:** findings cite actual paths/tests, or lack of repo access is recorded; no claim that baseline predicts prices.
+- **Handoff (2026-10-10):** Imported the source option-volatility pipeline into `microservices/volatility-surface-builder` with a namespaced package, original tests/notebook/methodology, sample/live chart CLI, and standalone local API. See its README and `docs/integration-notes.md`. Sample data are SPY-only; the service is not wired into the research assessment. No buy/sell signal is inferred from option IV.
 
 **C2 — Next.js demo slice** (unclaimed; after Gate 0)
 - Build a Next.js/TypeScript view for symbol selection, dated evidence, chart/signals, assessment, uncertainty and source links. Consume the agreed API; fixture mode must be visually labeled. A preferences form is optional if time allows.
@@ -91,6 +92,10 @@
 **D2 — Deployment/observability/smoke** (unclaimed; after Gate 0 and runnable app for remote smoke)
 - Add minimal deployment configuration, health/logging, safe example environment names and a repeatable smoke test. Deploy only with approval; verify actual frontend/backend and Akamai use before claiming them. Local fallback remains runnable.
 - **Done when:** local smoke actually runs, and remote URL/health/log evidence is provided if deployed; failures and remaining manual steps are explicit.
+
+**D4 — Agentic-search retrieval boundary** (claimed 2026-10-10: Allen/D; review-fix branch `allen/d4-review-fixes`; integration owner: Jet)
+- Define and implement a project-owned, fixture-first Exa Search API boundary with bounded symbol/date/domain/result filters, explicit live/provider failure behavior, and a documented storage seam. Scope is limited to a new isolated adapter package, safe configuration templates, and retrieval/storage documentation; it does not modify Cai's scraper API, Jet's API routes, or the database schema without their accepted contract.
+- **Done when:** deterministic adapter tests and one local HTTP-contract smoke pass; the documented storage contract keeps evidence metadata in PostgreSQL and reserves pgvector(1024) for optional semantic ranking after metadata/time filters. Live calls require a team-provided server-only `EXA_API_KEY` and remain unavailable otherwise.
 
 ## Integration lead checklist
 

@@ -1,16 +1,18 @@
 # Hack Midwest 2026 — financial research assistant
 
-> **Status:** Planning. The repository currently contains the original [context dump](DUMP.md); the product, implementation, and deployment are not yet verified. This README describes the intended direction, not a working application.
+> **Status:** Several local backend components are implemented; the full product, frontend, and deployment are not yet verified. The MVP contract remains a proposal pending team confirmation.
 
 Build an evidence-backed stock research experience that brings together permitted news sources and market data, derives quantitative signals, and presents an explainable **buy / hold / sell research assessment** with uncertainty and a stated time horizon. The intended demo includes personalized context and a stock detail view. This is decision support, **not an automated trading system or a guarantee of returns**.
 
-The hackathon concept aims to use a Python backend orchestrated with **Strands Agents SDK**, a **Next.js/TypeScript** frontend, and **Akamai Cloud** infrastructure. JEV is proposed for a narrow classification/decision step through MCP. These integrations are targets, not verified working components. See [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for MVP scope and [ARCHITECTURE.md](ARCHITECTURE.md) for proposed boundaries.
+The hackathon concept aims to use a Python backend orchestrated with **Strands Agents SDK**, a **Next.js/TypeScript** frontend, and **Akamai Cloud** infrastructure. The shared Jev Python/MCP tool and Akamai inference preflight have been exercised; the full application path is still pending. See [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for MVP scope and [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries.
 
 ## Current state
 
 - `DUMP.md` is the source record for the challenge, ideas, team ownership, and uncertainties.
-- No application code or runnable setup is present in this repository yet. Hemanth's prior `vol-surface-builder` is described in `DUMP.md` but **has not been imported here**.
-- No live data providers, Akamai resources, Strands workflow, JEV/MCP connection, or brokerage integrations have been verified here.
+- `microservices/research-api` serves a labeled local research fixture. Its Akamai inference and Jev adapters exist but are not wired into the assessment route.
+- `microservices/scraper-analysis` has source adapters, normalized evidence/signals, and local fixtures. Provider rights and live behavior still need review for the agreed demo.
+- Hemanth's option-volatility baseline is imported into [volatility-surface-builder](../microservices/volatility-surface-builder/README.md), with its original math/tests, notebook, methodology, chart CLI, and a standalone API. It is an options diagnostic and does not make stock assessments.
+- The shared `jev-tool` has offline tests and recorded real calls. Akamai inference and PostgreSQL have been preflighted, but the frontend, full Strands workflow, and deployment remain incomplete.
 
 ## For contributors and the four-agent team
 
@@ -21,7 +23,7 @@ The hackathon concept aims to use a Python backend orchestrated with **Strands A
 
 ## Local development
 
-**TBD after scaffolding.** The frontend and backend commands, required environment variable *names*, test commands, and deployment URL belong here once verified. Never commit tokens, brokerage credentials, or personal account data. There is currently no verified install/run command to copy.
+Each implemented service has local setup and test commands in its README. The volatility service's sample mode runs without credentials. Frontend commands and a deployment URL remain TBD. Never commit tokens, brokerage credentials, or personal account data.
 
 ## Demo target
 
@@ -35,3 +37,4 @@ A judge chooses a stock; the app displays dated source evidence, market/quant si
 - [Four-agent collaboration rules](AGENTS.md)
 - [Prioritized work and owners](TASKS.md)
 - [Decisions and unresolved questions](DECISIONS.md)
+- [Imported volatility-surface service](../microservices/volatility-surface-builder/README.md)

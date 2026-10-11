@@ -7,11 +7,11 @@ Keep **confirmed decisions** separate from the recommended MVP and unverified in
 | Area | Recorded direction | Status / caveat |
 |---|---|---|
 | Goal | FinTech stock research with aggregated information, historical/quant analysis and buy/hold/sell assessment | Concept, not a working or validated predictor |
-| Backend | Python and Strands Agents SDK orchestration, with MCP and JEV for a narrow decision step | Proposed; interfaces and access unverified |
+| Backend | Python and Strands Agents SDK orchestration, with MCP and JEV for a narrow decision step | Local Research API and shared Jev tool exist; full Strands assessment flow is not connected |
 | Frontend | Next.js/TypeScript | Proposed, not scaffolded |
-| Infrastructure | Akamai Cloud deployment and potentially hosted inference; vector storage for retrieval | Proposed; credits/accounts/storage needs unverified |
+| Infrastructure | Akamai Cloud deployment and potentially hosted inference; vector storage for retrieval | Akamai inference and managed PostgreSQL preflight are recorded; application deployment remains open |
 | Team | Jet: backend/JEV/MCP; Cai: data/analysis; Hemanth: baseline/frontend; Allen: infra/DB | From `DUMP.md`; agent lanes are a proposal pending team confirmation |
-| Prior work | `hemanthsrp/vol-surface-builder` described as options-data/volatility tooling | Not yet imported or independently verified here; not a stock-price prediction model |
+| Prior work | `vol-surface-builder` options-data/volatility tooling | Imported into `microservices/volatility-surface-builder` with tests, CLI, notebook, methodology and standalone API; not a stock-price prediction model |
 
 ## Proposed MVP choices — require team sign-off
 
@@ -29,10 +29,11 @@ Keep **confirmed decisions** separate from the recommended MVP and unverified in
 | Which symbol(s), user journey and judge-facing demo are essential? | Team/Jet; agree on a short script | Open |
 | Which news and market sources permit our use, storage, links and demo? | Cai + team; terms, rate limits, API availability | Open; no assumed WSJ/Bloomberg access |
 | What is the v0 JSON/API schema, timestamp semantics, units, score meaning and error behavior? | Jet with Cai/Hemanth/Allen; example payload + review | Open; `ARCHITECTURE.md` contains a proposal |
-| Is JEV accessible and callable through MCP; what is its input/output contract? | Jet; observed test call and policy/latency | Open |
-| Which model/inference backend is available through Akamai; how is auth handled? | Jet + Allen; kickoff docs, harmless test call | Open |
+| Is JEV accessible and callable through MCP; what is its input/output contract? | Jet; observed test call and policy/latency | Real Jev calls and MCP round trips recorded; full assessment integration open |
+| Which model/inference backend is available through Akamai; how is auth handled? | Jet + Allen; kickoff docs, harmless test call | Endpoint preflight recorded; application adapter integration open |
 | Is a vector DB necessary for the small MVP evidence set? If so which service and retention policy? | Allen + Jet; measured need, cost, setup | Open; simple retrieval is acceptable until justified |
-| What may be reused from Hemanth's code and under what license? | Hemanth; inspect repo/source/permission | Open |
+| How will the imported option-volatility service appear in the stock-detail flow? | Hemanth + Jet + Cai; agree chart contract, provenance/freshness, and whether options data belong in the MVP | Open; standalone service works locally; no research API connection yet |
+| What are the redistribution terms of the original volatility code? | Hemanth; original README states MIT but supplied checkout has no license file | Open for separate redistribution |
 | Are brokerage connections legal/feasible/safe for this event? | Team; provider policy, OAuth scope, test account and user approval | Deferred from MVP, not authorized |
 | What is the actual deployment target, available credit and approval to provision? | Allen + Jet; account access and spend approval | Open |
 | What is the evaluation horizon and baseline for any predictive claim? | Cai + Jet; time-split data and metric | Open; no accuracy claims pending evidence |
@@ -41,7 +42,7 @@ Keep **confirmed decisions** separate from the recommended MVP and unverified in
 
 The reviewable A1 proposal is [api-contract-v0.md](api-contract-v0.md). It is **not a recorded decision** and must not be treated as authorization to begin A2. The proposed route is `POST /v0/research-assessments`; it models `live`, `cached`, and `sample` data modes; reserves `insufficient_data` for a truthful successful response; and supplies stable examples for invalid input, unavailable providers, and stale data. It also proposes a server-side-only Akamai OpenAI-compatible inference adapter with an explicitly selected deterministic fixture adapter, while retaining the existing shared `microservices/jev-tool` boundary.
 
-Gate 0 must still accept or revise the route and fields; supported symbols; data-provider rights; timestamp/freshness semantics; stale-data status behavior; assessment horizon/score meaning; Jev access proof; Akamai endpoint/auth/model/test procedure; vector-storage scope; and provisioning approval. Until then, all example values are fixtures and all inference/Jev integrations remain unverified.
+Gate 0 must still accept or revise the route and fields; supported symbols; data-provider rights; timestamp/freshness semantics; stale-data status behavior; assessment horizon/score meaning; integration of the observed Jev and Akamai capabilities; vector-storage scope; and deployment approval. The example contract values remain fixtures.
 
 ## Decision log template
 
