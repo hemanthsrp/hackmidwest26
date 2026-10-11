@@ -185,6 +185,23 @@ Writing a good question:
 - Avoid negations and "which of these is not".
 - Ask what the text *says*, not what someone should *do* about it.
 
+### Read the stored judgment before calling Jev
+
+`scraper-analysis` already runs `judge_article` on every new news and social record at ingestion and stores the result on the evidence record. If you are working with evidence that came from the scraper, **read it; do not call Jev again for the same article.**
+
+| On the record | What it is |
+|---|---|
+| `details.jev` | The full judgment from section 4 (`engine`, `relevant`, `direction`, `content_type`, `event_type`, `upcoming_event`, `sensational`, `usable_content`, `materiality`, confidences, `same_story_as`). Check `engine == "jev"`; `"unavailable"` means Jev was on but did not answer. Absent means the record was never sent (filings, disclosures, or Jev was off). |
+| `details.grade` | One stored `strength` with the `factors` behind it, plus `gated` and `gate_reasons` (`off_topic`, `unusable_content`). Present on every record ingested while Jev was on; filings are graded on source credibility alone (`basis: "source_only"`). |
+
+How to use them:
+
+- **An off-topic record is kept, not deleted.** Its sentiment and tags may not be about the symbol. Skip gated records in anything you aggregate (tone, counts, averages); show or cite one only for a specific fact about the company.
+- **`strength` ranks records against each other.** It is not a rating out of 1 (top news records sit around 0.3 to 0.4) and never a prediction. Freshness is not included; `GET /evidence?ranked=true` on the scraper applies it and returns `strength_now` and a `news_tone` summary.
+- In `research-api`, `JevDecisionAdapter.judge_evidence(...)` already prefers a stored judgment over a new call.
+
+Field details and the weights: `microservices/scraper-analysis/INTEGRATION.md` (sections "Jev judgment" and "Grade") and `pipeline/grade.py`.
+
 ## 5. Calling it from a Strands agent
 
 ```python
@@ -263,4 +280,5 @@ Coordinate with Jet before changing existing wording: other services cache and t
 | `src/jev_tool/env.py` | `.env` loading |
 | `src/jev_tool/evals.py`, `evals_explanation.py`, `evals_pairs.py`, `evals/` | Wording checks and saved reports |
 | `README.md` | Setup and human-oriented notes |
-| `../../docs/jev-integration-research.md` | Background, limits, planned uses, sources |
+| `../scraper-analysis/src/scraper_analysis/pipeline/jev_judge.py`, `grade.py` | Where judgments and grades are produced and stored at ingestion |
+| `../../docs/jev-integration-research.md` | Background, limits, planned uses, sources, live findings |

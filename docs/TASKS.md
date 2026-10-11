@@ -24,22 +24,22 @@
 - Wire source and quant outputs into an explainable assessment with horizon/uncertainty and evidence IDs; connect JEV/MCP only if verified, otherwise retain an explicitly labeled fallback and document unmet sponsor criteria.
 - **Done when:** full API demo uses real module boundaries, handles failures, and logged examples do not leak secrets; integration smoke passes locally.
 
-**A-J1 — Jev wording-check harness** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-wording-check`; complete, ready for review)
+**A-J1 — Jev wording-check harness** (Jet via Claude Code; complete, merged to `main` 2026-10-10)
 - Owns: `microservices/jev-tool/evals/`, `microservices/jev-tool/src/jev_tool/evals.py`, `microservices/jev-tool/src/jev_tool/presets.py`, `microservices/jev-tool/tests/test_evals.py`, and `docs/jev-integration-research.md`. Does not touch `api-contract-v0.md`, `ARCHITECTURE.md`, `DECISIONS.md`, or any A2 code. Other agents: coordinate with Jet before editing these paths.
 - Hand-labelled sample headlines in the proposed v0 evidence shape, run through the `judge_article` questions and scored against an answer key, to check question wording once Jev access exists. Independent of Gate 0; not A2 work.
 - **Done when:** offline tests pass (done: 22 passed, 1 live test skipped); one real run is recorded with model, request IDs and report (done 2026-10-10: reports in `microservices/jev-tool/evals/`, summary in `jev-integration-research.md` §12). This also supplies the observed Jev call for the Gate 0 access question; `judge_article` now returns `content_type` as well (question set `article-v2`).
 
-**A-J2 — jev-tool connection surface** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-wording-check`; complete, ready for review)
+**A-J2 — jev-tool connection surface** (Jet via Claude Code; complete, merged to `main` 2026-10-10)
 - Owns: `microservices/jev-tool/` only. Adds `.env` loading, `jev_tool.strands_mcp.mcp_client()`, and `judge_evidence` / `judge_evidence_items` for evidence items in the v0 contract shape. See "Calling Jev from the backend" in `microservices/jev-tool/README.md`.
 - **Not included, left to A2:** the backend's `DecisionAdapter` / `JevDecisionAdapter` and any fixture mode. That adapter should call this package's public interface and pass `engine: unavailable` through.
 - **Done when:** offline tests pass (done: 25 passed) and the live MCP check passes with the key read from `.env` (done).
 
-**A-J3 — Jev event-type and explanation checks** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-event-and-explanation-checks`; complete, ready for review)
+**A-J3 — Jev event-type and explanation checks** (Jet via Claude Code; complete, merged to `main` 2026-10-10)
 - Owns: `microservices/jev-tool/` only. `judge_article` gains `event_type` and `upcoming_event` (question set `article-v3`); new `check_explanation` function and MCP tool (question set `explanation-v1`) checks a written explanation sentence by sentence against its evidence and flags advice or promised outcomes.
 - **For A2/A3:** call `check_explanation` from the backend adapter once an explanation step exists; see `microservices/jev-tool/AGENT_GUIDE.md`. Thresholds and what to do on a hit are the caller's decision.
 - **Done when:** offline tests pass (done: 34 passed) and both wording checks are run against real Jev with reports saved (done; reports in `microservices/jev-tool/evals/`).
 
-**A-J4 — Jev judgment at ingestion in `scraper-analysis`** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-scraper-judgment`; built, **awaiting Cai's review before merge**)
+**A-J4 — Jev judgment at ingestion in `scraper-analysis`** (Jet via Claude Code; complete, merged to `main` 2026-10-10 at Jet's direction; **the scraper owner has not reviewed it yet**)
 - Cross-lane, additive only. New `microservices/scraper-analysis/src/scraper_analysis/pipeline/jev_judge.py` and `tests/test_jev_judge.py`. Small edits to Cai's files: `config.py` (three settings), `pipeline/ingest.py` (one optional step after tagging), `api.py` (`judge` flag), `.env.example`, `INTEGRATION.md` (new section). `jev-tool`: `JevTool` accepts an explicit `api_key`.
 - With `JEV_ENABLED=true`, new news/social evidence gains `details.jev`. Off by default; tagging, credibility, dedup, storage schema and the briefing prompt are unchanged.
 - Also on this branch: `same_story_as` marking; opt-in `JEV_FILL_SENTIMENT`; advisory briefing review in new `agents/jev_guard.py` (four added lines at the end of `generate_briefing` in `synthesis_agent.py`, reported in `meta.jev_review` and `warnings`). `jev-tool`: `sensational` and `usable_content` on `judge_article` (`article-v4`), new `same_story` (`same-story-v1`).
@@ -47,10 +47,19 @@
 - Checked to merge cleanly with the open `achen/scraper-divergence`, `achen/scraper-house` and `achen/scraper-scheduler` branches as of 2026-10-10.
 - **Done when:** scraper tests pass with Jev off (done: 153 passed, 132 before plus 21 new) and one real run over the fixtures returns judgments and a briefing review (done); the scraper's owner accepts the change (not done).
 
-**A-J5 — Evidence grading and final Jev pass in `scraper-analysis`** (claimed 2026-10-10: Jet via Claude Code; branch `jet/jev-scraper-final`; built and run live with Bedrock; awaiting the scraper owner's review)
+**A-J5 — Evidence grading and final Jev pass in `scraper-analysis`** (Jet via Claude Code; complete, merged to `main` 2026-10-10 at Jet's direction; **the scraper owner has not reviewed it yet**)
 - New `pipeline/grade.py`: `details.grade` stored at ingestion (strength, factors, `off_topic` / `unusable_content` labels; nothing dropped), `news_tone`, ranking helpers. Opt-in `ranked` / `relevant_only` on `GET /evidence`. Briefing agent rows show `strength`, `relevance_to_symbol`, `off_topic_for_symbol`, with one added prompt rule. Briefing review now covers news and social points only, warning below 0.3.
 - Bedrock tagging is unchanged and still runs on every article; the grade is what tells a reader an article may not be about the symbol.
 - **Done when:** scraper tests pass (done: 165 passed) and a live run with Bedrock tagging, grading and reviewed briefings is recorded (done: `jev-integration-research.md` section 17); owner's review (not done).
+
+**Jev follow-ups (unclaimed)**
+- Review of A-J4 and A-J5 by the scraper's owner. Everything is inactive unless `JEV_ENABLED=true`.
+- When the divergence work merges, have its news leg skip off-topic records: `pipeline.grade.is_gated(evidence)`.
+- Records stored before Jev was enabled carry no `details.jev` or `details.grade`; a one-off backfill has not been built.
+- Confirm each news source's terms allow sending titles and summaries to TypeSafe before enabling Jev on live demo data.
+- `research-api`: the decision adapter reads a stored `details.jev` but not `details.grade`, and is not wired to the route.
+- Strength weights, the 0.3 relevance gate and the 0.8 hype threshold are untuned heuristics checked by eye on three symbols.
+- With a `.env` that points at the shared database, run scraper tests with `DATABASE_URL=` blanked.
 
 ## Agent B — evidence and quant (Cai lane)
 
