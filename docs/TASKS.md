@@ -116,6 +116,11 @@
 - Define and implement a project-owned, fixture-first Exa Search API boundary with bounded symbol/date/domain/result filters, explicit live/provider failure behavior, and a documented storage seam. Scope is limited to a new isolated adapter package, safe configuration templates, and retrieval/storage documentation; it does not modify Cai's scraper API, Jet's API routes, or the database schema without their accepted contract.
 - **Done when:** deterministic adapter tests and one local HTTP-contract smoke pass; the documented storage contract keeps evidence metadata in PostgreSQL and reserves pgvector(1024) for optional semantic ranking after metadata/time filters. Live calls require a team-provided server-only `EXA_API_KEY` and remain unavailable otherwise.
 
+**D5 — Evidence lifecycle and attribution contract** (claimed 2026-10-11: Allen/D; branch `allen/d5-evidence-lifecycle`; integration owner: Jet; pending Cai and Jet contract acknowledgement)
+- Audit the shared evidence store without exposing record text or credentials. Propose explicit article/source provenance, frontend-sortable value-origin and impact categories, and retained-evidence lifecycle fields (fresh, stale, archived and retention deadline).
+- No scraper schema, ingestion, Research API, or decision-maker code changes occur until Cai accepts the storage contract and Jet accepts the response-contract impact.
+- **Done when:** the database audit is recorded without raw article content; accepted schema and migration/backfill path preserve existing records; structural filters precede vector ranking; the frontend receives cited source/date/category/lifecycle metadata; targeted tests and an ordered integration smoke demonstrate ingestion, grounding, quant warning semantics and assessment reads.
+
 ## Integration lead checklist
 
 - [ ] Confirm MVP and selected demo symbol(s) with teammates.

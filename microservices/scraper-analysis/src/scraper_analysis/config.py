@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     reddit_user_agent: str = "scraper-analysis/0.1 (hackathon research demo)"
 
     news_api_key: str | None = None
+    # Exa is an optional, bounded article-research provider. Its key is read
+    # only by the agentic-search package from EXA_API_KEY; this flag prevents
+    # accidental provider calls in environments that merely carry a key.
+    enable_exa_search: bool = False
     noaa_cdo_token: str | None = None
     sec_edgar_user_agent: str = "hackmidwest-scraper-analysis <set-contact-email>"
 
