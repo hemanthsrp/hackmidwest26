@@ -22,10 +22,12 @@ server-only `EXA_API_KEY`; missing configuration returns an explicit
 `provider_unavailable` envelope and never substitutes a fixture response.
 
 The adapter calls `POST https://api.exa.ai/search` with the key only in the
-`x-api-key` request header. It requests Exa `highlights`, not raw page text;
-returned excerpts are capped at 500 characters. Provider failures collapse to
-a safe error envelope, so keys, request URLs, and raw provider messages are
-not returned.
+`x-api-key` request header. It requests Exa `highlights`, not raw page text.
+The retrieval boundary deliberately does **not** impose a character cap on
+provider highlights: downstream cleansing/prompt-selection owns shortening,
+source-policy enforcement, relevance selection, and any persisted/prompted
+retention limit. Provider failures collapse to a safe error envelope, so keys,
+request URLs, and raw provider messages are not returned.
 
 ## Evidence and scoring guardrails
 

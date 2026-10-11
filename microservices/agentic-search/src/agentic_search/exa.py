@@ -14,7 +14,6 @@ from urllib.request import Request, urlopen
 _EXA_SEARCH_URL = "https://api.exa.ai/search"
 _FIXTURE_PATH = Path(__file__).resolve().parents[2] / "fixtures" / "exa_news_sample.json"
 _MAX_RESULTS = 10
-_MAX_EXCERPT_CHARS = 500
 
 
 @dataclass(frozen=True)
@@ -167,8 +166,10 @@ def _excerpt(item: dict[str, Any]) -> str:
         text = " ".join(str(highlight) for highlight in highlights if isinstance(highlight, str))
     else:
         text = ""
-    # Exa's supplied summary is acceptable metadata. Deliberately never read raw `text`.
-    return (text or str(item.get("summary", "")))[:_MAX_EXCERPT_CHARS]
+    # Deliberately never read raw `text`. This retrieval boundary does not enforce
+    # a length limit: the downstream cleansing/prompt-selection stage owns excerpt
+    # reduction, source-policy enforcement, and relevance selection.
+    return text or str(item.get("summary", ""))
 
 
 def _bare_domain(url: str) -> str:

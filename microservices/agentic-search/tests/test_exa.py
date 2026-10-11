@@ -85,7 +85,7 @@ def test_live_search_uses_exa_search_api_with_all_bounded_filters() -> None:
     assert not hasattr(response.results[0], "buy_sell_confidence")
 
 
-def test_live_search_caps_excerpt_without_reading_raw_text() -> None:
+def test_live_search_keeps_the_full_highlight_without_reading_raw_text() -> None:
     response = ExaSearch(
         api_key="test-key",
         transport=lambda _: {
@@ -101,8 +101,10 @@ def test_live_search_caps_excerpt_without_reading_raw_text() -> None:
         },
     ).search(symbol="AAPL", query="news", mode="live")
 
-    assert len(response.results[0].summary) == 500
-    assert response.results[0].summary == "x" * 500
+    # The retrieval boundary passes Exa highlights through unchanged.  A later
+    # cleansing/prompt-selection stage owns length, rights, and relevance rules.
+    assert len(response.results[0].summary) == 700
+    assert response.results[0].summary == "x" * 700
 
 
 def test_invalid_request_values_return_safe_non_retryable_envelopes() -> None:
