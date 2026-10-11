@@ -5,6 +5,55 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Bedrock models checked on the workshop account (us-east-1) with a real Converse call on
+# 2026-10-11. Use the id exactly as written: the Anthropic and newer OpenAI models only
+# accept the cross-region "us." inference-profile form; the gpt-oss models take the bare id.
+# This is documentation of what was observed, not an allow-list: BEDROCK_*_MODEL_ID accepts
+# any id. Re-check after an account change (access here has flipped before).
+BEDROCK_MODELS_WORKING: dict[str, tuple[str, ...]] = {
+    "anthropic": (
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "us.anthropic.claude-sonnet-5",
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "us.anthropic.claude-opus-5",
+        "us.anthropic.claude-opus-4-8",
+        "us.anthropic.claude-opus-4-7",
+        "us.anthropic.claude-opus-4-6-v1",
+        "us.anthropic.claude-opus-4-5-20251101-v1:0",
+        "us.anthropic.claude-opus-4-1-20250805-v1:0",
+    ),
+    "openai": (
+        "us.openai.gpt-5.6-sol",
+        "us.openai.gpt-5.6-terra",
+        "us.openai.gpt-5.6-luna",
+        "us.openai.gpt-5.5",
+        "us.openai.gpt-5.4",
+        "openai.gpt-oss-120b-1:0",
+        "openai.gpt-oss-20b-1:0",
+        "openai.gpt-oss-safeguard-120b",
+        "openai.gpt-oss-safeguard-20b",
+    ),
+}
+# Listed in the account but refused. The newest models (Haiku 5.5, Sonnet 5.5, Opus 5.5 and the
+# GPT-6 family) answered a first test call and were then refused with "AWS Marketplace
+# subscription cannot be completed ... private marketplace eligibility"; BR-1 asked Allen to
+# enable them. Also refused: Fable 5 / 5.1 (data-retention mode error) and Sonnet 4 May 2025
+# (end of life). Untested: every non-Anthropic, non-OpenAI model.
+BEDROCK_MODELS_BLOCKED: tuple[str, ...] = (
+    "us.anthropic.claude-haiku-5-5",
+    "us.anthropic.claude-sonnet-5-5",
+    "us.anthropic.claude-opus-5-5",
+    "us.openai.gpt-6.1-sol",
+    "us.openai.gpt-6-sol",
+    "us.openai.gpt-6-luna",
+    "us.openai.gpt-6-astra",
+    "anthropic.claude-fable-5",
+    "anthropic.claude-fable-5-1",
+    "anthropic.claude-sonnet-4-20250514-v1:0",
+)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -15,11 +64,12 @@ class Settings(BaseSettings):
     # Newer Claude models on Bedrock require a cross-region inference
     # profile ID ("us." prefix), not the raw model ID -- confirmed via a
     # live invoke_model call against this account.
-    # Two models, one per job (checked against this account with a live Converse call):
+    # Two models, one per job (each checked against this account with a live Converse call):
     # the cheap, fast one assigns the summary and metadata to every ingested record;
-    # the stronger one writes the fuller cited briefing.
-    bedrock_tagging_model_id: str = "us.anthropic.claude-haiku-5-5"
-    bedrock_synthesis_model_id: str = "us.anthropic.claude-sonnet-5-5"
+    # the stronger one writes the fuller cited briefing. The 5.5 models are blocked here
+    # (Marketplace subscription), so these are the newest that work.
+    bedrock_tagging_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    bedrock_synthesis_model_id: str = "us.anthropic.claude-sonnet-5"
 
     # Single server-only connection string per the DB configuration contract
     # (accepted -- see conversation record): one DATABASE_URL, not split

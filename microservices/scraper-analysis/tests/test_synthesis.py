@@ -271,8 +271,8 @@ def test_briefing_uses_the_synthesis_model_and_reports_it(store, monkeypatch):
 
     out = sa.generate_briefing("AAPL", store=store)
 
-    assert seen["model_id"] == "us.anthropic.claude-sonnet-5-5"
-    assert out["meta"]["model"] == "us.anthropic.claude-sonnet-5-5"
+    assert seen["model_id"] == "us.anthropic.claude-sonnet-5"
+    assert out["meta"]["model"] == "us.anthropic.claude-sonnet-5"
 
 
 def test_tagging_uses_the_cheaper_tagging_model(monkeypatch):
@@ -288,4 +288,15 @@ def test_tagging_uses_the_cheaper_tagging_model(monkeypatch):
 
     tagging_agent._get_agent()
 
-    assert seen["model_id"] == "us.anthropic.claude-haiku-5-5"
+    assert seen["model_id"] == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+
+def test_default_models_are_in_the_verified_working_list():
+    from scraper_analysis.config import BEDROCK_MODELS_BLOCKED, BEDROCK_MODELS_WORKING, Settings
+
+    settings = Settings(_env_file=None)
+    working = {m for models in BEDROCK_MODELS_WORKING.values() for m in models}
+
+    assert settings.bedrock_tagging_model_id in working
+    assert settings.bedrock_synthesis_model_id in working
+    assert not working & set(BEDROCK_MODELS_BLOCKED)
