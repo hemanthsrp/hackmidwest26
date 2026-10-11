@@ -12,7 +12,11 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 def server_parameters(env: Mapping[str, str] | None = None) -> StdioServerParameters:
     """Start the local Yahoo Finance MCP server over stdio."""
-    passed = {name: os.environ[name] for name in ("PATH", "SYSTEMROOT") if name in os.environ}
+    passed = {
+        name: os.environ[name]
+        for name in ("PATH", "SYSTEMROOT", "YAHOO_FINANCE_FUNDAMENTALS_ENABLED")
+        if name in os.environ
+    }
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "yahoo_finance_mcp.server"],

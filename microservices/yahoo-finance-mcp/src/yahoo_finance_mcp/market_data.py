@@ -138,6 +138,12 @@ def _live_signal(
 ) -> dict[str, Any]:
     if history.empty or price_column not in history:
         raise RuntimeError("no usable Yahoo Finance price history")
+    if not start_date:
+        latest_observation = history[price_column].dropna()
+        if latest_observation.empty:
+            raise RuntimeError("no usable Yahoo Finance price history")
+        window_start = latest_observation.index[-1] - pd.Timedelta(days=_DEFAULT_WINDOW_DAYS)
+        history = history.loc[history.index >= window_start]
     prices = history[price_column].dropna()
     if len(prices) < 2 or float(prices.iloc[0]) == 0:
         raise RuntimeError("insufficient price history")
