@@ -21,6 +21,8 @@ The hackathon concept aims to use a Python backend orchestrated with **Strands A
 3. Agree on a small API/data contract before parallel implementation. Keep external calls behind adapters and keep the demo usable with explicitly labeled sample data if feeds are unavailable.
 4. Run the relevant checks you actually have. Report what you ran, what passed or failed, and what remains unverified. No task is complete based solely on an agent's claim.
 
+API routes and MCP tools are indexed in [API.md](API.md); update it whenever an endpoint changes.
+
 ## Local development
 
 Each implemented service has local setup and test commands in its README. The volatility service's sample mode runs without credentials. Frontend commands and a deployment URL remain TBD. Never commit tokens, brokerage credentials, or personal account data.

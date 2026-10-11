@@ -2,7 +2,7 @@
 
 Evidence-backed stock research demo in progress. The repository now contains a fixture-first Research API, a multi-source ingestion service, a shared Jev judgment tool, and an imported option-volatility surface service. The Next.js frontend and end-to-end assessment flow are still pending.
 
-Start with [the project brief](docs/PROJECT_BRIEF.md), [current architecture](docs/ARCHITECTURE.md), [task board](docs/TASKS.md), and [working agreement](docs/AGENTS.md). The original challenge notes remain in [DUMP.md](docs/DUMP.md).
+API endpoints are indexed in [docs/API.md](docs/API.md). Start with [the project brief](docs/PROJECT_BRIEF.md), [current architecture](docs/ARCHITECTURE.md), [task board](docs/TASKS.md), and [working agreement](docs/AGENTS.md). The original challenge notes remain in [DUMP.md](docs/DUMP.md).
 
 | Component | Current capability |
 |---|---|
