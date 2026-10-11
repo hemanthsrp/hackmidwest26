@@ -20,9 +20,20 @@
 - Implement a testable Python HTTP API using the approved schema; orchestrate source/quant/decision adapters via Strands where supported. Keep external tools mockable; validate inputs and classify unavailable/stale data.
 - **Done when:** a real local request against fixtures returns contract-valid output; tests cover empty evidence, invalid symbol and provider failure; Strands use is demonstrated in executed code, or the blocker is documented.
 
-**A3 — Decision/integration** (unclaimed; after A2+B2, coordinate C2)
+**A3 — Decision/integration** (claimed 2026-10-10: Jet via Claude Code on `jet/a3-decision-maker`; built, tested offline and run live for AAPL; **not merged, not reviewed by the other lanes**)
 - Wire source and quant outputs into an explainable assessment with horizon/uncertainty and evidence IDs; connect JEV/MCP only if verified, otherwise retain an explicitly labeled fallback and document unmet sponsor criteria.
 - **Done when:** full API demo uses real module boundaries, handles failures, and logged examples do not leak secrets; integration smoke passes locally.
+- **Claim scope:** new `microservices/decision-maker/` package (the combination layer), one new module plus a small route change in `microservices/research-api/`, and `docs/api-contract-v0.md`. Reads the evidence store with read-only SQL; no change to `scraper-analysis`. The math stays in `research-api` and is passed in.
+- **What exists:** `decision_maker.DecisionMaker.decide(request, quant)` returns the contract shape plus additive fields. A fixed rule (`combiner-v1`) picks the label from four evidence legs; a Strands agent on Akamai inference writes the cited explanation and answers the user's question; Jev judges stored news that has no judgment and reviews the model's text. `POST /v0/research-assessments` gains `query`, `preferences` and a `sample_decision` mode, and `mode: "live"` runs the decision maker when `DATABASE_URL` is set.
+- **The math:** with `VOL_SURFACE_URL` set, `research_api/quant.py` asks `microservices/volatility-surface-builder` for the symbol's surface and maps its statistics onto the decision maker's input (the mapping is in `microservices/decision-maker/README.md`, "Where the math comes from"). The options math sets uncertainty and how much agreement is needed to leave `hold`; it does not set direction. No change was made to the volatility service.
+- **For the frontend:** `mode: "sample_decision"` returns the live response shape offline. A live request takes roughly 20 to 30 seconds.
+- **Checks run:** `decision-maker` 136 passed; `research-api` 51 passed (29 before); both offline. Live on 2026-10-10 for AAPL through the route: store read (read-only confirmed), semantic search, Jev judging of 19 news items, model-written explanation and Jev review, HTTP 200 in 18 to 27s, label `hold`. Details and the failures along the way are in the README ("What the live runs showed").
+- **Open:**
+  - The volatility-service adapter is tested offline and against that service's sample output; a live option chain has not been run through it, and the live runs above predate it. Whether options data belong in the MVP is still an open team decision (`DECISIONS.md`).
+  - The Strands agent's lookup tools failed on the Akamai model in every live attempt (context window, token cap, rate limits). They are off by default (`DECISION_AGENT_TOOLS`); the agent gets its data in the prompt.
+  - The store held only AAPL, and none of its news had a stored Jev judgment. Enabling Jev at ingestion would make the news reading stable across restarts.
+  - Freshness is measured on the newest evidence row's `retrieved_at`, which the scraper sets only when a row is first stored, so a quiet symbol can read as stale.
+  - The contract additions need Gate 0 review.
 
 **A-J1 — Jev wording-check harness** (Jet via Claude Code; complete, merged to `main` 2026-10-10)
 - Owns: `microservices/jev-tool/evals/`, `microservices/jev-tool/src/jev_tool/evals.py`, `microservices/jev-tool/src/jev_tool/presets.py`, `microservices/jev-tool/tests/test_evals.py`, and `docs/jev-integration-research.md`. Does not touch `api-contract-v0.md`, `ARCHITECTURE.md`, `DECISIONS.md`, or any A2 code. Other agents: coordinate with Jet before editing these paths.

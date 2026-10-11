@@ -256,6 +256,45 @@ ASSESSMENT_INFERENCE_MODE=fixture
 
 These are intentionally names and defaults only. They do not assert Akamai's final endpoint, authentication scheme, model catalog, or provisioning state.
 
+## Additions made by the decision maker (A3)
+
+> **Status: implemented on `jet/a3-decision-maker`, tested offline and run live for one symbol on 2026-10-10; not yet reviewed at Gate 0.** Everything above still stands. These are additive: a client written against the shapes above keeps working. Detail is in [`microservices/decision-maker/README.md`](../microservices/decision-maker/README.md).
+
+### Request
+
+| Field | Type | Required | Rule |
+|---|---|---:|---|
+| `query` | string | no | A free-text question about the symbol, at most 2,000 characters (the decision maker uses the first 500). It steers which evidence the explanation looks at and what `assessment.answer` says. **It never changes `assessment.label`.** |
+| `mode` | string | no | `sample` (the fixed snapshot, unchanged), `live`, `failure`, or `sample_decision` (the decision maker over its packaged fixture, offline). |
+
+`preferences.horizon` now scales the implied-move figure in the uncertainty statement. `preferences.risk_profile` is passed to the explanation for tone only and does not affect the label.
+
+### Response
+
+| Field | Meaning |
+|---|---|
+| `query` | The question as used (cleaned and capped), or `null` |
+| `assessment.answer` | The model's short answer to the question; `null` with no question, no model, or when the answer failed review |
+| `assessment.explanation_points` | `[{text, evidence_ids}]`: the cited points that `assessment.explanation` is assembled from |
+| `assessment.decision_engine` | `{name: "combiner-v1", status: "used" \| "not_run"}`. `not_run` only when no evidence was in the recency window. A `buy` or `sell` needs at least one kind of attributable evidence leaning that way; a price move alone gives `hold`. |
+| `freshness.status` | Adds `unknown` (no evidence to date) alongside `fresh` and `stale` |
+| `meta` | `decision_trace`, `explanation_engine`, `jev_review`, `judgments_at_decision`, `retrieval`. Diagnostic; safe to show, not required to render. |
+
+Signals now include rows derived from the options math when the volatility service is configured (`VOL_SURFACE_URL`), for example `ATM implied volatility` and `Implied one-standard-deviation move`. They describe how much movement is priced, not direction. The volatility service's own `POST /v0/volatility-surfaces` contract is unchanged.
+
+### System reason codes
+
+`reason_codes` may contain, besides ids of returned evidence and signals:
+
+| Code | When |
+|---|---|
+| `missing_attributable_evidence` | No evidence for the symbol inside the recency window (already declared above) |
+| `insufficient_direction_signals` | Evidence exists, but fewer than two independent kinds gave a usable reading |
+
+### Errors
+
+Unchanged envelope. `stale_data` (`409`) carries `details.newest_retrieved_at` and `details.stale_after_seconds`. An unexpected server fault returns `500` with `code: internal_error`.
+
 ## Gate 0 decisions still unresolved
 
 | Decision | Owner(s) | Why it blocks or constrains integration |
