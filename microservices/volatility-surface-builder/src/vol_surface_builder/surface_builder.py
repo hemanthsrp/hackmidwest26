@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import griddata
 from scipy.ndimage import gaussian_filter
+from scipy.spatial import QhullError
 from typing import Tuple, Optional
 
 from . import config
@@ -62,9 +63,21 @@ def build_surface(
     if method is None:
         method = config.INTERPOLATION_METHOD
 
-    strikes = df["strike"].values
-    maturities = df["T"].values
-    ivs = df["iv"].values
+    # Market feeds can contain both call and put IVs for the same strike and
+    # expiry. scipy.griddata does not define how duplicate coordinates are
+    # resolved, so take the deterministic median before interpolating.
+    points = (
+        df[["strike", "T", "iv"]]
+        .dropna()
+        .groupby(["strike", "T"], as_index=False, sort=True)["iv"]
+        .median()
+    )
+    if points.empty:
+        raise ValueError("at least one finite strike, maturity, and IV point is required")
+
+    strikes = points["strike"].to_numpy()
+    maturities = points["T"].to_numpy()
+    ivs = points["iv"].to_numpy()
 
     # grid bounds: use percentiles to avoid extreme outliers pulling the range
     K_min, K_max = np.percentile(strikes, [2, 98])
@@ -82,17 +95,40 @@ def build_surface(
     T_grid = np.linspace(T_min, T_max, n_t)
     K_mesh, T_mesh = np.meshgrid(K_grid, T_grid)
 
-    # primary interpolation
-    IV_mesh = griddata(
-        points=(strikes, maturities),
-        values=ivs,
-        xi=(K_mesh, T_mesh),
-        method=method,
+    # Cubic/linear interpolation requires non-collinear two-dimensional data.
+    # A valid live chain can contain only one usable expiry, where nearest
+    # neighbor is the safe, explicit fallback rather than a Qhull failure.
+    sparse_or_collinear = (
+        len(points) < 3
+        or np.unique(strikes).size < 2
+        or np.unique(maturities).size < 2
     )
+    if sparse_or_collinear:
+        IV_mesh = griddata(
+            points=(strikes, maturities),
+            values=ivs,
+            xi=(K_mesh, T_mesh),
+            method="nearest",
+        )
+    else:
+        try:
+            IV_mesh = griddata(
+                points=(strikes, maturities),
+                values=ivs,
+                xi=(K_mesh, T_mesh),
+                method=method,
+            )
+        except QhullError:
+            IV_mesh = griddata(
+                points=(strikes, maturities),
+                values=ivs,
+                xi=(K_mesh, T_mesh),
+                method="nearest",
+            )
 
-    # cubic interpolation can produce NaN at grid edges where there's
-    # no data to form a full cubic patch. fill these with nearest-neighbor
-    # which always produces a value (even if it's less smooth).
+    # Cubic interpolation can produce NaN at grid edges where there's
+    # no data to form a full cubic patch. Fill these with nearest-neighbor,
+    # which always produces a value.
     nan_mask = np.isnan(IV_mesh)
     if nan_mask.any():
         IV_nearest = griddata(
