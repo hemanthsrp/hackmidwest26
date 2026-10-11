@@ -1250,6 +1250,45 @@ td small {
   font-size: 11px;
   margin-top: 8px;
 }
+.research-detail h4 {
+  margin: 28px 0 8px;
+  font-size: 14px;
+}
+.research-detail h5 {
+  margin: 24px 0 8px;
+  text-transform: capitalize;
+}
+.research-detail .research-record {
+  scroll-margin-top: 24px;
+}
+.research-detail .research-record:target {
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+}
+.research-detail .signal {
+  gap: 16px;
+}
+.research-detail .signal small {
+  display: block;
+  margin-top: 5px;
+  color: var(--subtle);
+  line-height: 1.5;
+}
+.research-citations {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.research-citations a {
+  color: var(--green);
+  text-decoration: underline;
+}
+.research-warnings {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
 .modal-overlay {
   background: #111b2966;
   position: fixed;

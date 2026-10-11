@@ -12,7 +12,6 @@ import {
   Globe2,
   Link2,
   Layers3,
-  RefreshCw,
 } from "lucide-react";
 import {
   AreaChart,
@@ -32,6 +31,7 @@ import {
   type Article,
 } from "@/lib/market";
 import { useApp } from "./shell";
+import { ResearchAssessment } from "./research-assessment";
 function Badge({ stance }: { stance: string }) {
   return (
     <span className={`badge ${stance.toLowerCase()}`}>
@@ -763,20 +763,9 @@ function LiveFeed({
   );
 }
 export function StockDetail({ symbol }: { symbol: string }) {
-  const { demo, preferences } = useApp();
+  const { demo } = useApp();
   const s = stocks.find((s) => s.symbol === symbol);
   const [range, setRange] = useState("1M");
-  const q = useQuery({
-    queryKey: ["research", symbol, demo, preferences.horizon, preferences.risk],
-    queryFn: async () => {
-      const r = await fetch(
-        `/api/research?symbol=${encodeURIComponent(symbol)}&mode=${demo ? "sample" : "live"}&horizon=${preferences.horizon}&risk_profile=${preferences.risk}`,
-      );
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error?.message || "Research unavailable");
-      return data;
-    },
-  });
   return (
     <>
       <Link className="back-link" href="/">
@@ -787,15 +776,11 @@ export function StockDetail({ symbol }: { symbol: string }) {
         title={s ? `${s.name} · ${symbol}` : symbol}
         description={
           s
-            ? `${s.industry} · ${q.data?.data_mode === "live" ? "Live source data" : demo ? "Sample market snapshot" : "Research snapshot"}`
+            ? `${s.industry} · ${demo ? "Sample market snapshot" : "Research snapshot"}`
             : "Source-backed market research"
         }
-      >
-        <button className="outline-button" onClick={() => void q.refetch()}>
-          <RefreshCw size={14} /> Refresh
-        </button>
-      </PageHeader>
-      {demo && s && q.data?.data_mode !== "live" && (
+      />
+      {demo && s && (
         <section className="panel detail-chart">
           <div className="card-row">
             <div>
@@ -841,103 +826,8 @@ export function StockDetail({ symbol }: { symbol: string }) {
           </div>
         </section>
       )}
-      <SectionTitle title="The research perspective" />
-      {q.isPending ? (
-        <div className="panel empty-state" role="status">
-          Gathering research…
-        </div>
-      ) : q.isError ? (
-        <div className="error-box" role="alert">
-          {q.error.message}
-          <button className="text-button" onClick={() => void q.refetch()}>
-            Try again <RefreshCw size={14} />
-          </button>
-        </div>
-      ) : (
-        <div className="panel assessment">
-          <div className="card-row">
-            <Badge stance={q.data.assessment.label} />
-            <span className="tiny-tag">
-              {q.data.data_mode} ·{" "}
-              {new Date(
-                q.data.snapshot?.as_of || q.data.freshness?.as_of,
-              ).toLocaleDateString()}
-            </span>
-          </div>
-          <h3>{q.data.assessment.explanation}</h3>
-          <div className="research-metadata">
-            <span>Horizon: {q.data.assessment.horizon || preferences.horizon}</span>
-            {typeof q.data.assessment.score === "number" && (
-              <span>Heuristic score: {q.data.assessment.score}/100</span>
-            )}
-          </div>
-          <p>{q.data.assessment.uncertainty}</p>
-          {q.data.signals?.map(
-            (v: { id: string; name: string; value: number; unit: string }) => (
-              <div className="signal" key={v.id}>
-                <span>{v.name}</span>
-                <strong>
-                  {v.value} {v.unit}
-                </strong>
-              </div>
-            ),
-          )}
-          {q.data.evidence?.map(
-            (e: {
-              id: string;
-              title: string;
-              summary: string;
-              source_name: string;
-              source_type?: string;
-              source_url?: string;
-              published_at?: string;
-              impact_category?: string;
-              impact_level?: string;
-              lifecycle_status?: string;
-            }) => (
-              <div className="evidence" key={e.id}>
-                <strong>{e.title}</strong>
-                <p>{e.summary}</p>
-                <div className="research-metadata">
-                  <span>{e.source_name}</span>
-                  {e.source_type && <span>{e.source_type.replaceAll("_", " ")}</span>}
-                  {e.impact_category && <span>{e.impact_category.replaceAll("_", " ")}</span>}
-                  {e.impact_level && <span>impact: {e.impact_level}</span>}
-                  {e.lifecycle_status && <span>{e.lifecycle_status}</span>}
-                  {e.published_at && <span>{new Date(e.published_at).toLocaleDateString()}</span>}
-                </div>
-                {e.source_url &&
-                  /^https?:\/\//i.test(e.source_url) &&
-                  !e.source_url.includes("example.invalid") && (
-                    <a href={e.source_url} target="_blank" rel="noreferrer">
-                      Read source <ArrowUpRight size={14} />
-                    </a>
-                  )}
-              </div>
-            ),
-          )}
-          {!!q.data.meta?.quant_citations?.length && (
-            <section className="quant-citations" aria-label="Options-risk sources">
-              <h4>Options-risk context</h4>
-              {q.data.meta.quant_citations.map(
-                (citation: { id: string; source: string; mode: string; as_of: string }) => (
-                  <p key={citation.id}>
-                    {citation.source} · {citation.mode} · {new Date(citation.as_of).toLocaleString()}
-                  </p>
-                ),
-              )}
-            </section>
-          )}
-          {!!q.data.warnings?.length && (
-            <section className="research-warnings" aria-label="Research warnings">
-              {q.data.warnings.map((warning: { code: string; message: string }) => (
-                <p key={warning.code}>{warning.message}</p>
-              ))}
-            </section>
-          )}
-        </div>
-      )}
-      {demo && q.data?.data_mode !== "live" && (
+      <ResearchAssessment symbol={symbol} />
+      {demo && (
         <>
           <SectionTitle title="Related stories" />
           <ArticleList items={articles.filter((a) => a.symbol === symbol)} />
