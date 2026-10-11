@@ -125,19 +125,28 @@ def _normalize_congressional(record: RawRecord, data_mode: str) -> Evidence:
     )
     if timing:
         title += f" -- {timing}"
+    elif payload.get("date_issue"):
+        # The adapter rejected the reported trade date; say so, so no
+        # consumer reads this as a dated buy/sell.
+        title += " -- invalid trade date, not dated"
     summary = f"{payload.get('asset_name', '')} ({payload.get('asset_type', '')}), owner: {payload.get('owner', '')}"
+    details = {
+        "filer": payload.get("filer_name"),
+        "owner": payload.get("owner"),
+        "ticker": payload.get("ticker"),
+        "transaction_type": payload.get("transaction_type"),
+        "amount_range": payload.get("amount_range"),
+        "timing": timing,
+    }
+    if payload.get("date_issue"):
+        # Divergence excludes records with details.date_issue (never dated).
+        details["date_issue"] = payload["date_issue"]
+        details["transaction_date_reported"] = payload.get("transaction_date")
     return Evidence(
         symbol=record.symbol,
         title=title,
         summary=summary,
-        details={
-            "filer": payload.get("filer_name"),
-            "owner": payload.get("owner"),
-            "ticker": payload.get("ticker"),
-            "transaction_type": payload.get("transaction_type"),
-            "amount_range": payload.get("amount_range"),
-            "timing": timing,
-        },
+        details=details,
         source_name=record.source_name,
         source_type=record.source_type,
         source_url=record.url,

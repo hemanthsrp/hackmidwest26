@@ -132,7 +132,10 @@ class SenateEfdAdapter(SourceAdapter):
         for tx in _parse_transactions(detail_resp.text):
             if tx["ticker"].upper() != symbol.upper():
                 continue
-            observed_at = _parse_tx_date(tx["transaction_date"]) or filed_date
+            # Never substitute the filing date for an invalid trade date: the
+            # record stays undated (observed_at=None) and says why, so no
+            # reporting lag, timing class or divergence uses a wrong date.
+            observed_at, date_issue = _validate_trade_date(tx["transaction_date"], filed_date, now)
             records.append(
                 RawRecord(
                     source_name="Senate eFD",
@@ -146,6 +149,8 @@ class SenateEfdAdapter(SourceAdapter):
                         "asset_type": tx["asset_type"],
                         "transaction_type": tx["transaction_type"],
                         "amount_range": tx["amount"],
+                        "transaction_date": tx["transaction_date"],
+                        "date_issue": date_issue,
                     },
                     retrieved_at=now,
                     published_at=filed_date,
@@ -177,6 +182,20 @@ def _parse_transactions(html: str) -> list[dict]:
             }
         )
     return transactions
+
+
+def _validate_trade_date(
+    value: str, filed: datetime | None, now: datetime
+) -> tuple[datetime | None, str | None]:
+    """(trade date, None) for a usable date, else (None, reason)."""
+    traded = _parse_tx_date(value)
+    if traded is None:
+        return None, "unparseable or impossible trade date"
+    if traded > now:
+        return None, "trade date in the future"
+    if filed is not None and traded > filed:
+        return None, "trade date after filing date"
+    return traded, None
 
 
 def _parse_tx_date(value: str) -> datetime | None:
