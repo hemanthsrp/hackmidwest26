@@ -1,5 +1,7 @@
 # Akamai feasibility — D1 (Allen lane)
 
+> D1 discovery snapshot. The `vol-surface-builder` checkout referenced below has since been imported into [the Hack Midwest volatility service](../microservices/volatility-surface-builder/README.md). The historical preflight findings below are retained.
+
 **Status:** managed PostgreSQL preflight and provisioning are verified; application deployment remains blocked pending Gate 0, a runnable frontend, and a chosen compute target. The supplied Akamai workshop identifies a candidate shared inference endpoint, but this team has not made an authenticated inference call or deployed an application.
 
 ## Scope and decision

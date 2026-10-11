@@ -21,6 +21,8 @@ Investors must reconcile fragmented market information, news, and quantitative d
 4. Detail view shows a dated evidence list, a market chart or quantitative signal, an explainable assessment with **time horizon and uncertainty**, and a traceable reason for the assessment. A 0–100 score, if used, is a labeled heuristic, **not a probability or validated prediction**.
 5. Run the end-to-end demo on Akamai Cloud if credentials and time permit; capture evidence of the actual service/resources used. Keep a local reproducible fallback and don't claim Akamai hosting until verified.
 
+The imported [option-volatility service](../microservices/volatility-surface-builder/README.md) can supply a separately labeled options-risk chart if the team approves it for the stock-detail view. Its synthetic SPY surface is sample data; neither it nor a live implied-volatility grid is a stock-price forecast or an assessment input by default.
+
 **Demo script (target, not implemented):** open the app → select a symbol → inspect source-backed news and quant evidence → request an assessment → see reasons, horizon, uncertainty and source timestamps → change a preference and see how the explanation/presentation responds. Do not show a real brokerage connection unless authorized and actually tested.
 
 ## Explicitly deferred unless the core slice works
