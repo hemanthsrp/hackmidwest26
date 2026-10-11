@@ -6,18 +6,26 @@ Safety properties, because this writes to a shared database unattended:
 - Always strict: live=True, fallback=False. A scheduled run can never
   substitute and persist fixtures; a failed source is simply omitted and
   reported, and the next tick tries again.
-- One scheduler owner per process: a second Scheduler cannot start while one
-  is running, and a process-wide guard (held by the worker thread for the
-  whole ingest) means no two scheduled ingests run concurrently in this
-  process -- including a successor started while a predecessor's ingest is
-  still finishing. This is NOT enforced across processes: with several
-  uvicorn workers or replicas, enable the scheduler on exactly one of them.
-  Manual POST /ingest/run calls are not serialized against it either.
-- Shutdown boundary: stop() raises a stop flag that ingestion checks right
-  before every persist, then waits (bounded by drain_timeout_seconds) for the
-  in-flight ingest to finish. Once stop() returns, the only write that can
-  still land is one that had already started before the flag was raised and
-  outlived the drain timeout.
+- Single owner. In-process: a second Scheduler cannot start while one owns
+  the process, and a process-wide guard (held by the worker thread for the
+  whole ingest) means no two scheduled ingests ever run concurrently here.
+  Across processes: when DATABASE_URL is set, start() also takes a Postgres
+  session-level advisory lock (SCHEDULER_ADVISORY_LOCK_KEY) on a dedicated
+  connection held for the scheduler's lifetime; another worker/replica that
+  cannot get it refuses to start and reports start_error. With the in-memory
+  store (no DATABASE_URL) there is nothing shared to protect, and the guard
+  is single-process only. Manual POST /ingest/run calls are not serialized
+  against scheduled runs.
+- Shutdown boundary: every start() creates a fresh cancellation token for
+  that run; stop() sets it (it is never cleared again, so a restart cannot
+  revive a previous run) and ingestion checks it right before every persist.
+  stop() then waits (bounded by drain_timeout_seconds) for the in-flight
+  ingest. If the drain times out, ownership (in-process and the advisory
+  lock) is kept until that worker thread actually exits, so neither a
+  restart nor a successor -- in this or another process -- can start while
+  it is still alive; they get start_error "... still draining ...". Once
+  stop() returns, the only write that can still land is one that had
+  already passed its last stop check before the token was set.
 - One symbol failing never stops the others or kills the loop.
 - Errors are passed through sanitize_error before they are stored or shown.
 - Slower outside US market hours (README 4.3 cost guidance): the interval is
@@ -53,6 +61,10 @@ STAGGER_SECONDS = 2.0  # pause between symbols within a run
 STARTUP_DELAY_SECONDS = 5.0
 DRAIN_TIMEOUT_SECONDS = 30.0  # how long stop() waits for an in-flight ingest
 
+# Fixed, project-specific key for pg_try_advisory_lock ("SCRAPER1" in ASCII).
+SCHEDULER_ADVISORY_LOCK_KEY = 0x5343524150455231
+OWNER_LOCK_CONNECT_TIMEOUT_SECONDS = 10
+
 # Process-wide single-owner state (see module docstring).
 _OWNER_LOCK = threading.Lock()
 _owner: "Scheduler | None" = None
@@ -63,6 +75,63 @@ _INGEST_GUARD = threading.Lock()
 
 class SchedulerBusy(RuntimeError):
     """Another scheduled ingest is still running in this process."""
+
+
+class PostgresAdvisoryLock:
+    """Cross-process scheduler ownership: a session-level advisory lock held on
+    a dedicated connection for the scheduler's lifetime. If the process dies
+    the connection drops and Postgres releases the lock automatically."""
+
+    def __init__(self, database_url: str, key: int = SCHEDULER_ADVISORY_LOCK_KEY) -> None:
+        self._url = database_url  # TLS is enforced in the URL by Settings validation
+        self.key = key
+        self._conn = None
+
+    def acquire(self) -> bool:
+        import psycopg
+
+        if self._conn is not None:
+            return True
+        conn = psycopg.connect(self._url, autocommit=True, connect_timeout=OWNER_LOCK_CONNECT_TIMEOUT_SECONDS)
+        try:
+            got = conn.execute("SELECT pg_try_advisory_lock(%s)", (self.key,)).fetchone()[0]
+        except BaseException:
+            conn.close()
+            raise
+        if not got:
+            conn.close()
+            return False
+        self._conn = conn
+        return True
+
+    def release(self) -> None:
+        conn, self._conn = self._conn, None
+        if conn is None:
+            return
+        try:
+            conn.execute("SELECT pg_advisory_unlock(%s)", (self.key,))
+        except Exception as exc:  # closing the session releases it anyway
+            logger.warning("advisory unlock failed, closing session: %s", sanitize_error(exc))
+        finally:
+            conn.close()
+
+
+def build_owner_lock(settings) -> "PostgresAdvisoryLock | None":
+    """Cross-process lock only when there is a shared database to protect."""
+    url = getattr(settings, "database_url", None)
+    return PostgresAdvisoryLock(url) if url else None
+
+
+class _Run:
+    """One start()..stop() cycle. Its cancel token is set by stop() and never
+    cleared, so a worker thread from this run can never be revived by a
+    later start()."""
+
+    def __init__(self) -> None:
+        self.cancel = threading.Event()
+        self.lock = threading.Lock()
+        self.workers = 0
+        self.release_on_exit = False  # stop() gave up draining: release when workers hit 0
 
 
 def _reset_for_tests() -> None:
@@ -125,6 +194,7 @@ class Scheduler:
         sleep_fn=asyncio.sleep,
         stagger_seconds: float = STAGGER_SECONDS,
         drain_timeout_seconds: float = DRAIN_TIMEOUT_SECONDS,
+        owner_lock=None,
     ) -> None:
         self.symbols, self.skipped = normalize_symbols(symbols)
         self.interval_minutes = max(positive_finite("interval_minutes", interval_minutes), MIN_INTERVAL_MINUTES)
@@ -137,7 +207,9 @@ class Scheduler:
         self._drain_timeout = drain_timeout_seconds
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
-        self._stop_flag = threading.Event()  # read by the worker thread before persisting
+        self._owner_lock = owner_lock  # cross-process: acquire() -> bool, release()
+        self._run = _Run()  # replaced by each start(); read by worker threads via capture
+        self._draining = False  # a timed-out worker of a stopped run is still alive
         self._stop_event = asyncio.Event()  # wakes the loop's sleeps
         self.statuses: dict[str, SymbolStatus] = {s: SymbolStatus() for s in self.symbols}
         self.runs_completed = 0
@@ -165,6 +237,7 @@ class Scheduler:
                     t.cancel()
 
     async def run_once(self) -> None:
+        run = self._run
         if self._lock.locked():
             return  # a previous run on this instance is still going: skip
         async with self._lock:
@@ -173,10 +246,10 @@ class Scheduler:
                 for i, symbol in enumerate(self.symbols):
                     if i:
                         await self._wait(self._stagger)
-                    if self._stop_flag.is_set():
+                    if run.cancel.is_set():
                         completed = False
                         break
-                    if not await self._run_symbol(symbol):
+                    if not await self._run_symbol(symbol, run):
                         completed = False
             except asyncio.CancelledError:
                 self.runs_interrupted += 1
@@ -186,22 +259,34 @@ class Scheduler:
             else:
                 self.runs_interrupted += 1
 
-    def _ingest_in_thread(self, symbol: str):
-        if not _INGEST_GUARD.acquire(blocking=False):
-            raise SchedulerBusy("skipped: another scheduled ingest is still in flight in this process")
+    def _ingest_in_thread(self, symbol: str, run: _Run):
+        with run.lock:
+            run.workers += 1
         try:
-            if self._stop_flag.is_set():
-                raise IngestCancelled("cancelled by shutdown before starting")
-            # Strict on purpose: never substitute (and so never persist) fixtures.
-            return self._ingest(symbol, True, self.tag, False, should_stop=self._stop_flag.is_set)
+            if not _INGEST_GUARD.acquire(blocking=False):
+                raise SchedulerBusy("skipped: another scheduled ingest is still in flight in this process")
+            try:
+                if run.cancel.is_set():
+                    raise IngestCancelled("cancelled by shutdown before starting")
+                # Strict on purpose: never substitute (and so never persist) fixtures.
+                # should_stop is bound to THIS run's token, never to a later run's.
+                return self._ingest(symbol, True, self.tag, False, should_stop=run.cancel.is_set)
+            finally:
+                _INGEST_GUARD.release()
         finally:
-            _INGEST_GUARD.release()
+            with run.lock:
+                run.workers -= 1
+                release = run.release_on_exit and run.workers == 0
+                if release:
+                    run.release_on_exit = False
+            if release:
+                self._release_ownership()
 
-    async def _run_symbol(self, symbol: str) -> bool:
+    async def _run_symbol(self, symbol: str, run: _Run | None = None) -> bool:
         """Returns False when shutdown stopped this symbol before it persisted."""
         status = self.statuses[symbol]
         status.last_run_at = self._now().isoformat()
-        inflight = asyncio.ensure_future(asyncio.to_thread(self._ingest_in_thread, symbol))
+        inflight = asyncio.ensure_future(asyncio.to_thread(self._ingest_in_thread, symbol, run or self._run))
         # If stop() gives up draining, nobody awaits this future: retrieve its
         # outcome so it is never logged as an unhandled exception.
         inflight.add_done_callback(lambda f: f.cancelled() or f.exception())
@@ -243,13 +328,14 @@ class Scheduler:
         return True
 
     async def run_forever(self) -> None:
+        run = self._run
         await self._wait(STARTUP_DELAY_SECONDS)
-        while not self._stop_flag.is_set():
+        while not run.cancel.is_set():
             try:
                 await self.run_once()
             except Exception:  # defensive: never let one bad run end the loop
                 logger.exception("scheduled run failed unexpectedly")
-            if self._stop_flag.is_set():
+            if run.cancel.is_set():
                 break
             wait = self.current_interval_seconds()
             wait += random.uniform(0, min(60.0, wait * 0.05))  # jitter so restarts don't synchronize
@@ -259,7 +345,8 @@ class Scheduler:
 
     def start(self) -> bool:
         """Start the loop. Returns False (and sets start_error) when there is
-        nothing to do or another Scheduler already owns this process."""
+        nothing to do, another Scheduler owns this process, a previous run's
+        worker is still draining, or another process holds the owner lock."""
         global _owner
         if self._task is not None:
             return True
@@ -267,27 +354,62 @@ class Scheduler:
             self.start_error = "no valid symbols configured"
             return False
         with _OWNER_LOCK:
-            if _owner is not None and _owner is not self:
-                self.start_error = "another scheduler is already running in this process; only one may own it"
+            if _owner is not None and (_owner is not self or self._draining):
+                if _owner._draining:
+                    self.start_error = ("a previous scheduler run is still draining an in-flight ingest "
+                                        "in this process; retry after it finishes")
+                else:
+                    self.start_error = "another scheduler is already running in this process; only one may own it"
                 logger.warning("scheduler not started: %s", self.start_error)
                 return False
             _owner = self
+        if self._owner_lock is not None:
+            try:
+                acquired = self._owner_lock.acquire()
+                error = None if acquired else (
+                    "another process already owns the scheduler (Postgres advisory lock held); "
+                    "only one worker/replica may run it")
+            except Exception as exc:
+                error = sanitize_error(f"could not take the scheduler owner lock: {type(exc).__name__}: {exc}")
+            if error is not None:
+                with _OWNER_LOCK:
+                    if _owner is self:
+                        _owner = None
+                self.start_error = error
+                logger.warning("scheduler not started: %s", error)
+                return False
         self.start_error = None
-        self._stop_flag.clear()
+        self._run = _Run()  # fresh token; the previous run's token stays set forever
         self._stop_event.clear()
         self._task = asyncio.create_task(self.run_forever(), name="scraper-analysis-scheduler")
         return True
 
-    async def stop(self) -> None:
-        """Raise the stop flag, drain the in-flight ingest (bounded), release ownership.
-
-        After this returns no new persist starts: ingestion checks the stop flag
-        before every write. A write already in progress when the flag was raised
-        is awaited for up to drain_timeout_seconds; past that, the task is
-        cancelled and the thread is left to finish (it keeps the process-wide
-        ingest guard, so a successor cannot overlap it)."""
+    def _release_ownership(self) -> None:
+        """Release the cross-process lock, then in-process ownership. Called
+        from stop() or, after a drain timeout, from the last worker thread."""
         global _owner
-        self._stop_flag.set()
+        try:
+            if self._owner_lock is not None:
+                self._owner_lock.release()
+        except Exception as exc:
+            logger.warning("releasing scheduler owner lock failed: %s", sanitize_error(exc))
+        finally:
+            with _OWNER_LOCK:
+                self._draining = False
+                if _owner is self:
+                    _owner = None
+
+    async def stop(self) -> None:
+        """Cancel this run's token, drain the in-flight ingest (bounded), release ownership.
+
+        After this returns no new persist starts: ingestion checks the run's
+        token before every write, and no later start() can clear it. A write
+        already in progress is awaited for up to drain_timeout_seconds; past
+        that the task is cancelled and the thread is left to finish -- it keeps
+        the ingest guard, and ownership (including the cross-process advisory
+        lock) is only released when it exits, so nothing can start meanwhile."""
+        run = self._run
+        run.cancel.set()
         self._stop_event.set()
         task, self._task = self._task, None
         try:
@@ -305,14 +427,22 @@ class Scheduler:
                     task.cancel()
                     raise
         finally:
-            with _OWNER_LOCK:
-                if _owner is self:
-                    _owner = None
+            with run.lock:  # same lock the worker takes on exit: no lost release
+                deferred = run.workers > 0
+                run.release_on_exit = deferred
+                if deferred:
+                    self._draining = True
+            if deferred:
+                logger.warning("scheduler ownership kept until the in-flight ingest thread exits")
+            else:
+                self._release_ownership()
 
     def status(self) -> dict:
         return {
             "enabled": True,
             "running": self._task is not None and not self._task.done(),
+            "draining": self._draining,
+            "cross_process_lock": self._owner_lock is not None,
             "start_error": self.start_error,
             "interval_minutes": self.interval_minutes,
             "offhours_factor": self.offhours_factor,

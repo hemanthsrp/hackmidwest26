@@ -8,7 +8,7 @@ from .agents import synthesis_agent
 from .config import get_settings
 from .pipeline import divergence
 from .pipeline.ingest import InvalidSymbolError, ingest_symbol, validate_symbol
-from .scheduler import Scheduler
+from .scheduler import Scheduler, build_owner_lock
 from .sources.base import sanitize_error
 from .storage.store import get_store
 
@@ -23,9 +23,13 @@ async def lifespan(app: FastAPI):
             interval_minutes=settings.scheduler_interval_minutes,
             offhours_factor=settings.scheduler_offhours_factor,
             tag=settings.scheduler_tag,
+            # With DATABASE_URL set: a Postgres advisory lock so only one
+            # process/replica can own the scheduler. None = in-process only.
+            owner_lock=build_owner_lock(settings),
         )
         # start() refuses (start_error in /scheduler/status) if another
-        # scheduler already owns this process; it never runs two at once.
+        # scheduler owns this process, a previous run is still draining, or
+        # another process holds the advisory lock; it never runs two at once.
         scheduler.start()
         app.state.scheduler = scheduler
     try:
