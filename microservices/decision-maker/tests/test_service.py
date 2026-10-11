@@ -59,7 +59,8 @@ def assert_contract(response) -> None:
         assert code in returned or code in SYSTEM_REASON_CODES, code
     for point in assessment["explanation_points"]:
         assert point["evidence_ids"] and set(point["evidence_ids"]) <= returned
-    assert "score" not in assessment and "score" not in body
+    assert assessment["score"] is None or 0 <= assessment["score"] <= 100
+    assert (assessment["score"] is None) == (assessment["label"] == "insufficient_data")
     assert assessment["uncertainty"] and assessment["explanation"]
     assert all({"code", "message", "retryable"} <= set(w) for w in body["warnings"])
     assert len(body["evidence"]) <= MAX_RETURNED_EVIDENCE

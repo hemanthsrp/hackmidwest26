@@ -166,7 +166,7 @@ The shape in `docs/api-contract-v0.md`, with these additions: `query`, `assessme
 
 | `meta` key | Contents |
 |---|---|
-| `decision_trace` | Combiner version, each leg with its inputs and record ids, the options buckets, thresholds, `held_because`, and `net_direction` (an internal quantity, not a score for display) |
+| `decision_trace` | Combiner version, each leg with its inputs and record ids, the options buckets, thresholds, `held_because`, and `net_direction`; `assessment.score` is its 0-100 rescale (50 neutral) |
 | `explanation_engine` | `strands_agent` or `template`, the model, `tools` or `context` mode, any error |
 | `jev_review` | Per-point review results, or `null` when no review was attempted |
 | `judgments_at_decision` | How many unjudged news items were sent to Jev, reused from memory, and what came back |

@@ -35,7 +35,7 @@ def test_sample_decision_mode_runs_the_decision_maker_offline() -> None:
     assert body["assessment"]["label"] in {"buy", "hold", "sell", "insufficient_data"}
     assert body["assessment"]["decision_engine"]["name"] == "combiner-v1"
     assert {r["data_mode"] for r in body["evidence"] + body["signals"]} == {"sample"}
-    assert "score" not in body["assessment"]
+    assert 0 <= body["assessment"]["score"] <= 100
 
 
 def test_live_mode_uses_the_decision_maker_when_one_is_configured(monkeypatch) -> None:

@@ -5,8 +5,9 @@ give the same label and the rule that produced it can be shown. The Strands
 agent explains the result afterwards and has no way to change it.
 
 The weights and thresholds are hand-set heuristics, not fitted or validated.
-``net_direction`` is an internal quantity for this rule. It is not a
-probability, a score for display, or a forecast.
+``net_direction`` (-1 to 1) is the internal quantity for this rule. ``score``
+is its display form: a linear 0-100 rescale with 50 neutral. It is a position
+on this heuristic's scale, not a probability or a forecast.
 """
 
 from __future__ import annotations
@@ -33,6 +34,13 @@ THRESHOLDS = {
     "min_leg_direction": MIN_LEG_DIRECTION,
     "evidence_legs": sorted(EVIDENCE_LEGS),
 }
+
+
+def score_from_net(net: float | None) -> int | None:
+    """0-100 display score: 50 is neutral, 100 is every usable leg fully bullish."""
+    if net is None:
+        return None
+    return round(max(0.0, min(100.0, 50.0 + 50.0 * net)))
 
 
 def _raised_by(legs: dict[str, Leg], quant: QuantReading) -> list[str]:
@@ -125,6 +133,7 @@ def combine(legs: dict[str, Leg], quant: QuantReading, *, has_evidence: bool) ->
         label=label,
         reason_codes=_reason_codes(label, usable, legs, quant, raised_by),
         net_direction=round(net, 4),
+        score=score_from_net(net),
         threshold=threshold,
         threshold_raised_by=raised_by,
         held_because=held_because,
