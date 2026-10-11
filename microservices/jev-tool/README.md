@@ -9,7 +9,7 @@ Shared tool for quick, cheap decisions using Jev (TypeSafe AI's System One model
 
 Background, limits and the list of where Jev should and should not be used: [docs/jev-integration-research.md](../../docs/jev-integration-research.md).
 
-> **Status:** tested offline against a mock HTTP transport, and against the real TypeSafe API on 2026-10-10 (direct call, MCP round trip, and the wording quiz below). Question wording in `presets.py` has had one sanity pass on 27 samples; it is not tuned.
+> **Status:** tested offline against a mock HTTP transport, and against the real TypeSafe API on 2026-10-10 (direct call, MCP round trip, and the wording quiz below). Question wording in `presets.py` has had sanity passes on small hand-written sample sets (38 articles, 12 explanations, 12 story pairs); it is not tuned.
 
 ## Setup
 
@@ -113,7 +113,7 @@ Makes one real call through the MCP server, using the key from `.env`. The defau
 
 ## Checking the question wording
 
-`evals/article_quiz.json` holds 27 hand-labelled **samples** for AAPL, NVDA and TSLA: news items, blog posts, social posts and press-release style items (written for testing, not real content) in the evidence shape proposed in `docs/api-contract-v0.md`. The harness runs each through the `judge_article` questions, then again with the direction options reversed, and compares with the answer key:
+`evals/article_quiz.json` holds 38 hand-labelled **samples** for AAPL, NVDA and TSLA: news items, blog posts, social posts, press-release style items, hype pieces and junk pages (written for testing, not real content) in the evidence shape proposed in `docs/api-contract-v0.md`. The harness runs each through the `judge_article` questions, then again with the direction options reversed, and compares with the answer key:
 
 ```sh
 .venv/Scripts/python -m jev_tool.evals --out report.json
