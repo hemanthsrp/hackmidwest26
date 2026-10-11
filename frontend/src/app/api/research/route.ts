@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { stocks, sampleAsOf } from "@/lib/market";
-import { failure, service } from "@/lib/server";
+import { failure } from "@/lib/server";
 export async function GET(r: Request) {
   const url = new URL(r.url);
   const symbol = (url.searchParams.get("symbol") || "").trim().toUpperCase();
@@ -47,8 +47,33 @@ export async function GET(r: Request) {
   const session = await auth();
   if (!session?.user?.id)
     return failure("Sign in to access live research.", 401);
+  const horizon = url.searchParams.get("horizon");
+  const riskProfile = url.searchParams.get("risk_profile");
+  if (horizon && !["7d", "30d", "90d"].includes(horizon))
+    return failure("Choose a valid research horizon.", 400, "invalid_horizon");
+  if (
+    riskProfile &&
+    !["conservative", "balanced", "growth"].includes(riskProfile)
+  )
+    return failure("Choose a valid risk profile.", 400, "invalid_risk_profile");
   try {
-    const response = await service(session.user.id, `stocks/${symbol}`);
+    const response = await fetch(
+      `${process.env.RESEARCH_API_URL || "http://127.0.0.1:8000"}/v0/research-assessments`,
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol,
+          mode: "live",
+          preferences: {
+            horizon: horizon || "30d",
+            risk_profile: riskProfile || "balanced",
+          },
+        }),
+        signal: AbortSignal.timeout(75000),
+      },
+    );
     return new Response(await response.text(), {
       status: response.status,
       headers: { "Content-Type": "application/json" },

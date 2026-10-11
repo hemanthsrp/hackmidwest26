@@ -760,14 +760,14 @@ function LiveFeed({
   );
 }
 export function StockDetail({ symbol }: { symbol: string }) {
-  const { demo } = useApp();
+  const { demo, preferences } = useApp();
   const s = stocks.find((s) => s.symbol === symbol);
   const [range, setRange] = useState("1M");
   const q = useQuery({
-    queryKey: ["research", symbol, demo],
+    queryKey: ["research", symbol, demo, preferences.horizon, preferences.risk],
     queryFn: async () => {
       const r = await fetch(
-        `/api/research?symbol=${encodeURIComponent(symbol)}&mode=${demo ? "sample" : "live"}`,
+        `/api/research?symbol=${encodeURIComponent(symbol)}&mode=${demo ? "sample" : "live"}&horizon=${preferences.horizon}&risk_profile=${preferences.risk}`,
       );
       const data = await r.json();
       if (!r.ok) throw new Error(data.error?.message || "Research unavailable");
@@ -862,6 +862,12 @@ export function StockDetail({ symbol }: { symbol: string }) {
             </span>
           </div>
           <h3>{q.data.assessment.explanation}</h3>
+          <div className="research-metadata">
+            <span>Horizon: {q.data.assessment.horizon || preferences.horizon}</span>
+            {typeof q.data.assessment.score === "number" && (
+              <span>Heuristic score: {q.data.assessment.score}/100</span>
+            )}
+          </div>
           <p>{q.data.assessment.uncertainty}</p>
           {q.data.signals?.map(
             (v: { id: string; name: string; value: number; unit: string }) => (
@@ -879,12 +885,24 @@ export function StockDetail({ symbol }: { symbol: string }) {
               title: string;
               summary: string;
               source_name: string;
+              source_type?: string;
               source_url?: string;
+              published_at?: string;
+              impact_category?: string;
+              impact_level?: string;
+              lifecycle_status?: string;
             }) => (
               <div className="evidence" key={e.id}>
                 <strong>{e.title}</strong>
                 <p>{e.summary}</p>
-                <span className="muted">{e.source_name}</span>
+                <div className="research-metadata">
+                  <span>{e.source_name}</span>
+                  {e.source_type && <span>{e.source_type.replaceAll("_", " ")}</span>}
+                  {e.impact_category && <span>{e.impact_category.replaceAll("_", " ")}</span>}
+                  {e.impact_level && <span>impact: {e.impact_level}</span>}
+                  {e.lifecycle_status && <span>{e.lifecycle_status}</span>}
+                  {e.published_at && <span>{new Date(e.published_at).toLocaleDateString()}</span>}
+                </div>
                 {e.source_url &&
                   /^https?:\/\//i.test(e.source_url) &&
                   !e.source_url.includes("example.invalid") && (
@@ -894,6 +912,25 @@ export function StockDetail({ symbol }: { symbol: string }) {
                   )}
               </div>
             ),
+          )}
+          {!!q.data.meta?.quant_citations?.length && (
+            <section className="quant-citations" aria-label="Options-risk sources">
+              <h4>Options-risk context</h4>
+              {q.data.meta.quant_citations.map(
+                (citation: { id: string; source: string; mode: string; as_of: string }) => (
+                  <p key={citation.id}>
+                    {citation.source} · {citation.mode} · {new Date(citation.as_of).toLocaleString()}
+                  </p>
+                ),
+              )}
+            </section>
+          )}
+          {!!q.data.warnings?.length && (
+            <section className="research-warnings" aria-label="Research warnings">
+              {q.data.warnings.map((warning: { code: string; message: string }) => (
+                <p key={warning.code}>{warning.message}</p>
+              ))}
+            </section>
           )}
         </div>
       )}

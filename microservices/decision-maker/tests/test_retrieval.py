@@ -15,6 +15,7 @@ SIGNAL_ID = uuid.UUID("3606605f-0000-5000-8000-000000000001")
 EVIDENCE_ROW = (
     EVIDENCE_ID, "AAPL", "Title", None, "SEC EDGAR", "sec_filing", "https://example.invalid/f",
     NOW, NOW, NOW, 2.0, {"tickers": []}, {"direction": None}, {"overall_score": 1.0}, "live", {"is_10b5_1": True},
+    "sec", "filing", "insider_activity", "high", {"form": "4"}, "available", "fresh", NOW, None, None, None, None,
 )
 SIGNAL_ROW = (SIGNAL_ID, "AAPL", "30-day price change", 8.8, "percent", "30d", NOW, "Yahoo Finance (yfinance)", "live")
 
@@ -84,6 +85,11 @@ def test_load_maps_rows_onto_contract_records() -> None:
     assert evidence[0].id == str(EVIDENCE_ID)
     assert evidence[0].details == {"is_10b5_1": True}
     assert evidence[0].credibility_score == 1.0
+    assert (evidence[0].provider, evidence[0].impact_category, evidence[0].lifecycle_status) == (
+        "sec",
+        "insider_activity",
+        "fresh",
+    )
     assert (signals[0].id, signals[0].window, signals[0].value) == (str(SIGNAL_ID), "30d", 8.8)
 
 
