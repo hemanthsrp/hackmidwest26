@@ -116,3 +116,25 @@ def test_the_same_inputs_always_give_the_same_decision() -> None:
     make = lambda: combine(legs(news_dir=0.4, insider=1.0, price_dir=-1.0), NO_QUANT, has_evidence=True)  # noqa: E731
 
     assert make() == make()
+
+
+def test_score_is_a_zero_to_hundred_rescale_of_net_direction() -> None:
+    from decision_maker.combiner import score_from_net
+
+    assert score_from_net(None) is None
+    assert score_from_net(0.0) == 50
+    assert score_from_net(1.0) == 100
+    assert score_from_net(-1.0) == 0
+    assert score_from_net(5.0) == 100
+    assert score_from_net(BASE_THRESHOLD) == 62
+
+
+def test_insufficient_data_has_no_score() -> None:
+    assert combine(legs(news_dir=0.9), NO_QUANT, has_evidence=True).score is None
+
+
+def test_a_held_label_still_carries_the_score() -> None:
+    decision = combine(legs(news_dir=0.0, insider=0.0, price_dir=0.0), NO_QUANT, has_evidence=True)
+
+    assert decision.label == "hold"
+    assert decision.score == 50

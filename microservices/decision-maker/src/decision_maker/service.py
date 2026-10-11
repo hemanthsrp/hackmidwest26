@@ -53,8 +53,8 @@ FOCUS_LIMIT = 8
 MAX_RETURNED_EVIDENCE = 25
 
 TRACE_NOTE = (
-    "Internal trace of a hand-set heuristic rule. net_direction is not a probability, "
-    "a forecast or a score for display."
+    "Internal trace of a hand-set heuristic rule. net_direction and the 0-100 score derived from it are "
+    "not a probability or a forecast."
 )
 
 
@@ -265,6 +265,9 @@ class DecisionMaker:
             signals=signals,
             assessment=Assessment(
                 label=decision.label,
+                score=decision.score,
+                score_sell_at_or_below=combiner.score_from_net(-decision.threshold) if decision.score is not None else None,
+                score_buy_at_or_above=combiner.score_from_net(decision.threshold) if decision.score is not None else None,
                 horizon=horizon,
                 reason_codes=decision.reason_codes,
                 explanation=" ".join([lead_sentence(decision), *(p.text for p in explanation.points)]),

@@ -251,6 +251,7 @@ class Decision(BaseModel):
     label: Label
     reason_codes: list[str] = Field(default_factory=list)
     net_direction: float | None = None
+    score: int | None = None
     threshold: float
     threshold_raised_by: list[str] = Field(default_factory=list)
     # Why a net direction past the threshold was still held at "hold".
@@ -288,6 +289,12 @@ class ExplanationPoint(BaseModel):
 
 class Assessment(BaseModel):
     label: Label
+    # 0-100 rescale of the combiner's net direction (50 neutral). None for
+    # insufficient_data. A heuristic position, not a probability.
+    score: int | None = None
+    # Scores at which the label would flip, so the number reads against the label.
+    score_sell_at_or_below: int | None = None
+    score_buy_at_or_above: int | None = None
     horizon: Horizon
     reason_codes: list[str]
     explanation: str

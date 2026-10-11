@@ -98,7 +98,7 @@ Unknown request fields are rejected until the team explicitly chooses forward-co
 - `data_mode` is one of `live`, `cached`, or `sample` and is explicit at both response and record level.
 - `assessment.label` is one of `buy`, `hold`, `sell`, or `insufficient_data`. It is a categorical research heuristic, not a probability, personalized recommendation, or validated forecast.
 - `reason_codes` reference IDs in `evidence` and/or `signals`, **or** a documented system reason code when no corresponding record can exist. The initial proposed system code is `missing_attributable_evidence`; future system codes require a contract update. The final implementation must not produce undeclared codes or dangling record references.
-- A numeric score is deliberately absent. If later added, Gate 0 must define its range, interpretation, evaluation limits, and UI label.
+- `sample` mode carries no numeric score. The decision-maker modes (`live`, `sample_decision`) add `assessment.score`: an integer 0-100, a linear rescale of the combiner's internal net direction (50 neutral, 100 every usable leg fully bullish), with `score_sell_at_or_below` and `score_buy_at_or_above` giving the scores at which the label flips. It is `null` for `insufficient_data`. It is a position on a hand-set heuristic scale, not a probability, forecast or validated predictor; the UI must label it that way. Gate 0 still needs to confirm this meaning.
 - `warnings` is an array of structured warning objects using the same `code`, `message`, and `retryable` fields as errors, but a successful response may still include it.
 
 ## Error envelope
