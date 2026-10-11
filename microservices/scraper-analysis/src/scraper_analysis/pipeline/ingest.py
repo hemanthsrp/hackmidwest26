@@ -49,9 +49,10 @@ class InvalidSymbolError(ValueError):
 
 
 class IngestCancelled(RuntimeError):
-    """Raised instead of persisting when the caller's should_stop() is true
-    (the background scheduler is shutting down). ``persisted`` counts what was
-    already saved before the check, so the caller can report it accurately."""
+    """Raised instead of starting a write when the caller's should_stop() is
+    true (the background scheduler is shutting down). ``evidence_saved`` /
+    ``signals_saved`` count what was already saved before the check, so the
+    caller can report it accurately."""
 
     def __init__(self, message: str, evidence_saved: int = 0, signals_saved: int = 0) -> None:
         super().__init__(message)
@@ -120,7 +121,9 @@ def ingest_evidence(
     new_items = store.filter_new_evidence(deduped)
     if tag:
         new_items = [tag_evidence(e) for e in new_items]
-    # Last check before the write: a shutting-down scheduler must not persist.
+    # Last stop check before the write: once should_stop() is true no NEW
+    # write starts. A save that already passed this check is not interrupted;
+    # if the scheduler's drain times out it may complete after stop() returns.
     _check_stop(should_stop, "saving evidence")
     store.save_evidence(new_items)
     return new_items, reports
@@ -140,6 +143,8 @@ def ingest_signals(
         result = fetch_result(symbol, allow_live=allow_live, fallback=fallback)
         signals += result.items
         reports.append(SourceReport(name, result.status, len(result.items), result.error))
+    # Same boundary as above: no new write after the stop flag, but a save
+    # already past this check may complete after the scheduler's stop() returns.
     _check_stop(should_stop, "saving signals", evidence_saved)
     get_store().save_signals(signals)
     return signals, reports
@@ -150,7 +155,9 @@ def ingest_symbol(
     should_stop: StopCheck = None,
 ) -> IngestResult:
     """``should_stop`` (optional) is checked immediately before each persist;
-    when it returns True, IngestCancelled is raised instead of writing."""
+    when it returns True, IngestCancelled is raised instead of starting that
+    write. It cannot interrupt a write already in progress, which may complete
+    after the caller has stopped waiting."""
     evidence, ev_reports = ingest_evidence(symbol, allow_live, tag, fallback, should_stop)
     signals, sig_reports = ingest_signals(symbol, allow_live, fallback, should_stop, len(evidence))
     return IngestResult(evidence, signals, ev_reports + sig_reports)

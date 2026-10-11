@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -23,12 +24,13 @@ async def lifespan(app: FastAPI):
             interval_minutes=settings.scheduler_interval_minutes,
             offhours_factor=settings.scheduler_offhours_factor,
             tag=settings.scheduler_tag,
-            # With DATABASE_URL set: a Postgres advisory lock so only one
-            # process/replica can own the scheduler. None = in-process only.
+            # With DATABASE_URL set: a per-run factory of Postgres advisory
+            # locks (own connection per run) so only one process/replica can
+            # own the scheduler. None = in-process only.
             owner_lock=build_owner_lock(settings),
         )
         # start() refuses (start_error in /scheduler/status) if another
-        # scheduler owns this process, a previous run is still draining, or
+        # scheduler run owns this process (incl. one still stopping/draining), or
         # another process holds the advisory lock; it never runs two at once.
         scheduler.start()
         app.state.scheduler = scheduler
@@ -167,16 +169,27 @@ def get_signals(symbol: str = Query(...)) -> dict:
 
 
 @app.get("/divergence")
-def get_divergence(symbol: str = Query(...)) -> dict:
-    """Where independent source types disagree (price vs insiders vs Senate
-    vs news). Deterministic and rule-based; thresholds are in the response.
-    Only live records (never sample or cached) inside the price signal's
-    window, with a fresh price, can contribute to a flag (see
-    pipeline/divergence.py). Raw stored records are passed so `excluded`
-    counts every dropped record."""
+def get_divergence(
+    symbol: str = Query(...),
+    as_of: datetime | None = Query(
+        None,
+        description="Request time (ISO 8601, default now). Must not be in the future (400). A past as_of is "
+        "historical analysis and is labelled window.historical=true with a warning.",
+    ),
+) -> dict:
+    """Where independent source types disagree (price vs insiders vs
+    congressional trades vs news). Deterministic and rule-based; thresholds
+    are in the response. Only live records (never sample or cached), never
+    future-dated, inside the price signal's window, with a fresh price, can
+    contribute to a flag (see pipeline/divergence.py). Raw stored records are
+    passed so `excluded` counts every dropped record."""
     try:
         validated = validate_symbol(symbol)
     except InvalidSymbolError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = get_store()
-    return divergence.analyze(validated, store.query_evidence(validated), store.query_signals(validated))
+    try:
+        return divergence.analyze(validated, store.query_evidence(validated), store.query_signals(validated),
+                                  as_of=as_of)
+    except divergence.FutureAsOfError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

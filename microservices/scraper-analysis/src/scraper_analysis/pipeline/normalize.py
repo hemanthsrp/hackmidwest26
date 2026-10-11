@@ -72,6 +72,10 @@ def _normalize_sec_filing(record: RawRecord, data_mode: str) -> Evidence:
                 "transaction_dates": form4.get("transaction_dates")
                 or ([form4["transaction_date"]] if form4.get("transaction_date") else []),
                 "period_of_report": form4.get("period_of_report"),
+                # Per-trade P/S breakdown so date-windowed consumers value
+                # only in-window trades. Absent on records parsed before it
+                # existed; consumers must not assume it.
+                **({"transactions": form4["transactions"]} if "transactions" in form4 else {}),
             }
         )
     return Evidence(
