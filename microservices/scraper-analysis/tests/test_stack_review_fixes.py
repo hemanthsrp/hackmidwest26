@@ -343,3 +343,77 @@ def test_reingest_after_migration_does_not_duplicate(monkeypatch):
         assert len(s.query_evidence("AAPL")) == before
     finally:
         monkeypatch.setattr(store_module, "_store", None)
+
+
+# --- PR #14 review (hbot): a stored sample must not block its live copy ----
+
+def _sample_of(e: Evidence) -> Evidence:
+    s = e.model_copy(deep=True)
+    s.data_mode = "sample"
+    return s
+
+
+@pytest.mark.parametrize("enriched", [False, True])
+def test_live_filing_replaces_persisted_sample_with_same_id(enriched):
+    s = store_module.InMemoryEvidenceStore()
+    live = _filing(enriched)
+    sample = _sample_of(live)
+    assign_stable_ids([sample, live])
+    assert sample.id == live.id
+    s.save_evidence([sample])
+    assert s.filter_new_evidence([live]) == [live]
+    s.save_evidence([live])
+    [stored] = s.query_evidence("AAPL")
+    assert stored.data_mode == "live"
+
+
+def test_live_metadata_only_beats_enriched_sample():
+    s = store_module.InMemoryEvidenceStore()
+    sample_rich, live_meta = _sample_of(_filing(True)), _filing(False)
+    assign_stable_ids([sample_rich, live_meta])
+    s.save_evidence([sample_rich])
+    s.save_evidence(s.filter_new_evidence([live_meta]))
+    assert s.query_evidence("AAPL")[0].data_mode == "live"
+
+
+@pytest.mark.parametrize("enriched_sample", [False, True])
+def test_later_sample_never_downgrades_live(enriched_sample):
+    s = store_module.InMemoryEvidenceStore()
+    live = _filing(False)
+    later_sample = _sample_of(_filing(enriched_sample))
+    assign_stable_ids([live, later_sample])
+    s.save_evidence([live])
+    assert s.filter_new_evidence([later_sample]) == []
+    s.save_evidence([later_sample])
+    assert s.query_evidence("AAPL")[0].data_mode == "live"
+
+
+def test_live_ingest_after_fixture_ingest_replaces_fixture_rows(monkeypatch):
+    """End to end: fixture run, then the same records arrive live."""
+    from scraper_analysis.sources.sec_edgar import SecEdgarAdapter
+
+    s = store_module.InMemoryEvidenceStore()
+    monkeypatch.setattr(store_module, "_store", s)
+    monkeypatch.setattr(ingest, "build_adapters", lambda: [SecEdgarAdapter()])
+    monkeypatch.setattr(SecEdgarAdapter, "fetch_live", lambda self, sym: self.fetch_sample(sym))
+    try:
+        ingest.run_ingestion("AAPL", allow_live=False, tag=False)
+        assert {e.data_mode for e in s.query_evidence("AAPL")} == {"sample"}
+        n = len(s.query_evidence("AAPL"))
+        ingest.run_ingestion("AAPL", allow_live=True, tag=False)
+        rows = s.query_evidence("AAPL")
+        assert len(rows) == n and {e.data_mode for e in rows} == {"live"}
+    finally:
+        monkeypatch.setattr(store_module, "_store", None)
+
+
+def test_migration_prefers_live_over_newer_enriched_sample():
+    s = store_module.InMemoryEvidenceStore()
+    live = _filing(False, NOW - timedelta(days=3))
+    sample = _sample_of(_filing(True, NOW))
+    for e in (live, sample):
+        e.id = _legacy_id(e)
+    s.save_evidence([live, sample])
+    migrate_sec_filing_ids(s, apply=True)
+    [kept] = s.query_evidence_by_source_type("sec_filing")
+    assert kept.data_mode == "live" and kept.id == stable_id(kept)

@@ -48,12 +48,21 @@ def dedup_evidence(items: list[Evidence]) -> list[Evidence]:
     return deduped
 
 
-def is_enrichment_upgrade(existing_details: dict | None, new_details: dict | None) -> bool:
-    """True when a stored row is metadata-only (e.g. a Form 4 whose XML
-    fetch failed) and the new copy of the SAME record carries the parsed
-    details. Such a row is replaced instead of kept, so a transient XML
-    failure doesn't freeze the record as metadata-only forever."""
-    return "insider" not in (existing_details or {}) and "insider" in (new_details or {})
+def record_rank(data_mode: str | None, details: dict | None) -> tuple[bool, bool]:
+    """How good a stored copy of one record is, compared lexicographically:
+    live beats sample (a fixture must never block, or later overwrite, real
+    data), then parsed details beat metadata-only (a Form 4 whose XML fetch
+    failed)."""
+    return (data_mode != "sample", "insider" in (details or {}))
+
+
+def is_upgrade(existing: Evidence, new: Evidence) -> bool:
+    """True when `new` is a strictly better copy of the SAME record (same
+    stable ID) than the stored `existing` one, so the stored row is replaced
+    rather than kept. Never true for a downgrade: a later sample cannot
+    replace live data, and a later metadata-only copy cannot replace parsed
+    details."""
+    return record_rank(new.data_mode, new.details) > record_rank(existing.data_mode, existing.details)
 
 
 def assign_stable_ids(items: list[Evidence]) -> None:

@@ -12,7 +12,7 @@ from typing import Protocol
 from ..config import Settings, get_settings
 from ..models.evidence import Evidence
 from ..models.signal import Signal
-from ..pipeline.dedup import is_enrichment_upgrade
+from ..pipeline.dedup import is_upgrade, record_rank
 from .embeddings import get_embedding
 
 logger = logging.getLogger(__name__)
@@ -47,13 +47,13 @@ class InMemoryEvidenceStore:
     def filter_new_evidence(self, items: list[Evidence]) -> list[Evidence]:
         return [
             i for i in items
-            if i.id not in self._evidence or is_enrichment_upgrade(self._evidence[i.id].details, i.details)
+            if i.id not in self._evidence or is_upgrade(self._evidence[i.id], i)
         ]
 
     def save_evidence(self, items: list[Evidence]) -> None:
         for item in items:
             old = self._evidence.get(item.id)
-            if old is None or is_enrichment_upgrade(old.details, item.details):
+            if old is None or is_upgrade(old, item):
                 self._evidence[item.id] = item
 
     def query_evidence(self, symbol: str) -> list[Evidence]:
@@ -111,11 +111,13 @@ class PostgresEvidenceStore:
         from .db import connect
 
         with connect(self._settings) as conn, conn.cursor() as cur:
-            cur.execute("SELECT id, details FROM evidence WHERE id = ANY(%s::uuid[])", ([i.id for i in items],))
-            existing = {str(row[0]): row[1] for row in cur.fetchall()}
+            cur.execute(
+                "SELECT id, data_mode, details FROM evidence WHERE id = ANY(%s::uuid[])", ([i.id for i in items],)
+            )
+            existing = {str(row[0]): record_rank(row[1], row[2]) for row in cur.fetchall()}
         return [
             i for i in items
-            if i.id not in existing or is_enrichment_upgrade(existing[i.id], i.details)
+            if i.id not in existing or record_rank(i.data_mode, i.details) > existing[i.id]
         ]
 
     def save_evidence(self, items: list[Evidence]) -> None:
@@ -134,14 +136,16 @@ class PostgresEvidenceStore:
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         title = EXCLUDED.title, summary = EXCLUDED.summary,
+                        source_name = EXCLUDED.source_name, published_at = EXCLUDED.published_at,
                         observed_at = EXCLUDED.observed_at, retrieved_at = EXCLUDED.retrieved_at,
                         reporting_lag_days = EXCLUDED.reporting_lag_days,
                         entities = EXCLUDED.entities, sentiment = EXCLUDED.sentiment,
                         credibility = EXCLUDED.credibility, data_mode = EXCLUDED.data_mode,
                         embedding = EXCLUDED.embedding, details = EXCLUDED.details
-                    -- only a metadata-only row gaining parsed details is replaced
-                    -- (pipeline.dedup.is_enrichment_upgrade); otherwise first write wins
-                    WHERE NOT (evidence.details ? 'insider') AND (EXCLUDED.details ? 'insider')
+                    -- replace only with a strictly better copy (pipeline.dedup.record_rank):
+                    -- live beats sample, then parsed details beat metadata-only; never a downgrade
+                    WHERE (EXCLUDED.data_mode <> 'sample', EXCLUDED.details ? 'insider')
+                        > (evidence.data_mode <> 'sample', evidence.details ? 'insider')
                     """,
                     (
                         item.id,

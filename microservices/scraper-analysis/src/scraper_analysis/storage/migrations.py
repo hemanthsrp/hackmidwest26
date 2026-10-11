@@ -9,8 +9,8 @@ metadata-only row from before enrichment (or from a failed XML fetch) and
 once enriched. IDs are now uuid5("sec_filing::" + url): one row per filing.
 
 This migration groups existing sec_filing rows by filing URL, keeps one row
-per filing -- the enriched one if any, otherwise the most recently
-retrieved -- moves it to the new ID, and deletes the rest. It is a dry run
+per filing -- live over sample, then enriched over metadata-only, then the
+most recently retrieved -- moves it to the new ID, and deletes the rest. It is a dry run
 unless --apply is passed, and it never prints row contents.
 
     python -m scraper_analysis.storage.migrations           # dry run
@@ -24,7 +24,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from ..models.evidence import Evidence
-from ..pipeline.dedup import stable_id
+from ..pipeline.dedup import record_rank, stable_id
 from .store import EvidenceStore, get_store
 
 
@@ -40,8 +40,8 @@ class RekeyPlan:
 
 
 def _rank(e: Evidence) -> tuple:
-    # Enriched beats metadata-only; then newest retrieval wins.
-    return ("insider" in (e.details or {}), e.retrieved_at)
+    # Live beats sample, enriched beats metadata-only; then newest retrieval wins.
+    return (*record_rank(e.data_mode, e.details), e.retrieved_at)
 
 
 def plan_sec_filing_rekey(rows: list[Evidence]) -> RekeyPlan:
