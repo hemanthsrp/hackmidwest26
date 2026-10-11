@@ -30,12 +30,19 @@ class MarketauxNewsAdapter(SourceAdapter):
             "limit": 10,
             "api_token": settings.news_api_key,
         }
+        # The token travels in the query string (MarketAux's only auth
+        # option), so httpx exception text contains it. Report the status /
+        # error type only, and don't chain the original exception.
         try:
             resp = httpx.get(API_URL, params=params, timeout=10.0)
-            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise SourceUnavailableError(f"MarketAux request failed: {type(exc).__name__}") from None
+        if resp.status_code >= 400:
+            raise SourceUnavailableError(f"MarketAux returned HTTP {resp.status_code}")
+        try:
             data = resp.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise SourceUnavailableError(str(exc)) from exc
+        except ValueError:
+            raise SourceUnavailableError("MarketAux returned a non-JSON response") from None
 
         now = datetime.now(timezone.utc)
         records: list[RawRecord] = []

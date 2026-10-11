@@ -10,6 +10,14 @@ an RSU vest withheld for taxes is not a bearish signal.
 `is_10b5_1` flags trades made under a pre-scheduled Rule 10b5-1 plan. Those
 are decided months earlier, so they say much less about current insider
 conviction than a discretionary trade -- consumers should weight them down.
+
+Dates: `periodOfReport` is the filing's reporting period, not necessarily
+when the trades happened, and one Form 4 can cover trades on several days.
+`transaction_date` is the EARLIEST per-transaction `transactionDate/value`
+(when the insider first acted, which is what reporting lag is measured
+from); `transaction_dates` lists every distinct trade date, and
+`last_transaction_date` the latest. `periodOfReport` is used only when no
+transaction carries a date, and is always kept as `period_of_report`.
 """
 
 from xml.etree import ElementTree
@@ -29,6 +37,12 @@ def _num(value: str | None) -> float:
         return 0.0
 
 
+def _date(value: str | None) -> str | None:
+    """Form 4 dates are YYYY-MM-DD, occasionally with a timezone suffix
+    (e.g. 2026-10-06-05:00). Keep the calendar date only."""
+    return value[:10] if value and len(value) >= 10 else None
+
+
 def parse_form4(xml_text: str) -> dict:
     root = ElementTree.fromstring(xml_text)
     rel = root.find("reportingOwner/reportingOwnerRelationship")
@@ -41,7 +55,11 @@ def parse_form4(xml_text: str) -> dict:
 
     buy_shares = sell_shares = buy_value = sell_value = 0.0
     other: dict[str, float] = {}
+    dates: set[str] = set()
     for tx in root.findall("nonDerivativeTable/nonDerivativeTransaction"):
+        tx_date = _date(_text(tx, "transactionDate/value"))
+        if tx_date:
+            dates.add(tx_date)
         code = _text(tx, "transactionCoding/transactionCode") or "?"
         shares = _num(_text(tx, "transactionAmounts/transactionShares/value"))
         price = _num(_text(tx, "transactionAmounts/transactionPricePerShare/value"))
@@ -54,8 +72,13 @@ def parse_form4(xml_text: str) -> dict:
         else:
             other[code] = other.get(code, 0.0) + shares
 
+    period = _date(_text(root, "periodOfReport"))
+    ordered = sorted(dates)
     return {
-        "transaction_date": _text(root, "periodOfReport"),
+        "transaction_date": ordered[0] if ordered else period,
+        "last_transaction_date": ordered[-1] if ordered else period,
+        "transaction_dates": ordered,
+        "period_of_report": period,
         "owner": _text(root, "reportingOwner/reportingOwnerId/rptOwnerName") or "Unknown insider",
         "role": role,
         "is_10b5_1": _text(root, "aff10b5One") in ("1", "true"),

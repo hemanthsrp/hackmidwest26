@@ -9,6 +9,13 @@ def _normalize_title(title: str) -> str:
 
 
 def _fingerprint(evidence: Evidence) -> str:
+    if evidence.source_type == "sec_filing" and evidence.source_url:
+        # One SEC filing == one evidence row. The filing URL embeds the
+        # accession number, which is unique and never changes; title and
+        # date do (Form 4 enrichment rewrites the title and moves
+        # observed_at to the trade date), and must not mint a new ID. See
+        # storage/migrations.py for re-keying rows stored under the old scheme.
+        return f"sec_filing::{evidence.source_url.strip().lower()}"
     title = _normalize_title(evidence.title)
     day = evidence.observed_at.date().isoformat() if evidence.observed_at else ""
     if evidence.source_url:
@@ -39,6 +46,23 @@ def dedup_evidence(items: list[Evidence]) -> list[Evidence]:
         seen.add(fp)
         deduped.append(item)
     return deduped
+
+
+def record_rank(data_mode: str | None, details: dict | None) -> tuple[bool, bool]:
+    """How good a stored copy of one record is, compared lexicographically:
+    live beats sample (a fixture must never block, or later overwrite, real
+    data), then parsed details beat metadata-only (a Form 4 whose XML fetch
+    failed)."""
+    return (data_mode != "sample", "insider" in (details or {}))
+
+
+def is_upgrade(existing: Evidence, new: Evidence) -> bool:
+    """True when `new` is a strictly better copy of the SAME record (same
+    stable ID) than the stored `existing` one, so the stored row is replaced
+    rather than kept. Never true for a downgrade: a later sample cannot
+    replace live data, and a later metadata-only copy cannot replace parsed
+    details."""
+    return record_rank(new.data_mode, new.details) > record_rank(existing.data_mode, existing.details)
 
 
 def assign_stable_ids(items: list[Evidence]) -> None:
