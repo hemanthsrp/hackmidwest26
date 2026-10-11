@@ -11,7 +11,8 @@ from .config import get_settings
 from .pipeline import divergence
 from .pipeline.ingest import IngestPartialFailure, IngestResult, InvalidSymbolError, ingest_symbol, validate_symbol
 from .scheduler import Scheduler, build_owner_lock
-from .sources.base import sanitize_error
+from .sources import price_history
+from .sources.base import SourceUnavailableError, sanitize_error
 from .storage.store import get_store
 
 @asynccontextmanager
@@ -216,6 +217,40 @@ def get_signals(symbol: str = Query(...)) -> dict:
         "symbol": validated,
         "status": "ok" if items else "insufficient_data",
         "signals": [s.model_dump(mode="json") for s in items],
+    }
+
+
+@app.get("/price-history", response_model=None)
+def get_price_history(
+    symbol: str = Query(...),
+    range: str = Query("1M", description=f"One of {', '.join(price_history.RANGES)}"),
+):
+    """Daily closes for charting. Live Yahoo Finance only: no fixture fallback,
+    so a provider failure is a 503 rather than invented prices."""
+    try:
+        validated = validate_symbol(symbol)
+    except InvalidSymbolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if range not in price_history.RANGES:
+        raise HTTPException(status_code=400, detail=f"range must be one of {', '.join(price_history.RANGES)}")
+    try:
+        points = price_history.fetch_live(validated, range)
+    except SourceUnavailableError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {"code": "provider_unavailable", "message": sanitize_error(exc), "retryable": True}
+            },
+        )
+    return {
+        "symbol": validated,
+        "range": range,
+        "interval": "1d",
+        "price_field": "close",
+        "source": price_history.SOURCE,
+        "data_mode": "live",
+        "as_of": points[-1]["t"],
+        "points": points,
     }
 
 

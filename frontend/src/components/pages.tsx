@@ -762,6 +762,98 @@ function LiveFeed({
     </div>
   );
 }
+type HistoryPoint = { t: string; close: number };
+const historyRanges = ["1W", "1M", "3M", "1Y"];
+function LiveStockChart({ symbol }: { symbol: string }) {
+  const [range, setRange] = useState("1M");
+  const q = useQuery({
+    queryKey: ["stock-history", symbol, range],
+    staleTime: 5 * 60_000,
+    retry: 1,
+    queryFn: async () => {
+      const r = await fetch(`/api/service/stocks/${symbol}/history?range=${range}`);
+      if (!r.ok) throw new Error("Price history unavailable");
+      return r.json() as Promise<{
+        data: { points: HistoryPoint[]; source: string; as_of: string };
+      }>;
+    },
+  });
+  const history = q.data?.data;
+  const points = history?.points ?? [];
+  const last = points.at(-1);
+  const change =
+    last && points[0].close ? (last.close / points[0].close - 1) * 100 : 0;
+  return (
+    <section className="panel detail-chart">
+      {last && (
+        <div className="card-row">
+          <div>
+            <div className="portfolio-value">{money(last.close)}</div>
+            <span className={change >= 0 ? "positive" : "negative"}>
+              {pct(change)} over {range}
+            </span>
+          </div>
+        </div>
+      )}
+      {q.isPending && <div className="empty-state">Loading price history…</div>}
+      {q.isError && (
+        <div role="alert" className="error-box">
+          We couldn’t load price history for {symbol}.
+          <button onClick={() => void q.refetch()}>Try again</button>
+        </div>
+      )}
+      {history && (
+        <ResponsiveContainer width="100%" height={240}>
+          <AreaChart data={points}>
+            <XAxis dataKey="t" hide />
+            <YAxis hide domain={["dataMin - 1", "dataMax + 1"]} />
+            <Tooltip
+              formatter={(v) => money(Number(v))}
+              labelFormatter={(t) =>
+                new Date(String(t)).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })
+              }
+              contentStyle={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+              }}
+            />
+            <Area
+              dataKey="close"
+              type="monotone"
+              fill="#60887320"
+              stroke="#608873"
+              strokeWidth={2}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+      <div className="chart-footer">
+        <span>
+          {history && last
+            ? `Daily closes · ${history.source} · as of ${new Date(history.as_of).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+            : "Daily closes · Yahoo Finance"}
+        </span>
+        <div className="range-tabs">
+          {historyRanges.map((r) => (
+            <button
+              className={range === r ? "selected" : ""}
+              onClick={() => setRange(r)}
+              key={r}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 export function StockDetail({ symbol }: { symbol: string }) {
   const { demo } = useApp();
   const s = stocks.find((s) => s.symbol === symbol);
@@ -826,6 +918,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
           </div>
         </section>
       )}
+      {!demo && <LiveStockChart symbol={symbol} />}
       <ResearchAssessment symbol={symbol} />
       {demo && (
         <>
