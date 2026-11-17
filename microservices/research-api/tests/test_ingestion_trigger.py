@@ -21,7 +21,7 @@ def test_trigger_ingestion_uses_explicit_strict_parameters(monkeypatch) -> None:
 
     assessment.trigger_ingestion(
         "AAPL",
-        {"SCRAPER_ANALYSIS_URL": "http://scraper.internal/", "INGEST_TIMEOUT_SECONDS": "12"},
+        {"SCRAPER_API_URL": "http://scraper.internal/", "INGEST_TIMEOUT_SECONDS": "12"},
     )
 
     assert observed == {
