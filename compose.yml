@@ -11,8 +11,10 @@ services:
       dockerfile: microservices/scraper-analysis/Dockerfile
     env_file:
       - .env
-      - microservices/jev-tool/.env
-      - microservices/agentic-search/.env
+      - path: microservices/jev-tool/.env
+        required: false
+      - path: microservices/agentic-search/.env
+        required: false
     environment:
       AKAMAI_INFERENCE_BASE_URL: ${OPENAI_BASE_URL}
       AKAMAI_INFERENCE_API_KEY: ${OPENAI_API_KEY}
@@ -29,7 +31,8 @@ services:
       dockerfile: microservices/research-api/Dockerfile
     env_file:
       - .env
-      - microservices/jev-tool/.env
+      - path: microservices/jev-tool/.env
+        required: false
     environment:
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
       RESEARCH_DATABASE_URL: ${DATABASE_URL}
