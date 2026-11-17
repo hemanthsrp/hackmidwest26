@@ -239,7 +239,7 @@ def test_missing_is_graded_as_unknown_not_as_a_judgment():
     assert missing["basis"] == "source_only" and missing["jev_status"] == "missing"
     assert missing["gated"] is False
     assert items[0].details["grade"]["jev_status"] == "ok"
-    tone = grade.news_tone(items)
+    tone = grade.news_tone(items, NOW)
     assert "d" not in tone["evidence_ids"] and tone["records_judged"] == 3
 
 
@@ -275,7 +275,7 @@ def test_invalid_direction_confidence_does_not_inflate_strength(bad):
     s = {e.id: e.details["grade"]["strength"] for e in (clean, odd, unknown)}
     assert all(math.isfinite(v) for v in s.values())
     assert s["odd"] == s["unknown"] < s["clean"]
-    assert grade.rank([odd, clean])[0].id == "clean"
+    assert grade.rank([odd, clean], NOW)[0].id == "clean"
 
 
 @pytest.mark.parametrize("field,bad", [

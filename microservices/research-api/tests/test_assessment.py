@@ -136,6 +136,18 @@ def test_scoring_only_maker_never_attaches_the_per_article_jev_judge(monkeypatch
     assert maker._explanation_checker is None
 
 
+def test_the_local_nlp_model_is_off_unless_named_and_shared_by_both_makers() -> None:
+    assert assessment.build_decision_maker({"DATABASE_URL": LOCAL_DATABASE})._text_classifier is None
+
+    env = {"DATABASE_URL": LOCAL_DATABASE, "DECISION_NLP_MODEL": " test/model "}
+    full = assessment.build_decision_maker(env)
+    scoring = assessment.build_decision_maker(env, scoring_only=True)
+
+    # Built lazily: naming a model loads nothing until an assessment reads news.
+    assert full._text_classifier.model == "test/model"
+    assert full._text_classifier is scoring._text_classifier
+
+
 def test_inference_settings_enable_the_model_and_tuning_is_read_from_the_environment() -> None:
     maker = assessment.build_decision_maker(
         {

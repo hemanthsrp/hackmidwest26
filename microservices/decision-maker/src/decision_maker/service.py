@@ -1,6 +1,6 @@
 """The decision maker: evidence, a user question and the math in; one assessment out.
 
-    validate -> retrieve -> legs -> quant -> combine -> explain -> review -> respond
+    validate -> retrieve -> judge -> read (NLP) -> legs -> quant -> combine -> explain -> review -> respond
 
 The label comes from every in-window record for the symbol. The user's question
 only steers which records the explanation looks at and what it answers, so
@@ -43,6 +43,7 @@ from .models import (
     as_utc,
     normalize_symbol,
 )
+from .nlp import TextClassifier, read_articles
 from .retrieval import EvidenceSource, FixtureEvidenceSource
 from .review import ExplanationChecker, review_explanation
 
@@ -106,9 +107,16 @@ def _uncertainty(
     missing = [leg.name for leg in legs.values() if not leg.usable]
     if missing:
         parts.append("No usable reading from: " + ", ".join(missing) + ".")
-    unjudged = legs["news"].inputs.get("records_unjudged", 0)
+    news_inputs = legs["news"].inputs
+    nlp_read = news_inputs.get("records_read_by_nlp_only", 0)
+    unjudged = news_inputs.get("records_unjudged", 0) - nlp_read
     if unjudged:
         parts.append(f"{unjudged} news item(s) had no relevance and direction judgment and were left out of the news reading.")
+    if nlp_read:
+        parts.append(
+            f"{nlp_read} news item(s) had no Jev judgment and were read only by a local sentiment model, "
+            "which is less reliable than Jev; they count for less in the news reading."
+        )
     return " ".join(parts)
 
 
@@ -122,6 +130,7 @@ class DecisionMaker:
         use_agent_tools: bool = False,
         article_judge: ArticleJudge | None = None,
         explanation_checker: ExplanationChecker | None = None,
+        text_classifier: TextClassifier | None = None,
         companies: Mapping[str, str] | None = None,
         stale_after_seconds: int = STALE_AFTER_SECONDS,
         clock: Callable[[], datetime] | None = None,
@@ -132,6 +141,9 @@ class DecisionMaker:
         self._use_agent_tools = use_agent_tools
         self._article_judge = article_judge
         self._explanation_checker = explanation_checker
+        self._text_classifier = text_classifier
+        # Local NLP readings, by evidence id, for the life of this process.
+        self._reading_cache: dict[str, dict[str, Any]] = {}
         self._companies = companies or {}
         self._stale_after_seconds = stale_after_seconds
         self._clock = clock or (lambda: datetime.now(timezone.utc))
@@ -198,6 +210,25 @@ class DecisionMaker:
                     ResponseWarning(
                         code="news_judgment_unavailable",
                         message=f"Jev did not judge {judgments['unavailable']} news item(s); they were left out of the news reading.",
+                        retryable=True,
+                    )
+                )
+
+        readings = None
+        if self._text_classifier is not None:
+            window, readings = read_articles(
+                window,
+                self._text_classifier,
+                symbol=symbol,
+                company=self._companies.get(symbol),
+                other_companies={s: n for s, n in self._companies.items() if s != symbol},
+                cache=self._reading_cache,
+            )
+            if readings["error"]:
+                warnings.append(
+                    ResponseWarning(
+                        code="nlp_reader_unavailable",
+                        message="The local sentiment model could not read the news; the assessment was made without it.",
                         retryable=True,
                     )
                 )
@@ -305,6 +336,7 @@ class DecisionMaker:
                 "answer_evidence_ids": explanation.answer_evidence_ids,
                 "jev_review": outcome.meta,
                 "judgments_at_decision": judgments,
+                "nlp_readings": readings,
                 "retrieval": retrieval,
                 "quant_citations": quant.quant_citations if quant else [],
             },

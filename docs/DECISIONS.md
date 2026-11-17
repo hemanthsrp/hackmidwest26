@@ -61,6 +61,20 @@ Gate 0 must still accept or revise the route and fields; supported symbols; data
 **Impact:** `docs/API.md`, `docs/api-contract-v0.md`, decision-maker response models, and Research API response assembly must preserve these semantics. Provider rights, live-data behavior, score evaluation/backtesting, and broader v0 contract approval remain separate Gate 0 items.
 
 
+## Recorded decision — local NLP reader in the news leg (2026-11-16)
+
+**Decision:** An optional local sentiment model (`decision-maker/nlp.py`, switched on by `DECISION_NLP_MODEL`, off by default) reads news that Jev did not judge, so those records can count in the news leg at `credibility x 0.35 x reading confidence`. A record is read only when its headline names the company and no other known company, and is not a market wrap-up. A reading never changes a Jev-judged record's weight; on those records it is only compared (`nlp_cross_check`). A news leg with fewer than 3 Jev-judged stories (`backs_label: false`) can move the net direction but cannot create a label: it does not count toward the two usable legs, and cannot be the evidence leg that agrees with a buy or sell. The news leg also reports `agreement`, `coverage` and `confidence`; the combiner does not read them.
+
+**Owner / participants:** proposed and approved by Hemanth on 2026-11-16, using his project-wide override of lane approvals (the decision-maker lane is Jet's).
+
+**Why / evidence:** With Jev off or unavailable, unjudged news is left out of the news leg entirely. On `jev-tool/evals/article_quiz.json`, `ProsusAI/finbert` behind the headline rule gave 20 usable readings on 30 on-topic items, 19 with the right direction, and none on the 8 off-topic items (Jev: 30/30). That is a 38-item sanity check, not an evaluation. On the local live store (AAPL, NVDA, TSLA, MSFT, Yahoo Finance news ingested 2026-11-16, no Jev judgments), the first version flipped three labels on NLP-only news with a news confidence of about 0.06 (AAPL hold to buy, NVDA hold to sell, TSLA `insufficient_data` to hold) and counted headlines about other companies or the whole market. The `backs_label` rule and the other-company and market-wide filters were added for that; with them all four labels match the run without the reader.
+
+**Alternatives and tradeoffs:** Using the reading to re-weight Jev-judged records was rejected, because FinBERT was wrong on 7 items where Jev was right, so it would only have pulled correct readings down. An LLM reader (TradingAgents, FinGPT) costs a call per article and is not deterministic. FinBERT's weights are CC BY-NC-SA 4.0 (non-commercial); the model id is configurable for that reason.
+
+**Impact:** With the variable unset, labels and scores are unchanged (the existing tests are untouched). With it set, the news leg can become usable from NLP-only stories and move the net direction and score, but a label only changes when at least two other legs (or 3 Jev-judged news stories) already back it. `meta.decision_trace.legs[news].inputs` and `meta.nlp_readings` gain fields; no response field changes.
+
+**Follow-up:** an evaluation on more than the quiz set before enabling it by default, and a run with Jev on, which the live store run could not include (no TypeSafe key locally).
+
 ## Decision log template
 
 Add entries only after agreement; don't rewrite prior choices silently.

@@ -14,6 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 pg = ["psycopg[binary]>=3.2"]
 agent = ["strands-agents[openai]>=1.59"]
+nlp = ["transformers>=4.40", "torch>=2.2"]
 dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
