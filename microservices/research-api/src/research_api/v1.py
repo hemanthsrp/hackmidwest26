@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import threading
@@ -22,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import storage
 from .inference import AkamaiInferenceClient, InferenceSettings, InferenceResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/v1')
 UNIVERSE = {'NVDA':('NVIDIA','ai'),'AAPL':('Apple','technology'),'MSFT':('Microsoft','technology'),'JPM':('JPMorgan Chase','finance'),'TSLA':('Tesla','technology'),'XOM':('Exxon Mobil','energy'),'CMG':('Chipotle','food'),'DUOL':('Duolingo','education'),'UNH':('UnitedHealth','healthcare'),'GLD':('SPDR Gold Shares','commodities')}
 MEMORY_KEYS = frozenset({'research_interests','horizon','risk_preference','presentation_preference'})
@@ -408,7 +410,8 @@ def chat_stream(body: ChatInput,uid=Depends(user_id)):
             if body.preferences.get('memory'):
                 for key,value in extract_memory(body.message).items(): storage.write(uid,'memory',key,value);saved.append(key)
             yield sse_event({'type':'done','citations':[{'symbol':e['symbol'],'label':e['symbol']+' research'} for e in evidence],'saved_memory_keys':saved})
-        except Exception:
+        except Exception as exc:
+            logger.warning('chat inference failed: %s: %s',type(exc).__name__,str(exc)[:200])
             yield sse_event({'type':'error','message':'Research inference is unavailable; your conversation was not saved'})
     return StreamingResponse(generate(),media_type='text/event-stream',headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
 
@@ -441,7 +444,8 @@ def chat(body: ChatInput,uid=Depends(user_id)):
         result=client.chat_completion(messages)
         reply=result['choices'][0]['message']['content']
         if not isinstance(reply,str) or not reply.strip(): raise ValueError('Empty response')
-    except Exception:
+    except Exception as exc:
+        logger.warning('chat inference failed: %s: %s',type(exc).__name__,str(exc)[:200])
         raise HTTPException(503,'Research inference is unavailable; your conversation was not saved')
     saved=[]
     if body.preferences.get('memory'):
