@@ -37,10 +37,13 @@ export async function sendEmail(to: string, subject: string, text: string) {
   });
   if (!r.ok) throw new Error("Email delivery failed");
 }
+// The timeout covers reading the whole response body, so a streamed reply
+// (research chat) needs a longer one than an ordinary JSON call.
 export async function service(
   userId: string,
   path: string,
   init: RequestInit = {},
+  timeoutMs = 30000,
 ) {
   return fetch(
     `${process.env.RESEARCH_API_URL || "http://127.0.0.1:8000"}/v1/${path}`,
@@ -52,7 +55,7 @@ export async function service(
         "Content-Type": "application/json",
         Authorization: `Bearer ${assertion(userId)}`,
       },
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(timeoutMs),
     },
   );
 }
