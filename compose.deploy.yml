@@ -1,0 +1,128 @@
+# Production stack for one Docker host, run by .github/workflows/cd.yml.
+# The same services as compose.frontend.yml, but from images published to GitHub
+# Container Registry, with every secret read from .env next to this file on the
+# host (never from the repository). See docs/DEPLOYMENT.md.
+#
+#   IMAGE_TAG=<git sha> docker compose -f compose.deploy.yml up -d --wait
+
+services:
+  database:
+    image: pgvector/pgvector:0.8.7-pg17-trixie
+    environment:
+      POSTGRES_USER: folio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: folio
+    volumes:
+      - folio-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U folio"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+  frontend-migrations:
+    image: ${IMAGE_REGISTRY:-ghcr.io/hemanthsrp/hackmidwest26}/frontend-migrator:${IMAGE_TAG:?Set IMAGE_TAG}
+    environment:
+      DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD}@database:5432/folio
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: "no"
+  scraper-schema:
+    image: ${IMAGE_REGISTRY:-ghcr.io/hemanthsrp/hackmidwest26}/scraper-analysis:${IMAGE_TAG:?Set IMAGE_TAG}
+    env_file:
+      - path: ./scraper-analysis.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD}@database:5432/folio
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"  # the database is reachable only inside this Compose network
+    command: ["python", "-m", "scraper_analysis.storage.bootstrap"]
+    depends_on:
+      database:
+        condition: service_healthy
+      frontend-migrations:
+        condition: service_completed_successfully
+    restart: "no"
+  # Internal-only API; port 8001 is never published.
+  scraper-analysis:
+    image: ${IMAGE_REGISTRY:-ghcr.io/hemanthsrp/hackmidwest26}/scraper-analysis:${IMAGE_TAG:?Set IMAGE_TAG}
+    env_file:
+      - path: ./scraper-analysis.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD}@database:5432/folio
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"
+      ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-false}
+      ENABLE_REDDIT_SCRAPER: "false"
+      ENABLE_X_SCRAPER: "false"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      database:
+        condition: service_healthy
+      scraper-schema:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  research-api:
+    image: ${IMAGE_REGISTRY:-ghcr.io/hemanthsrp/hackmidwest26}/research-api:${IMAGE_TAG:?Set IMAGE_TAG}
+    environment:
+      RESEARCH_DATABASE_URL: postgresql+psycopg://folio:${POSTGRES_PASSWORD}@database:5432/folio
+      DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD}@database:5432/folio
+      SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET:?Set SERVICE_ASSERTION_SECRET in .env}
+      BROKER_ENCRYPTION_KEY: ${BROKER_ENCRYPTION_KEY:-}
+      ROBINHOOD_MCP_ENABLED: ${ROBINHOOD_MCP_ENABLED:-false}
+      ROBINHOOD_REDIRECT_URI: ${ROBINHOOD_REDIRECT_URI:-}
+      AUTH_URL: ${AUTH_URL:?Set AUTH_URL in .env}
+      SCRAPER_API_URL: http://scraper-analysis:8001
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CHAT_MODEL: ${CHAT_MODEL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      DECISION_NLP_MODEL: ${DECISION_NLP_MODEL:-}
+      DECISION_STALE_AFTER_SECONDS: ${DECISION_STALE_AFTER_SECONDS:-86400}
+    command: ["sh", "-c", "python -m research_api.storage && uvicorn research_api.app:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      database:
+        condition: service_healthy
+      frontend-migrations:
+        condition: service_completed_successfully
+      scraper-analysis:
+        condition: service_healthy
+    restart: unless-stopped
+  frontend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/hemanthsrp/hackmidwest26}/frontend:${IMAGE_TAG:?Set IMAGE_TAG}
+    environment:
+      DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD}@database:5432/folio
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
+      AUTH_URL: ${AUTH_URL:?Set AUTH_URL in .env}
+      AUTH_TRUST_HOST: "true"
+      SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET}
+      RESEARCH_API_URL: http://research-api:8000
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      PUBLIC_LIVE_RESEARCH: ${PUBLIC_LIVE_RESEARCH:-true}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      DIGEST_JOB_SECRET: ${DIGEST_JOB_SECRET:-}
+    # Bound to the host's loopback only: put an HTTPS reverse proxy in front of it.
+    ports:
+      - "127.0.0.1:${HOST_PORT:-3100}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      frontend-migrations:
+        condition: service_completed_successfully
+      research-api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  folio-data:
