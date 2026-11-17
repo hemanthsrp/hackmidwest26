@@ -58,7 +58,7 @@ def trigger_ingestion(symbol: str, environ: Mapping[str, str] = os.environ) -> N
     refused and any failure is surfaced rather than silently assessing stale
     records.
     """
-    base_url = environ.get("SCRAPER_ANALYSIS_URL", "").strip()
+    base_url = environ.get("SCRAPER_API_URL", "").strip()
     if not base_url:
         return
     import httpx
