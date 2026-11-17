@@ -15,7 +15,10 @@ price will move.
 
 from __future__ import annotations
 
+import math
+import re
 from datetime import datetime, timedelta
+from typing import Any
 
 from .models import EvidenceRecord, Leg, SignalRecord, as_utc
 
@@ -46,6 +49,16 @@ HYPE_WEIGHT = 0.7
 SAME_STORY_BONUS_PER_OUTLET = 0.1
 SAME_STORY_BONUS_CAP = 3
 
+# A news record Jev never judged can count only through a usable local NLP reading
+# (nlp.py), at this fraction of the weight: the reader is less accurate than Jev and
+# knows nothing of materiality or content type. Its strength is
+# credibility x NLP_STORY_WEIGHT x reading confidence.
+NLP_STORY_WEIGHT = 0.35
+# Two NLP-only stories whose headlines share this much vocabulary are one story.
+NLP_SAME_STORY_JACCARD = 0.5
+# News confidence reaches full coverage at this many stories (multi-agent-investment uses 10).
+FULL_COVERAGE_STORIES = 10
+
 PRICE_SIGNAL = "30-day price change"
 PRICE_MOVE_PCT = 5.0
 INSIDER_NET_USD = 100_000.0
@@ -58,6 +71,8 @@ THRESHOLDS = {
     "freshness_half_life_hours": FRESHNESS_HALF_LIFE_HOURS,
     "news_tone_threshold": TONE_THRESHOLD,
     "news_min_stories": TONE_MIN_STORIES,
+    "nlp_story_weight": NLP_STORY_WEIGHT,
+    "news_full_coverage_stories": FULL_COVERAGE_STORIES,
     "price_move_pct": PRICE_MOVE_PCT,
     "insider_net_usd": INSIDER_NET_USD,
 }
@@ -94,16 +109,39 @@ def is_gated(record: EvidenceRecord) -> bool:
     return off_topic or (usable_content is not None and usable_content < USABLE_CONTENT_GATE)
 
 
+def nlp_reading(record: EvidenceRecord) -> dict | None:
+    """The local NLP reading (nlp.py), only when it is usable and Jev has not judged
+    the record: a Jev judgment always wins."""
+    reading = record.details.get("nlp")
+    if record.jev or not isinstance(reading, dict) or reading.get("engine") != "nlp" or not reading.get("usable"):
+        return None
+    return reading if reading.get("direction") in TONE_VALUE else None
+
+
+def story_direction(record: EvidenceRecord) -> str | None:
+    """The direction a story votes with: Jev's, else a usable NLP reading's."""
+    if record.jev:
+        return record.jev.get("direction")
+    reading = nlp_reading(record)
+    return reading["direction"] if reading else None
+
+
 def strength(record: EvidenceRecord) -> float | None:
     """How much weight a judged record deserves, before freshness. The stored
     grade when the scraper computed one, otherwise the same formula applied to
-    the judgment. None for a record Jev has not judged."""
+    the judgment. A record Jev has not judged is weighed by its usable NLP
+    reading, if any; otherwise None."""
     grade = record.grade
     if grade and grade.get("basis") == "jev" and grade.get("strength") is not None:
         return float(grade["strength"])
     judgment = record.jev
     if not judgment:
-        return None
+        reading = nlp_reading(record)
+        if reading is None:
+            return None
+        credibility = record.credibility_score
+        credibility = DEFAULT_CREDIBILITY if credibility is None else credibility
+        return min(1.0, credibility * NLP_STORY_WEIGHT * float(reading.get("confidence") or 0.0))
     credibility = record.credibility_score
     credibility = DEFAULT_CREDIBILITY if credibility is None else credibility
     value = (
@@ -128,10 +166,52 @@ def current_strength(record: EvidenceRecord, as_of: datetime) -> float:
     return (strength(record) or 0.0) * freshness(record, as_of)
 
 
+def _headline_tokens(title: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", title.lower()) if len(w) > 2}
+
+
+def _same_headline(a: set[str], b: set[str]) -> bool:
+    return bool(a and b) and len(a & b) / len(a | b) >= NLP_SAME_STORY_JACCARD
+
+
+def _cross_check(judged: list[EvidenceRecord]) -> dict[str, Any] | None:
+    """How often a usable NLP reading agrees with Jev on the records both read.
+    Reported only: it never changes a Jev-judged record's weight."""
+    pairs = [
+        (e, e.jev.get("direction"), e.details["nlp"]["direction"])
+        for e in judged
+        if isinstance(e.details.get("nlp"), dict) and e.details["nlp"].get("usable") and e.jev.get("direction")
+    ]
+    if not pairs:
+        return None
+    # The NLP reader has no "mixed" label; it reads a mixed story as neutral.
+    disagree = [e.id for e, jev, nlp in pairs if ("neutral" if jev == "mixed" else jev) != nlp]
+    return {"compared": len(pairs), "agreed": len(pairs) - len(disagree), "disagreed_ids": disagree}
+
+
+def _confidence(stories: list[EvidenceRecord], tone: float, as_of: datetime) -> dict[str, float]:
+    """How much to trust the tone, after the sentiment aggregator in
+    flash131307/multi-agent-investment: |tone| x agreement x coverage, where agreement
+    is 1 minus the strength-weighted spread of the stories' directions and coverage
+    reaches 1 at FULL_COVERAGE_STORIES stories. A hand-set heuristic, not a probability."""
+    weights = [current_strength(e, as_of) for e in stories]
+    values = [TONE_VALUE.get(story_direction(e), 0.0) for e in stories]
+    total = sum(weights)
+    spread = math.sqrt(sum(w * (v - tone) ** 2 for w, v in zip(weights, values)) / total) if total > 0 else 0.0
+    agreement = 1.0 - min(1.0, spread)
+    coverage = min(1.0, len(stories) / FULL_COVERAGE_STORIES)
+    return {
+        "agreement": round(agreement, 4),
+        "coverage": round(coverage, 4),
+        "confidence": round(abs(tone) * agreement * coverage, 4),
+    }
+
+
 def news_leg(evidence: list[EvidenceRecord], as_of: datetime) -> Leg:
     news = [e for e in evidence if e.source_type in NEWS_SOURCE_TYPES]
     judged = [e for e in news if e.jev]
     usable = [e for e in judged if not is_gated(e)]
+    nlp_only = [e for e in news if nlp_reading(e)]
     by_id = {e.id: e for e in usable}
 
     seen: set[str] = set()
@@ -142,10 +222,20 @@ def news_leg(evidence: list[EvidenceRecord], as_of: datetime) -> Leg:
         seen.add(record.id)
         seen.update(i for i in record.jev.get("same_story_as", []) if i in by_id)
         stories.append(record)
+    # NLP-only stories after the Jev ones, skipping any headline that repeats one already used.
+    used_headlines = [_headline_tokens(e.title) for e in stories]
+    nlp_stories: list[EvidenceRecord] = []
+    for record in sorted(nlp_only, key=lambda e: current_strength(e, as_of), reverse=True):
+        tokens = _headline_tokens(record.title)
+        if any(_same_headline(tokens, other) for other in used_headlines):
+            continue
+        used_headlines.append(tokens)
+        nlp_stories.append(record)
+    stories += nlp_stories
 
     by_direction: dict[str, int] = {}
     for record in stories:
-        direction = record.jev.get("direction") or "neutral"
+        direction = story_direction(record) or "neutral"
         by_direction[direction] = by_direction.get(direction, 0) + 1
     upcoming = [e.id for e in usable if (e.jev.get("upcoming_event") or 0.0) >= UPCOMING_EVENT_FLAG]
     inputs = {
@@ -158,6 +248,16 @@ def news_leg(evidence: list[EvidenceRecord], as_of: datetime) -> Leg:
         "upcoming_event_ids": upcoming,
         "tone": None,
     }
+    if any(isinstance(e.details.get("nlp"), dict) for e in news):
+        inputs["records_read_by_nlp_only"] = len(nlp_only)
+        inputs["stories_by_reader"] = {"jev": len(stories) - len(nlp_stories), "nlp": len(nlp_stories)}
+        inputs["nlp_story_ids"] = [e.id for e in nlp_stories]
+        # The NLP reader may add to a news reading, never create one: without enough
+        # Jev-judged stories of its own, the leg cannot back a label (combiner.py).
+        inputs["backs_label"] = len(stories) - len(nlp_stories) >= TONE_MIN_STORIES
+        cross_check = _cross_check(usable)
+        if cross_check:
+            inputs["nlp_cross_check"] = cross_check
 
     total = sum(current_strength(e, as_of) for e in stories)
     if len(stories) < TONE_MIN_STORIES or total <= 0:
@@ -166,15 +266,18 @@ def news_leg(evidence: list[EvidenceRecord], as_of: datetime) -> Leg:
             summary=f"Only {len(stories)} on-topic judged news story(ies); need {TONE_MIN_STORIES}.",
             inputs=inputs,
         )
-    tone = sum(TONE_VALUE.get(e.jev.get("direction"), 0.0) * current_strength(e, as_of) for e in stories) / total
+    tone = sum(TONE_VALUE.get(story_direction(e), 0.0) * current_strength(e, as_of) for e in stories) / total
     inputs["tone"] = round(tone, 4)
+    inputs.update(_confidence(stories, tone, as_of))
     reading = "positive" if tone >= TONE_THRESHOLD else "negative" if tone <= -TONE_THRESHOLD else "mixed_or_neutral"
     counts = ", ".join(f"{n} {name}" for name, n in sorted(by_direction.items()))
+    read_by = f"; {len(nlp_stories)} read only by the local NLP model" if nlp_stories else ""
     return Leg(
         name="news",
         direction=round(tone, 4),
         reading=reading,
-        summary=f"Reported tone across {len(stories)} on-topic news story(ies) is {reading.replace('_', ' ')} ({counts}).",
+        summary=f"Reported tone across {len(stories)} on-topic news story(ies) is {reading.replace('_', ' ')} "
+        f"({counts}{read_by}).",
         record_ids=[e.id for e in stories],
         inputs=inputs,
     )

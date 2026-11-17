@@ -143,6 +143,24 @@ def _explanation_agent(environ: Mapping[str, str], settings: InferenceSettings |
     return None, None
 
 
+_text_classifiers: dict[str, Any] = {}
+
+
+def _text_classifier(environ: Mapping[str, str]) -> Any:
+    """The local news sentiment model named by ``DECISION_NLP_MODEL`` (a Hugging Face
+    model id such as ``ProsusAI/finbert``), or None when unset. One instance per model,
+    shared by the full and scoring makers so their labels agree and the weights load once.
+    The weights load on first use; if that fails, each assessment says so and goes on."""
+    model = environ.get("DECISION_NLP_MODEL", "").strip()
+    if not model:
+        return None
+    if model not in _text_classifiers:
+        from decision_maker.nlp import HuggingFaceClassifier
+
+        _text_classifiers[model] = HuggingFaceClassifier(model)
+    return _text_classifiers[model]
+
+
 def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_only: bool = False) -> Any:
     """The live decision maker, or None when it cannot be built.
 
@@ -188,6 +206,7 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_onl
         use_agent_tools=environ.get("DECISION_AGENT_TOOLS", "false").strip().lower() == "true",
         article_judge=JevDecisionAdapter(jev) if jev and not scoring_only else None,
         explanation_checker=JevExplanationAdapter(jev) if jev and not scoring_only else None,
+        text_classifier=_text_classifier(environ),
         companies=COMPANY_NAMES,
         stale_after_seconds=int(environ.get("DECISION_STALE_AFTER_SECONDS", "86400")),
     )

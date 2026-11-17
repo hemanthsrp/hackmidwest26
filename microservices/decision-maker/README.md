@@ -93,7 +93,7 @@ All of these are hand-set constants, not fitted or validated. They are returned 
 
 | Leg | Weight | Reads | Rule |
 |---|---|---|---|
-| news | 0.4 | news and social records with a Jev judgment (`details.jev`) | Strength-weighted tone, 72-hour half-life, one event repeated by several outlets counted once, off-topic and unusable records left out; needs 3 stories |
+| news | 0.4 | news and social records with a Jev judgment (`details.jev`), plus, with a `text_classifier`, records Jev never judged that have a usable local NLP reading (`details.nlp`, below) | Strength-weighted tone, 72-hour half-life, one event repeated by several outlets counted once, off-topic and unusable records left out; needs 3 stories. Also reports `agreement`, `coverage` and `confidence` (below) |
 | insider | 0.3 | Form 4 `details` | Net discretionary open-market dollars, at least $100k either way; 10b5-1 plan trades excluded |
 | price | 0.2 | the `30-day price change` signal | At least 5% either way |
 | congress | 0.1 | `details.transaction_type` | Purchases against sales |
@@ -103,7 +103,7 @@ All of these are hand-set constants, not fitted or validated. They are returned 
 - Net direction is the weighted mean over the legs that have data.
 - `buy` at or above +0.25, `sell` at or below -0.25, otherwise `hold`. The bar is 0.40 when the math says so (above) or on-topic news names a scheduled event ahead.
 - **A price move alone cannot carry a label.** A `buy` or `sell` also needs at least one kind of attributable evidence (news, insider, congress) leaning that way by 0.25 or more; otherwise the result is `hold` and `held_because` says `no_evidence_leg_agrees`. The first live run produced a `buy` from a rising price and neutral news, which is why this is here.
-- `insufficient_data` with `missing_attributable_evidence` when no evidence is in the window, or `insufficient_direction_signals` when fewer than two legs have data.
+- `insufficient_data` with `missing_attributable_evidence` when no evidence is in the window, or `insufficient_direction_signals` when fewer than two legs have data. A news leg resting on the local NLP reader (`backs_label: false`, below) does not count toward the two, and cannot be the agreeing evidence leg.
 - `reason_codes` are ids of returned evidence or signals behind the label, or one of those two system codes.
 
 **Options buckets** (`quant.py`).
@@ -117,6 +117,17 @@ All of these are hand-set constants, not fitted or validated. They are returned 
 | Data quality | ok / thin | At least 30 quotes, 3 expiries, and SVI converging on half the expiries |
 
 The news rule and its weights are a port of `scraper-analysis/pipeline/grade.py` (`grade-v1`); a stored `details.grade` is used as it is. The insider, congress and price thresholds match `pipeline/divergence.py` on the open `achen/scraper-divergence` branch.
+
+**The local NLP reader** (`nlp.py`, optional). A second reader next to Jev, after the "FinBERT funnel" in [flash131307/multi-agent-investment](https://github.com/flash131307/multi-agent-investment): a relevance filter, a finance-tuned sentence classifier, then a deterministic weighted aggregate.
+
+- **Relevance comes from the headline.** A record is read only when its headline names the ticker (in capitals) or the company, has at least 4 words, is not sensational (`!`, or two ALL-CAPS words other than the ticker, the scraper's noise rule), names no other company in `companies` (`names_other_company`) and is not a market wrap-up (S&P, Dow, Nasdaq, Wall Street, "stocks", "futures", "markets": `market_wide`). Live feeds file those under every symbol they mention. Only the headline and the summary sentences that name the company are classified, and their label probabilities are averaged. A reading below 0.6 confidence is not used. Each skipped record carries why (`not_about_company`, `headline_too_short`, `sensational`, `low_confidence`).
+- **Jev always wins.** A reading never changes the weight of a record Jev judged. On those records it is only compared: `nlp_cross_check` on the news leg says how often the two agree.
+- **Unjudged news can count, for less.** A record Jev never judged, with a usable reading, votes with weight `credibility x 0.35 x reading confidence`, about 40% of a typical Jev-judged story. NLP-only stories whose headlines share half their words count once. The news summary and `uncertainty` say how many stories came from the local model.
+- **It can add to a reading, never create a label.** Unless the news leg has at least 3 Jev-judged stories of its own, it sets `backs_label: false`. The combiner then still includes it in the net direction, but does not count it toward the two legs a label needs, or as the evidence leg that agrees with a `buy` or `sell`.
+- **Live run** (2026-11-16, local store after `scripts/ingest-local-live.sh` for AAPL, NVDA, TSLA and MSFT, Yahoo Finance news, no Jev judgments): the reader used 2 to 7 headlines per symbol out of 14 to 19, and the labels matched the run without it (AAPL hold, NVDA hold, TSLA `insufficient_data`, MSFT sell). Before the last two rules, NLP-only news flipped AAPL to buy, NVDA to sell and TSLA to hold, on a news confidence of about 0.06, and counted headlines about Nvidia or the whole market under Tesla. The rules also drop some real stories ("JPMorgan slashes IREN price target on Microsoft site delays").
+- **Measured on `jev-tool/evals/article_quiz.json`** (38 hand-labelled items) with `ProsusAI/finbert`: of 30 on-topic items, 20 gave a usable reading and 19 of those had the right direction. None of the 8 off-topic items gave a usable reading. Before the headline rule, 6 of the 8 off-topic items named the company somewhere in their text. Jev scores 30 of 30 on direction on the same set. This is a 38-item sanity check, not an accuracy claim.
+
+**News confidence.** When the news leg has a tone it also reports `agreement` (1 minus the strength-weighted spread of the stories' directions), `coverage` (stories / 10, capped at 1) and `confidence = |tone| x agreement x coverage`, after the same project's aggregator. They are reported in the trace only; the combiner does not read them. Like the score, it is a hand-set heuristic, not a probability.
 
 The volatility service prices every ticker with fixed risk-free-rate and dividend-yield assumptions (0.043 and 0.013), which its README says must be reviewed for a live ticker. The buckets above inherit that.
 
@@ -179,7 +190,8 @@ Warnings are structured (`code`, `message`, `retryable`). Codes: `sample_data`, 
 - **A request takes roughly 20 to 30 seconds** when the model writes the explanation, nearly all of it the model's output speed.
 - **The news reading can differ between processes.** When news is judged at decision time, Jev's answers vary slightly from call to call (net direction ran from 0.27 to 0.32 across live runs of the same data). Within a process they are reused. Enabling Jev in the scraper stores one judgment per article and removes this.
 - **Freshness uses `retrieved_at` of the newest evidence row.** The scraper only stores a row the first time it sees it, so a quiet symbol can read as stale even right after an ingest run, and the default 24-hour window then returns `stale_data`. Raise `DECISION_STALE_AFTER_SECONDS` for a demo, or have the scraper record when it last ran.
-- With Jev off and no stored judgments, the news leg has no data. The tagging agent's sentiment is not used as a stand-in, because it gave off-topic feed items a direction in the scraper's live runs.
+- With Jev off and no stored judgments, the news leg has no data unless a `text_classifier` is configured. The tagging agent's sentiment is not used as a stand-in, because it gave off-topic feed items a direction in the scraper's live runs; the NLP reader's headline rule exists for the same reason.
+- **The NLP reader has no "mixed" label** and misreads clickbait and opinion pieces (the quiz misses above). On live Yahoo Finance headlines it also misread a fund-holdings story as positive news for the company. Its company matching knows only the names in `companies` (research-api's `COMPANY_NAMES`); any other symbol is matched by ticker only. `ProsusAI/finbert` weights are licensed CC BY-NC-SA 4.0 (non-commercial); choose a commercially licensed model before any commercial use.
 - The agent's lookup tools did not work on the Akamai model (above), so by default the agent can only cite what fits in its prompt: about ten records.
 - House of Representatives disclosures are not collected upstream, so the congress leg is Senate-only today.
 - The store held one symbol when this was tested.
@@ -194,4 +206,4 @@ python -m venv .venv
 .venv/Scripts/python -m pytest
 ```
 
-`pg` adds `psycopg` for the store; `agent` adds `strands-agents[openai]`. The core package and sample mode need only `pydantic`.
+`pg` adds `psycopg` for the store; `agent` adds `strands-agents[openai]`; `nlp` adds `transformers` and `torch` for `HuggingFaceClassifier` (the weights download from Hugging Face on first use). The core package and sample mode need only `pydantic`, and the tests use a fake classifier.

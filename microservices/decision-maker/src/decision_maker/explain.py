@@ -27,7 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from .legs import current_strength, is_gated
+from .legs import current_strength, is_gated, nlp_reading
 from .models import (
     Decision,
     EngineStatus,
@@ -221,7 +221,11 @@ def _evidence_row(record: EvidenceRecord, as_of: datetime) -> dict[str, Any]:
         row["strength"] = round(current_strength(record, as_of), 3)
         if is_gated(record):
             row["off_topic_for_symbol"] = True
-    facts = {k: v for k, v in record.details.items() if k not in ("jev", "grade")}
+    elif nlp_reading(record):
+        row["reported_direction"] = nlp_reading(record)["direction"]
+        row["direction_read_by"] = "local sentiment model"
+        row["strength"] = round(current_strength(record, as_of), 3)
+    facts = {k: v for k, v in record.details.items() if k not in ("jev", "grade", "nlp")}
     if facts:
         row["details"] = facts
     return row

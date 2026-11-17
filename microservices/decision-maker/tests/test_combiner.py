@@ -149,3 +149,17 @@ def test_a_held_back_label_does_not_show_a_buy_looking_score() -> None:
     assert decision.label == "hold" and decision.held_because
     assert decision.net_direction > decision.threshold
     assert score_from_net(-decision.threshold) < decision.score < score_from_net(decision.threshold)
+
+
+def test_news_resting_on_the_nlp_reader_can_move_but_not_create_a_label() -> None:
+    # The live AAPL case: price up, congress selling, NLP-only news positive.
+    weak = combine(legs(news_dir=0.4, price_dir=1.0, congress=-1.0, backs_label=False), NO_QUANT, has_evidence=True)
+    strong = combine(legs(news_dir=0.4, price_dir=1.0, congress=-1.0, backs_label=True), NO_QUANT, has_evidence=True)
+    alone = combine(legs(news_dir=-0.6, price_dir=1.0, backs_label=False), NO_QUANT, has_evidence=True)
+    added = combine(legs(news_dir=-0.6, insider=-1.0, congress=-1.0, backs_label=False), NO_QUANT, has_evidence=True)
+
+    assert strong.label == "buy"
+    assert weak.label == "hold" and weak.held_because == ["no_evidence_leg_agrees"]
+    assert weak.net_direction == strong.net_direction
+    assert alone.label == "insufficient_data" and alone.reason_codes == ["insufficient_direction_signals"]
+    assert added.label == "sell" and "news" in added.usable_legs

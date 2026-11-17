@@ -98,6 +98,10 @@ def combine(legs: dict[str, Leg], quant: QuantReading, *, has_evidence: bool) ->
     threshold = RAISED_THRESHOLD if raised_by else BASE_THRESHOLD
     usable = [leg for leg in legs.values() if leg.usable]
     names = [leg.name for leg in usable]
+    # A leg that rests on the local NLP reader (legs.news_leg sets backs_label False) can
+    # move the net direction but cannot create a label: it is not counted toward
+    # MIN_USABLE_LEGS and cannot be the evidence that agrees with a buy or sell.
+    backing = [leg for leg in usable if leg.inputs.get("backs_label", True)]
 
     if not has_evidence:
         return Decision(
@@ -107,7 +111,7 @@ def combine(legs: dict[str, Leg], quant: QuantReading, *, has_evidence: bool) ->
             threshold_raised_by=raised_by,
             usable_legs=names,
         )
-    if len(usable) < MIN_USABLE_LEGS:
+    if len(backing) < MIN_USABLE_LEGS:
         return Decision(
             label="insufficient_data",
             reason_codes=["insufficient_direction_signals"],
@@ -125,7 +129,7 @@ def combine(legs: dict[str, Leg], quant: QuantReading, *, has_evidence: bool) ->
         # A realized price move must not carry a label by itself: at least one kind
         # of attributable evidence has to point the same way.
         sign = 1.0 if label == "buy" else -1.0
-        agrees = any(leg.name in EVIDENCE_LEGS and leg.direction * sign >= MIN_LEG_DIRECTION for leg in usable)
+        agrees = any(leg.name in EVIDENCE_LEGS and leg.direction * sign >= MIN_LEG_DIRECTION for leg in backing)
         if not agrees:
             label = "hold"
             held_because.append("no_evidence_leg_agrees")
