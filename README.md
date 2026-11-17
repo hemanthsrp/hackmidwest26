@@ -82,3 +82,8 @@ Research API: install its `dev` extra and run `python -m pytest` from its
 directory. The local Compose setup additionally has frontend and API health
 checks; remote deployment and external-provider behavior require separate
 verification.
+
+CI runs all of these, every Python service's tests and a build of every Docker
+image on each push and pull request. Merges to `main` publish the images to
+GitHub Container Registry; deploying them to a host is off until configured.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

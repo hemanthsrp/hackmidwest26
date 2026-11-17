@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch or PR supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   frontend:
     name: Frontend build and security audit
@@ -31,8 +36,20 @@ jobs:
         working-directory: frontend
 
   python:
-    name: Python services
+    # One job per service, so a failure in one suite never hides the others.
+    name: Python (${{ matrix.service }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - research-api
+          - decision-maker
+          - jev-tool
+          - scraper-analysis
+          - agentic-search
+          - yahoo-finance-mcp
+          - volatility-surface-builder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,6 +57,8 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install service packages and test dependencies
+        # The services import each other (research-api -> decision-maker,
+        # scraper-analysis -> jev-tool), so every job installs the full set.
         run: >-
           python -m pip install
           -e 'microservices/research-api[dev]'
@@ -49,24 +68,46 @@ jobs:
           -e 'microservices/agentic-search[dev]'
           -e 'microservices/yahoo-finance-mcp[dev]'
           -e 'microservices/volatility-surface-builder[dev]'
-      - name: Test research API
+      - name: Test ${{ matrix.service }}
         run: python -m pytest -q
-        working-directory: microservices/research-api
-      - name: Test decision maker
-        run: python -m pytest -q
-        working-directory: microservices/decision-maker
-      - name: Test Jev adapter
-        run: python -m pytest -q
-        working-directory: microservices/jev-tool
-      - name: Test scraper analysis
-        run: python -m pytest -q
-        working-directory: microservices/scraper-analysis
-      - name: Test agentic search
-        run: python -m pytest -q
-        working-directory: microservices/agentic-search
-      - name: Test Yahoo Finance MCP
-        run: python -m pytest -q
-        working-directory: microservices/yahoo-finance-mcp
-      - name: Test volatility surface builder
-        run: python -m pytest -q
-        working-directory: microservices/volatility-surface-builder
+        working-directory: microservices/${{ matrix.service }}
+
+  images:
+    # The same builds the CD workflow publishes, without pushing: a Dockerfile
+    # that no longer builds fails the PR instead of the deploy.
+    name: Image (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: frontend, context: frontend, dockerfile: frontend/Dockerfile, target: runner }
+          - { image: frontend-migrator, context: frontend, dockerfile: frontend/Dockerfile, target: migrator }
+          - { image: research-api, context: ., dockerfile: microservices/research-api/Dockerfile, target: "" }
+          - { image: scraper-analysis, context: ., dockerfile: microservices/scraper-analysis/Dockerfile, target: "" }
+          - { image: volatility-surface-builder, context: ., dockerfile: microservices/volatility-surface-builder/Dockerfile, target: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  deploy-config:
+    name: Deploy stack config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose.deploy.yml with placeholder values
+        env:
+          IMAGE_TAG: ci
+          POSTGRES_PASSWORD: placeholder
+          SERVICE_ASSERTION_SECRET: placeholder
+          AUTH_SECRET: placeholder
+          AUTH_URL: https://example.invalid
+        run: docker compose -f compose.deploy.yml config --quiet
