@@ -130,7 +130,7 @@ def test_news_tone_tolerates_a_missing_or_unknown_direction(direction):
         return e
 
     items = [graded(str(i)) for i in range(3)] + [graded("odd", direction)]
-    result = grade.news_tone(items)
+    result = grade.news_tone(items, NOW)
     assert result["label"] == "positive" and result["stories_used"] == 3
     assert result["records_without_direction"] == 1
     assert result["records_gated"] == 0  # not mislabeled as gated
@@ -143,7 +143,7 @@ def test_gated_and_directionless_are_counted_separately():
     nodir = article("n")
     nodir.details["jev"] = dict(vars(judgment(direction=None)))
     nodir.details["grade"] = grade.grade_record(nodir, 0.3)
-    r = grade.news_tone([gated, nodir])
+    r = grade.news_tone([gated, nodir], NOW)
     assert (r["records_gated"], r["records_without_direction"]) == (1, 1)
 
 
