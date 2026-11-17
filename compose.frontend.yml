@@ -50,7 +50,10 @@ services:
     environment:
       DATABASE_URL: postgresql://folio:localdev@database:5432/folio
       ALLOW_INSECURE_LOCAL_DATABASE: "true"
-      ENABLE_SCHEDULER: "false"
+      ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-false}
+      SCHEDULER_SYMBOLS: ${SCHEDULER_SYMBOLS:-NVDA,AAPL,MSFT,JPM,TSLA,XOM,CMG,DUOL,UNH,GLD}
+      SCHEDULER_INTERVAL_MINUTES: ${SCHEDULER_INTERVAL_MINUTES:-30}
+      SCHEDULER_OFFHOURS_FACTOR: ${SCHEDULER_OFFHOURS_FACTOR:-2}
       ENABLE_REDDIT_SCRAPER: "false"
       ENABLE_X_SCRAPER: "false"
     healthcheck:
@@ -64,6 +67,16 @@ services:
       scraper-schema:
         condition: service_completed_successfully
   # Internal-only API; do not publish port 8001 outside the Compose network.
+  # Internal-only options-volatility math for live assessments; no published port.
+  volatility:
+    build:
+      context: .
+      dockerfile: microservices/volatility-surface-builder/Dockerfile
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
   research-api:
     build:
       context: .
@@ -78,6 +91,7 @@ services:
       ROBINHOOD_REDIRECT_URI: ${ROBINHOOD_REDIRECT_URI:-http://localhost:${HOST_PORT:-3100}/api/broker/robinhood/callback}
       AUTH_URL: ${AUTH_URL:-http://localhost:3100}
       SCRAPER_API_URL: http://scraper-analysis:8001
+      VOL_SURFACE_URL: http://volatility:8002
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CHAT_MODEL: ${CHAT_MODEL:-}
@@ -96,6 +110,8 @@ services:
       frontend-migrations:
         condition: service_completed_successfully
       scraper-analysis:
+        condition: service_healthy
+      volatility:
         condition: service_healthy
   frontend:
     build: ./frontend

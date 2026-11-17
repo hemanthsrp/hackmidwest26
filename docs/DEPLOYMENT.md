@@ -7,7 +7,7 @@ Two GitHub Actions workflows. Nothing is provisioned by them: deploying needs a 
 | [`ci.yml`](../.github/workflows/ci.yml) | every push and pull request | Frontend typecheck, tests, build and `npm audit`; each Python service's tests as its own job; a build of all five Docker images (not pushed); a check of `compose.deploy.yml` |
 | [`cd.yml`](../.github/workflows/cd.yml) | CI passing on a push to `main`; or by hand | **Publish:** push the five images to GitHub Container Registry as `ghcr.io/hemanthsrp/hackmidwest26/<image>:<commit sha>` and `:main`. **Deploy** (only when switched on): roll that SHA out to one Docker host over SSH, then check `/api/health` |
 
-Images: `frontend`, `frontend-migrator`, `research-api`, `scraper-analysis`, `volatility-surface-builder` (published for later use; not part of the deployed stack yet).
+Images: `frontend`, `frontend-migrator`, `research-api`, `scraper-analysis`, `volatility-surface-builder` (internal-only; supplies the options-volatility input to live assessments).
 
 ## Turning on deploys
 
@@ -26,7 +26,7 @@ The docs in [AKAMAI_FEASIBILITY.md](AKAMAI_FEASIBILITY.md) require approval of a
    HOST_PORT=3100                  # loopback port the reverse proxy forwards to
    ```
 
-   Optional: `BROKER_ENCRYPTION_KEY`, `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `CHAT_MODEL` / `EMBEDDING_MODEL`, `RESEND_API_KEY` / `EMAIL_FROM` / `DIGEST_JOB_SECRET`, `ALLOW_REGISTRATION`, `DECISION_NLP_MODEL`, `ENABLE_SCHEDULER`. Scraper keys go in `scraper-analysis.env` in the same folder. Every name is listed in [`compose.deploy.yml`](../compose.deploy.yml); secrets never live in the repository.
+   Optional: `BROKER_ENCRYPTION_KEY`, `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `CHAT_MODEL` / `EMBEDDING_MODEL`, `RESEND_API_KEY` / `EMAIL_FROM` / `DIGEST_JOB_SECRET`, `ALLOW_REGISTRATION`, `DECISION_NLP_MODEL`, `ENABLE_SCHEDULER` (with `SCHEDULER_SYMBOLS`, `SCHEDULER_INTERVAL_MINUTES`, `SCHEDULER_OFFHOURS_FACTOR`; it also needs a real `SEC_EDGAR_USER_AGENT` contact in `scraper-analysis.env`). Scraper keys go in `scraper-analysis.env` in the same folder. Every name is listed in [`compose.deploy.yml`](../compose.deploy.yml); secrets never live in the repository.
 3. Put an HTTPS reverse proxy (Caddy, nginx) in front of `127.0.0.1:$HOST_PORT`. The stack publishes no other port; Postgres and the internal APIs are reachable only inside the Compose network.
 
 **On GitHub** (Settings)
@@ -60,5 +60,4 @@ Actions → CD → Run workflow on `main`, with **image_tag** set to an earlier 
 
 - No HTTPS or domain setup; the reverse proxy is yours to configure.
 - No database backups or log shipping.
-- The volatility-surface service image is published but not deployed.
 - Robinhood linking stays off on hosted deployments until the platform approval in [PUBLIC_BETA_READINESS.md](PUBLIC_BETA_READINESS.md).

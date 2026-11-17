@@ -52,6 +52,9 @@ services:
       DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD}@database:5432/folio
       ALLOW_INSECURE_LOCAL_DATABASE: "true"
       ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-false}
+      SCHEDULER_SYMBOLS: ${SCHEDULER_SYMBOLS:-NVDA,AAPL,MSFT,JPM,TSLA,XOM,CMG,DUOL,UNH,GLD}
+      SCHEDULER_INTERVAL_MINUTES: ${SCHEDULER_INTERVAL_MINUTES:-30}
+      SCHEDULER_OFFHOURS_FACTOR: ${SCHEDULER_OFFHOURS_FACTOR:-2}
       ENABLE_REDDIT_SCRAPER: "false"
       ENABLE_X_SCRAPER: "false"
     healthcheck:
@@ -65,6 +68,15 @@ services:
       scraper-schema:
         condition: service_completed_successfully
     restart: unless-stopped
+  # Internal-only options-volatility math for live assessments; no published port.
+  volatility:
+    image: ${IMAGE_REGISTRY:-ghcr.io/hemanthsrp/hackmidwest26}/volatility-surface-builder:${IMAGE_TAG:?Set IMAGE_TAG}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
   research-api:
     image: ${IMAGE_REGISTRY:-ghcr.io/hemanthsrp/hackmidwest26}/research-api:${IMAGE_TAG:?Set IMAGE_TAG}
     environment:
@@ -76,6 +88,7 @@ services:
       ROBINHOOD_REDIRECT_URI: ${ROBINHOOD_REDIRECT_URI:-}
       AUTH_URL: ${AUTH_URL:?Set AUTH_URL in .env}
       SCRAPER_API_URL: http://scraper-analysis:8001
+      VOL_SURFACE_URL: http://volatility:8002
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CHAT_MODEL: ${CHAT_MODEL:-}
@@ -94,6 +107,8 @@ services:
       frontend-migrations:
         condition: service_completed_successfully
       scraper-analysis:
+        condition: service_healthy
+      volatility:
         condition: service_healthy
     restart: unless-stopped
   frontend:
