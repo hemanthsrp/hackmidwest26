@@ -369,7 +369,12 @@ def chat_symbols(message,holdings):
     # Curated tickers match in any case ("nvda"); a held ticker only in capitals, since
     # holdings such as T, F or IT are also ordinary words ("don't" contains \bt\b).
     mentioned=[symbol for symbol in candidates if re.search(r'\b'+symbol+r'\b',message,re.I if symbol in UNIVERSE else 0)]
-    return mentioned or held
+    # A question about a sector ("technology stocks") uses that sector's curated stocks,
+    # grouped the same way as the industry pages (technology includes ai).
+    industries={industry for _,industry in UNIVERSE.values() if re.search(r'\b'+industry+r'\b',message,re.I)}
+    if 'technology' in industries: industries.add('ai')
+    in_industry=sorted(symbol for symbol,(_,industry) in UNIVERSE.items() if industry in industries)
+    return mentioned or in_industry or held
 
 @router.post('/chat/stream')
 def chat_stream(body: ChatInput,uid=Depends(user_id)):

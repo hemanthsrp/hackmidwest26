@@ -325,3 +325,11 @@ def test_an_abandoned_authorization_is_over_once_its_window_passes(monkeypatch):
     later=time.time()+broker.AUTHORIZATION_SECONDS+5
     monkeypatch.setattr(broker.time,'time',lambda: later)
     assert broker.connection_state('alice')=='disconnected'
+
+def test_chat_about_an_industry_uses_that_industrys_stocks():
+    # A suggested prompt names a sector, not a ticker; with no holdings it must still find research.
+    assert v1.chat_symbols('What’s driving technology stocks?', []) == ['AAPL', 'MSFT', 'NVDA', 'TSLA']
+    assert v1.chat_symbols('How is energy doing?', [{'symbol': 'AAPL'}]) == ['XOM']
+    # A named ticker still wins, and an unrelated question still falls back to holdings.
+    assert v1.chat_symbols('Is NVDA a technology play?', []) == ['NVDA']
+    assert v1.chat_symbols('Give me a portfolio overview', [{'symbol': 'AAPL'}]) == ['AAPL']
