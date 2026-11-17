@@ -243,3 +243,11 @@ def test_email_only_notification_does_not_reset_delivered_status():
     storage.write('alice', 'email_outbox', key, {'status': 'delivered'})
     publish_research_change('alice', 'NVDA', {'label': 'buy'}, 'hold', preferences)
     assert storage.read('alice', 'email_outbox')[0]['value']['status'] == 'delivered'
+
+
+def test_chat_matches_held_word_like_tickers_only_in_capitals():
+    held=[{'symbol':'T'},{'symbol':'F'},{'symbol':'AAPL'}]
+    # "Don't" must not select T alone: a generic question covers every holding.
+    assert v1.chat_symbols("Don't sugarcoat it: what are the risks?",held)==['T','F','AAPL']
+    assert v1.chat_symbols('What about F and T?',held)==['F','T']
+    assert v1.chat_symbols('tell me about nvda and aapl',held)==['AAPL','NVDA']
