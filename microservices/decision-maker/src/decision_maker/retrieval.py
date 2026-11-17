@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, timezone
@@ -55,6 +56,10 @@ def require_tls(database_url: str) -> str:
     """Same rule as scraper-analysis: a non-local host must use sslmode=require."""
     parsed = urlparse(database_url)
     if parsed.hostname in ("localhost", "127.0.0.1"):
+        return database_url
+    # The local Docker stand-in has no TLS certificate. Only the compose service name
+    # "database" is allowed, and only when the operator opts in (same as scraper-analysis).
+    if parsed.hostname == "database" and os.environ.get("ALLOW_INSECURE_LOCAL_DATABASE", "").strip().lower() == "true":
         return database_url
     sslmode = parse_qs(parsed.query).get("sslmode", [None])[0]
     if sslmode != "require":

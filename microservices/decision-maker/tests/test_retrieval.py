@@ -65,6 +65,19 @@ def test_remote_databases_must_use_tls() -> None:
     assert require_tls(LOCAL_URL) == LOCAL_URL
 
 
+def test_compose_database_needs_the_local_opt_in(monkeypatch) -> None:
+    compose_url = "postgresql://u:p@database:5432/db"
+    monkeypatch.delenv("ALLOW_INSECURE_LOCAL_DATABASE", raising=False)
+    with pytest.raises(ValueError, match="sslmode=require"):
+        require_tls(compose_url)
+
+    monkeypatch.setenv("ALLOW_INSECURE_LOCAL_DATABASE", "true")
+    assert require_tls(compose_url) == compose_url
+    # The opt-in covers only the compose service name, never another remote host.
+    with pytest.raises(ValueError, match="sslmode=require"):
+        require_tls("postgresql://u:p@db.example.com/db")
+
+
 def test_sessions_are_opened_read_only(monkeypatch) -> None:
     import psycopg
 
