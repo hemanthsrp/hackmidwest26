@@ -13,6 +13,7 @@ from ..config import Settings, get_settings
 from ..models.evidence import Evidence
 from ..models.signal import Signal
 from ..pipeline.dedup import is_upgrade, record_rank
+from ..pipeline.lifecycle import current_evidence, current_signal, with_evidence_policy
 from .embeddings import get_embedding
 
 logger = logging.getLogger(__name__)
@@ -52,15 +53,16 @@ class InMemoryEvidenceStore:
 
     def save_evidence(self, items: list[Evidence]) -> None:
         for item in items:
+            with_evidence_policy(item)
             old = self._evidence.get(item.id)
             if old is None or is_upgrade(old, item):
                 self._evidence[item.id] = item
 
     def query_evidence(self, symbol: str) -> list[Evidence]:
-        return [e for e in self._evidence.values() if e.symbol.upper() == symbol.upper()]
+        return [current_evidence(e) for e in self._evidence.values() if e.symbol.upper() == symbol.upper()]
 
     def query_evidence_by_source_type(self, source_type: str) -> list[Evidence]:
-        return [e for e in self._evidence.values() if e.source_type == source_type]
+        return [current_evidence(e) for e in self._evidence.values() if e.source_type == source_type]
 
     def rekey_evidence(self, renames: dict[str, str], delete_ids: list[str]) -> None:
         for old_id in delete_ids:
@@ -79,7 +81,7 @@ class InMemoryEvidenceStore:
                 self._signals.append(s)
 
     def query_signals(self, symbol: str) -> list[Signal]:
-        return [s for s in self._signals if s.symbol.upper() == symbol.upper()]
+        return [current_signal(s) for s in self._signals if s.symbol.upper() == symbol.upper()]
 
 
 class PostgresEvidenceStore:
@@ -125,6 +127,7 @@ class PostgresEvidenceStore:
 
         with connect(self._settings) as conn, conn.cursor() as cur:
             for item in items:
+                with_evidence_policy(item)
                 embedding = get_embedding(f"{item.title}\n{item.summary or ''}")
                 cur.execute(
                     """
@@ -148,8 +151,13 @@ class PostgresEvidenceStore:
                         provider = EXCLUDED.provider, value_origin = EXCLUDED.value_origin,
                         impact_category = EXCLUDED.impact_category, impact_level = EXCLUDED.impact_level,
                         impact_basis = EXCLUDED.impact_basis, embedding_status = EXCLUDED.embedding_status,
-                        lifecycle_status = EXCLUDED.lifecycle_status, fresh_until = EXCLUDED.fresh_until,
-                        stale_at = EXCLUDED.stale_at, archived_at = EXCLUDED.archived_at,
+                        -- stages only move forward: a re-ingested copy never un-archives a row
+                        lifecycle_status = CASE
+                            WHEN 'archived' IN (evidence.lifecycle_status, EXCLUDED.lifecycle_status) THEN 'archived'
+                            WHEN 'stale' IN (evidence.lifecycle_status, EXCLUDED.lifecycle_status) THEN 'stale'
+                            ELSE 'fresh' END,
+                        fresh_until = EXCLUDED.fresh_until,
+                        stale_at = EXCLUDED.stale_at, archived_at = COALESCE(evidence.archived_at, EXCLUDED.archived_at),
                         retention_until = EXCLUDED.retention_until, retention_reason = EXCLUDED.retention_reason
                     -- replace only with a strictly better copy (pipeline.dedup.record_rank):
                     -- live beats sample, then parsed details beat metadata-only; never a downgrade
@@ -229,7 +237,7 @@ class PostgresEvidenceStore:
         for row in rows:
             record = dict(zip(columns, row))
             record["id"] = str(record["id"])
-            results.append(Evidence(**record))
+            results.append(current_evidence(Evidence(**record)))
         return results
 
     def save_signals(self, items: list[Signal]) -> None:
@@ -262,7 +270,7 @@ class PostgresEvidenceStore:
         for row in rows:
             record = dict(zip(columns, row))
             record["id"] = str(record["id"])
-            results.append(Signal(**record))
+            results.append(current_signal(Signal(**record)))
         return results
 
 

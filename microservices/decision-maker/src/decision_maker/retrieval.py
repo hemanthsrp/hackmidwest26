@@ -18,7 +18,7 @@ from importlib import resources
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 
-from .models import EvidenceRecord, ProviderUnavailableError, QuantInput, SignalRecord, VolSurfaceSnapshot
+from .models import EvidenceRecord, ProviderUnavailableError, QuantInput, SignalRecord, VolSurfaceSnapshot, current_lifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,11 @@ class PgEvidenceSource:
                 {"provider": "evidence_store"},
             ) from exc
 
-        evidence = [EvidenceRecord(**{**dict(zip(_EVIDENCE_COLUMNS, row)), "id": str(row[0])}) for row in evidence_rows]
+        now = datetime.now(timezone.utc)
+        evidence = [
+            current_lifecycle(EvidenceRecord(**{**dict(zip(_EVIDENCE_COLUMNS, row)), "id": str(row[0])}), now)
+            for row in evidence_rows
+        ]
         signals = [SignalRecord(**{**dict(zip(_SIGNAL_COLUMNS, row)), "id": str(row[0])}) for row in signal_rows]
         return evidence, signals
 

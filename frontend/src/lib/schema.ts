@@ -69,6 +69,8 @@ export const actionTokens = pgTable("action_tokens", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   purpose: text().notNull(),
+  // A verify link's password, applied only when the link is opened (lib/account.ts).
+  passwordHash: text("password_hash"),
   expires: timestamp().notNull(),
 });
 export const rateLimits = pgTable("rate_limits", {

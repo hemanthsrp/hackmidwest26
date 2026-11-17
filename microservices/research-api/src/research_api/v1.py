@@ -142,10 +142,12 @@ def stock_history(symbol: str, range: str = '1M', uid=Depends(user_id)):
 
 @router.get('/portfolio')
 def portfolio(uid=Depends(user_id)):
-    snapshots=storage.read(uid,'portfolio')
-    connected=bool(storage.read(uid,'broker_grants'))
-    if not snapshots: return envelope({'connected':connected,'positions':[],'value':0})
-    return envelope({**snapshots[0]['value'],'connected':connected},'cached')
+    from .broker import connection_state
+    state=connection_state(uid)
+    # Holdings exist only while connected: a snapshot left from an earlier connection is not shown.
+    snapshots=storage.read(uid,'portfolio') if state=='connected' else []
+    if not snapshots: return envelope({'connected':state=='connected','connection_state':state,'positions':[],'value':0})
+    return envelope({**snapshots[0]['value'],'connected':True,'connection_state':state},'cached')
 
 @router.post('/portfolio/refresh')
 def refresh(background_tasks: BackgroundTasks,uid=Depends(user_id)):
@@ -154,13 +156,15 @@ def refresh(background_tasks: BackgroundTasks,uid=Depends(user_id)):
         snapshot=refresh_portfolio(uid)
         symbols=[position['symbol'] for position in snapshot.get('positions',[]) if isinstance(position,dict) and isinstance(position.get('symbol'),str)]
         background_tasks.add_task(warm_holding_research,symbols)
-        return envelope(snapshot,'live')
+        return envelope({**snapshot,'connected':True,'connection_state':'connected'},'live')
     except BrokerUnavailable as error:
         raise HTTPException(503,str(error)) from None
 
 @router.get('/broker-connections')
 def connections(uid=Depends(user_id)):
-    return envelope([{'id':r['key'],**r['value']} for r in storage.read(uid,'connection_metadata')])
+    from .broker import connection_state
+    if connection_state(uid)!='connected': return envelope([])
+    return envelope([{'id':r['key'],**r['value'],'state':'connected'} for r in storage.read(uid,'connection_metadata')])
 
 @router.post('/broker-connections/robinhood/start')
 def connect(uid=Depends(user_id)):
@@ -267,6 +271,9 @@ def preferences(body: dict,uid=Depends(user_id)):
     allowed={'risk','horizon','industries','memory','emailAlerts','inAppAlerts'}
     storage.write(uid,'preferences','current',{k:v for k,v in body.items() if k in allowed})
     if body.get('memory') is False: storage.remove(uid,'memory')
+    if body.get('emailAlerts') is False:
+        from .notifications import cancel_pending_email
+        cancel_pending_email(uid)
     return {'ok':True}
 
 class MemoryInput(BaseModel):
@@ -446,14 +453,21 @@ def notifications(uid=Depends(user_id)): return envelope(storage.read(uid,'notif
 
 @router.get('/email-outbox')
 def outbox(uid=Depends(user_id)):
-    return envelope([r for r in storage.read(uid,'email_outbox') if r['value'].get('status')=='pending'])
+    from .notifications import queued_email
+    return envelope(queued_email(uid))
 
-@router.post('/email-outbox/{key}/delivered')
-def delivered(key: str,uid=Depends(user_id)):
-    for r in storage.read(uid,'email_outbox'):
-        if r['key']==key:
-            storage.write(uid,'email_outbox',key,{**r['value'],'status':'delivered'})
-            return {'ok':True}
+@router.post('/email-outbox/cancel-pending')
+def cancel_outbox(uid=Depends(user_id)):
+    from .notifications import cancel_pending_email
+    return {'ok':True,'cancelled':cancel_pending_email(uid)}
+
+@router.post('/email-outbox/{key}/{state}')
+def move_outbox_entry(key: str,state: Literal['sending','delivered','pending','cancelled'],uid=Depends(user_id)):
+    from .notifications import OutboxTransitionError, move_outbox
+    try:
+        if move_outbox(uid,key,state): return {'ok':True,'status':state}
+    except OutboxTransitionError as error:
+        raise HTTPException(409,str(error)) from None
     raise HTTPException(404,'Email outbox item not found')
 
 @router.post('/notifications/{notification_id}/read')
@@ -463,13 +477,23 @@ def mark_read(notification_id: str,uid=Depends(user_id)):
         if row['key']==notification_id: storage.write(uid,'notification',notification_id,{**row['value'],'read':True});return {'ok':True}
     raise HTTPException(404,'Notification not found')
 
+# The alert switches live in one place, the user's 'preferences' record, which is what
+# publishing reads. These routes read and update those same two keys.
+ALERT_KEYS = ('emailAlerts','inAppAlerts')
+
 @router.get('/notification-preferences')
-def notification_preferences(uid=Depends(user_id)): return envelope(storage.read(uid,'notification_preferences'))
+def notification_preferences(uid=Depends(user_id)):
+    rows=storage.read(uid,'preferences')
+    return envelope([{**r,'value':{k:r['value'][k] for k in ALERT_KEYS if k in r['value']}} for r in rows])
 
 @router.patch('/notification-preferences')
 def update_notification_preferences(body: dict,uid=Depends(user_id)):
-    values={k:v for k,v in body.items() if k in {'emailAlerts','inAppAlerts'} and isinstance(v,bool)}
-    storage.write(uid,'notification_preferences','current',values)
+    values={k:v for k,v in body.items() if k in ALERT_KEYS and isinstance(v,bool)}
+    rows=storage.read(uid,'preferences')
+    storage.write(uid,'preferences','current',{**(rows[0]['value'] if rows else {}),**values})
+    if values.get('emailAlerts') is False:
+        from .notifications import cancel_pending_email
+        cancel_pending_email(uid)
     return {'ok':True}
 
 @router.get('/me/export')
@@ -478,5 +502,6 @@ def export(uid=Depends(user_id)):
 
 @router.delete('/me')
 def delete_account(uid=Depends(user_id)):
-    if storage.read(uid,'broker_grants'): raise HTTPException(503,'Disconnect the brokerage before deleting the account')
+    from .broker import connection_state
+    if connection_state(uid)=='connected': raise HTTPException(503,'Disconnect the brokerage before deleting the account')
     storage.remove(uid);return {'ok':True}

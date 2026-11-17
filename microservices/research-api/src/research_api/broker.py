@@ -7,6 +7,7 @@ import os
 import json
 import re
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import httpx
@@ -107,7 +108,7 @@ def begin_authorization(user_id: str) -> str:
     verifier = base64.urlsafe_b64encode(os.urandom(32)).rstrip(b'=').decode()
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
     state = secrets.token_urlsafe(32)
-    pending = {'client_id': registration['client_id'], 'redirect_uri': redirect_uri, 'code_verifier': verifier, 'expires_at': int(time.time()) + 600}
+    pending = {'client_id': registration['client_id'], 'redirect_uri': redirect_uri, 'code_verifier': verifier, 'expires_at': int(time.time()) + AUTHORIZATION_SECONDS}
     storage.write(user_id, 'broker_oauth_pending', hashlib.sha256(state.encode()).hexdigest(), {'grant': encrypt_grant(pending, user_id)})
     query = urlencode({
         'client_id': registration['client_id'],
@@ -157,8 +158,46 @@ def complete_authorization(user_id: str, code: str, state: str) -> None:
         }
     except (httpx.HTTPError, ValueError, TypeError, KeyError):
         raise BrokerUnavailable('Robinhood authorization could not be completed. No token was saved.') from None
-    storage.write(user_id, 'broker_grants', 'robinhood', {'grant': encrypt_grant(grant, user_id)})
-    storage.write(user_id, 'connection_metadata', 'robinhood', {'provider': 'robinhood', 'name': 'Robinhood', 'connected_at': time.time(), 'access': 'read_only'})
+    _mark_connected(user_id, grant)
+
+# The Robinhood connection moves through these stages; nothing else writes them:
+#
+#   disconnected --begin_authorization--> authorizing --complete_authorization--> connected
+#        ^                                                                           |
+#        +-------- remove_connection, or the grant expired with no refresh ----------+
+#
+# "connected" is the grant and its listing written together; leaving it removes both
+# and the cached portfolio in one transaction, so holdings are never shown for an
+# account Folio can no longer read.
+CONNECTION_STATES = ('disconnected', 'authorizing', 'connected')
+_CONNECTION_ROWS = (('broker_grants', 'robinhood'), ('connection_metadata', 'robinhood'), ('portfolio', None))
+
+AUTHORIZATION_SECONDS = 600  # a started authorization expires after this (see begin_authorization)
+
+def connection_state(user_id: str) -> str:
+    if storage.read(user_id, 'broker_grants'):
+        return 'connected'
+    # An abandoned authorization is over once its window passes, even though its
+    # row is only cleaned up by the next begin_authorization.
+    cutoff = time.time() - AUTHORIZATION_SECONDS
+    for row in storage.read(user_id, 'broker_oauth_pending'):
+        try:
+            started_at = datetime.fromisoformat(row['updated_at'])
+            started = (started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)).timestamp()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if started > cutoff:
+            return 'authorizing'
+    return 'disconnected'
+
+def _mark_connected(user_id: str, grant: dict) -> None:
+    storage.apply(user_id, writes=[
+        ('broker_grants', 'robinhood', {'grant': encrypt_grant(grant, user_id)}),
+        ('connection_metadata', 'robinhood', {'provider': 'robinhood', 'name': 'Robinhood', 'connected_at': time.time(), 'access': 'read_only'}),
+    ])
+
+def _mark_disconnected(user_id: str) -> None:
+    storage.apply(user_id, removes=[*_CONNECTION_ROWS, ('broker_oauth_pending', None)])
 
 def _access_token(user_id: str) -> tuple[dict, str]:
     rows = storage.read(user_id, 'broker_grants')
@@ -169,8 +208,7 @@ def _access_token(user_id: str) -> tuple[dict, str]:
     if grant.get('expires_at', 0) <= time.time() + 60:
         refresh_token = grant.get('refresh_token')
         if not refresh_token:
-            storage.remove(user_id, 'broker_grants', 'robinhood')
-            storage.remove(user_id, 'connection_metadata', 'robinhood')
+            _mark_disconnected(user_id)
             raise BrokerUnavailable('Robinhood authorization expired. Reconnect your account.')
         try:
             response = httpx.post(TOKEN_URL, data={
@@ -330,7 +368,4 @@ def remove_connection(user_id: str) -> None:
     # Robinhood's OAuth discovery currently advertises no revocation endpoint;
     # remove the app-held refresh grant immediately and leave provider-side
     # revocation to the user's Robinhood account settings.
-    storage.remove(user_id, 'broker_grants', 'robinhood')
-    storage.remove(user_id, 'connection_metadata', 'robinhood')
-    storage.remove(user_id, 'portfolio')
-    storage.remove(user_id, 'broker_oauth_pending')
+    _mark_disconnected(user_id)

@@ -151,6 +151,23 @@ class EvidenceRecord(BaseModel):
         return as_utc(when) if when else None
 
 
+LIFECYCLE_STAGES = ("fresh", "stale", "archived")
+
+
+def current_lifecycle(record: EvidenceRecord, now: datetime) -> EvidenceRecord:
+    """Set ``lifecycle_status`` to the furthest stage reached by the stored state or its
+    timestamps: fresh -> stale (stale_at passed) -> archived. A port of
+    scraper-analysis/pipeline/lifecycle.py, as docs/EVIDENCE_LIFECYCLE_CONTRACT.md asks
+    query-time checks to stop an overdue lifecycle job leaving a stale row looking current."""
+    implied = "fresh"
+    if record.archived_at is not None and as_utc(record.archived_at) <= now:
+        implied = "archived"
+    elif record.stale_at is not None and as_utc(record.stale_at) <= now:
+        implied = "stale"
+    record.lifecycle_status = max(record.lifecycle_status, implied, key=LIFECYCLE_STAGES.index)
+    return record
+
+
 class SignalRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

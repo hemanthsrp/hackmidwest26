@@ -160,3 +160,43 @@ def test_enabled_scheduler_starts_with_app_and_stops_cleanly(monkeypatch):
         assert set(body["symbols"]) == {"AAPL", "MSFT"} and body["skipped_invalid_symbols"] == ["bad!"]
         scheduler = api_module.app.state.scheduler
     assert scheduler._task is None  # cancelled on shutdown
+
+
+@pytest.mark.parametrize(
+    ("ingest", "outcome"),
+    [
+        (lambda *a, **kw: result(), "ok"),
+        (lambda *a, **kw: result(live=False), "failed"),
+        (lambda *a, **kw: IngestResult([None], [], [SourceReport("sec_edgar", "live", 1),
+                                                    SourceReport("marketaux", "unavailable", 0)]), "partial"),
+    ],
+)
+async def test_outcome_names_how_the_latest_attempt_ended(ingest, outcome):
+    s, _, _ = make(ingest=ingest)
+    assert s.statuses["AAPL"].outcome is None  # never run
+    await s.run_once()
+    assert s.statuses["AAPL"].outcome == outcome
+    assert s.status()["symbols"]["AAPL"]["outcome"] == outcome
+
+
+async def test_outcome_for_errors_partial_saves_shutdown_and_busy():
+    from scraper_analysis.pipeline.ingest import IngestCancelled, IngestPartialFailure
+
+    errors = iter([
+        RuntimeError("boom"),
+        IngestPartialFailure([None], [SourceReport("sec_edgar", "live", 1)], RuntimeError("signals down")),
+        IngestCancelled("stopping"),
+        sched.SchedulerBusy("already running"),
+    ])
+
+    def ingest(*a, **kw):
+        raise next(errors)
+
+    s, _, _ = make(ingest=ingest)
+    seen = []
+    for _ in range(4):
+        await s.run_once()
+        seen.append(s.statuses["AAPL"].outcome)
+    assert seen == ["failed", "partial", "stopped", "busy"]
+    # ok / partial stay consistent with the outcome for existing readers.
+    assert (s.statuses["AAPL"].ok, s.statuses["AAPL"].partial) == (False, False)

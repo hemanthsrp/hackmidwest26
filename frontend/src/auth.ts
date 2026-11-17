@@ -15,6 +15,7 @@ import {
   sessionRegistry,
 } from "@/lib/schema";
 import { verifyPassword } from "@/lib/security";
+import { canSignInWithPassword } from "@/lib/account";
 import { rateLimit } from "@/lib/server";
 const providers = [
   Credentials({
@@ -33,9 +34,8 @@ const providers = [
         .from(users)
         .where(eq(users.email, p.data.email));
       if (
-        !user?.passwordHash ||
-        !user.emailVerified ||
-        !(await verifyPassword(p.data.password, user.passwordHash))
+        !canSignInWithPassword(user) ||
+        !(await verifyPassword(p.data.password, user.passwordHash!))
       )
         return null;
       return {
