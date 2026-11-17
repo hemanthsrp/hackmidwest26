@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { users, actionTokens, sessionRegistry } from "@/lib/schema";
 import { hashPassword, sameOrigin, tokenHash } from "@/lib/security";
 import { failure, rateLimit, sendEmail } from "@/lib/server";
+import { accountStage, onPasswordReset, onVerified } from "@/lib/account";
 const input = z.object({
   action: z.enum(["register", "forgot", "reset", "verify", "resend"]),
   email: z
@@ -54,15 +55,29 @@ export async function POST(r: Request) {
           )
           .returning();
         if (!record) return false;
-        if (purpose === "verify")
+        if (purpose === "verify") {
           await tx
             .update(users)
-            .set({ emailVerified: new Date() })
+            .set(onVerified(record.passwordHash))
             .where(eq(users.id, record.userId));
-        else {
+          // Active now: other verify links for this account can no longer set its password.
+          await tx
+            .delete(actionTokens)
+            .where(
+              and(
+                eq(actionTokens.userId, record.userId),
+                eq(actionTokens.purpose, "verify"),
+              ),
+            );
+        } else {
+          const [owner] = await tx
+            .select()
+            .from(users)
+            .where(eq(users.id, record.userId));
+          if (!owner) return false;
           await tx
             .update(users)
-            .set({ passwordHash: await hashPassword(password!) })
+            .set(onPasswordReset(owner, await hashPassword(password!)))
             .where(eq(users.id, record.userId));
           await tx
             .delete(sessionRegistry)
@@ -84,6 +99,7 @@ export async function POST(r: Request) {
     if ((!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) && !localSetup)
       return failure("Email delivery is not configured yet.", 503);
     let [user] = await db().select().from(users).where(eq(users.email, email));
+    let registrationPasswordHash: string | null = null;
     if (action === "register") {
       if (process.env.ALLOW_REGISTRATION !== "true" && !localSetup)
         return failure(
@@ -91,20 +107,30 @@ export async function POST(r: Request) {
           503,
         );
       if (!password || !name) return failure("Name and password are required.");
+      registrationPasswordHash = await hashPassword(password);
       if (!user) {
+        // A new account starts pending, with no password; the password waits on the
+        // verify link. The loopback-only local setup skips that stage.
         [user] = await db()
           .insert(users)
           .values({
             name,
             email,
-            passwordHash: await hashPassword(password),
-            ...(localSetup ? { emailVerified: new Date() } : {}),
+            ...(localSetup
+              ? {
+                  passwordHash: registrationPasswordHash,
+                  emailVerified: new Date(),
+                }
+              : {}),
           })
           .returning();
-      } else if (localSetup && !user.emailVerified) {
+      } else if (localSetup && accountStage(user) === "pending_verification") {
         [user] = await db()
           .update(users)
-          .set({ emailVerified: new Date() })
+          .set({
+            passwordHash: registrationPasswordHash,
+            emailVerified: new Date(),
+          })
           .where(eq(users.id, user.id))
           .returning();
       }
@@ -114,10 +140,16 @@ export async function POST(r: Request) {
             "Local Folio account is ready. Email verification is skipped only for this loopback app; you can sign in now.",
         });
     }
-    if (user && !(action === "resend" && user.emailVerified)) {
+    if (user && !(action === "resend" && accountStage(user) === "active")) {
       const raw = randomBytes(32).toString("hex");
-      const purpose = action === "forgot" ? "reset" : "verify";
-      if (action === "register" && user.emailVerified)
+      // A resend for an account that has no password yet sends a set-password link:
+      // the password typed at sign-up is not known here, and a reset link also
+      // activates the account.
+      const purpose =
+        action === "forgot" || (action === "resend" && !user.passwordHash)
+          ? "reset"
+          : "verify";
+      if (action === "register" && accountStage(user) === "active")
         return Response.json({
           message:
             "If this address is eligible, you will receive an email with next steps.",
@@ -128,6 +160,7 @@ export async function POST(r: Request) {
           hash: tokenHash(raw),
           userId: user.id,
           purpose,
+          passwordHash: purpose === "verify" ? registrationPasswordHash : null,
           expires: new Date(Date.now() + 1800000),
         });
       const base = process.env.AUTH_URL;

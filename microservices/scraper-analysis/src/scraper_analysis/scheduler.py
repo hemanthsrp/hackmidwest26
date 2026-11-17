@@ -221,6 +221,11 @@ def normalize_symbols(raw_symbols) -> tuple[list[str], list[str]]:
 @dataclass
 class SymbolStatus:
     last_run_at: str | None = None
+    # The one field that says how this symbol's latest attempt ended, set on every
+    # path: None (never run), "running", "ok", "partial" (some data saved, coverage
+    # incomplete), "failed", "stopped" (by shutdown) or "busy" (another ingest of the
+    # symbol was in progress). ok / partial / error are kept for existing readers.
+    outcome: str | None = None
     ok: bool | None = None
     new_evidence: int = 0
     new_signals: int = 0
@@ -399,7 +404,7 @@ class Scheduler:
                 status.finished_after_stop = True
                 self.finished_after_stop += 1
             if isinstance(exc, IngestCancelled):
-                status.ok = False
+                status.outcome, status.ok = "stopped", False
                 status.new_evidence, status.new_signals = exc.evidence_saved, exc.signals_saved
                 if late:
                     status.error = sanitize_error(
@@ -411,7 +416,7 @@ class Scheduler:
                 logger.info("scheduled ingest for %s stopped by shutdown: %s", symbol, status.error)
                 return False
             if isinstance(exc, SchedulerBusy):
-                status.ok = False
+                status.outcome, status.ok = "busy", False
                 status.error = str(exc)
                 logger.warning("scheduled ingest for %s %s", symbol, exc)
                 return not late
@@ -420,7 +425,7 @@ class Scheduler:
                 status.sources, status.notes = _source_reports(exc.reports)
                 status.new_evidence, status.new_signals = len(exc.evidence), 0
                 status.fetched = sum(x["count"] for x in status.sources)
-                status.ok, status.partial = False, True
+                status.outcome, status.ok, status.partial = "partial", False, True
                 status.consecutive_failures += 1
                 prefix = f"failed {when}: " if late else ""
                 status.error = sanitize_error(
@@ -431,13 +436,13 @@ class Scheduler:
                 return not late
             if exc is not None:
                 if not isinstance(exc, Exception):  # BaseException (e.g. SystemExit) in the thread
-                    status.ok = False
+                    status.outcome, status.ok = "failed", False
                     status.error = sanitize_error(f"worker aborted: {type(exc).__name__}")
                     if late:
                         status.after_stop = status.error
                         return False
                     raise exc
-                status.ok = False
+                status.outcome, status.ok = "failed", False
                 status.consecutive_failures += 1
                 prefix = f"failed {when}: " if late else ""
                 status.error = sanitize_error(f"{prefix}{type(exc).__name__}: {exc}")
@@ -459,17 +464,17 @@ class Scheduler:
             if result.any_live:
                 status.consecutive_failures = 0
                 if notes:  # live data arrived, but coverage was incomplete
-                    status.ok, status.partial = False, True
+                    status.outcome, status.ok, status.partial = "partial", False, True
                     status.error = f"partial coverage: {len(notes)} source(s) degraded; see notes"
                 else:
-                    status.ok, status.partial, status.error = True, False, None
+                    status.outcome, status.ok, status.partial, status.error = "ok", True, False, None
             else:
-                status.ok, status.partial = False, False
+                status.outcome, status.ok, status.partial = "failed", False, False
                 status.consecutive_failures += 1
                 status.error = "no source was live"
             if result.any_live:
                 status.last_success = {
-                    "at": status.last_run_at, "ok": status.ok, "partial": status.partial,
+                    "at": status.last_run_at, "outcome": status.outcome, "ok": status.ok, "partial": status.partial,
                     "new_evidence": status.new_evidence, "new_signals": status.new_signals, "fetched": status.fetched,
                     "sources": [dict(x) for x in sources], "notes": list(notes)}
             if late:
@@ -489,7 +494,7 @@ class Scheduler:
             # show the old run's sources/counts/notes as if they were current.
             # The last successful run stays visible under last_success.
             status.last_run_at = self._now().isoformat()
-            status.ok, status.error = None, None
+            status.outcome, status.ok, status.error = "running", None, None
             status.after_stop, status.finished_after_stop = None, False
             status.partial, status.notes = False, []
             status.sources, status.new_evidence, status.new_signals, status.fetched = [], 0, 0, 0
@@ -511,7 +516,7 @@ class Scheduler:
                 self._record_outcome(symbol, call.result, call.error)
             else:
                 with self._status_lock:
-                    status.ok = False
+                    status.outcome, status.ok = "stopped", False
                     status.error = ("interrupted by shutdown: still running when the drain timed out. No new "
                                     "write starts after the stop signal, but a write already in progress may "
                                     "still complete after stop() returns; see after_stop once the worker exits")

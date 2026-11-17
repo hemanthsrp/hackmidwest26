@@ -116,7 +116,7 @@ All of these are hand-set constants, not fitted or validated. They are returned 
 | Term structure | normal / flat / inverted | Shortest expiry (a week or more out) against the longest; a ratio of 1.10 or more is inverted |
 | Data quality | ok / thin | At least 30 quotes, 3 expiries, and SVI converging on half the expiries |
 
-The news rule and its weights are a port of `scraper-analysis/pipeline/grade.py` (`grade-v1`); a stored `details.grade` is used as it is. The insider, congress and price thresholds match `pipeline/divergence.py` on the open `achen/scraper-divergence` branch.
+The news rule and its weights are a port of `scraper-analysis/pipeline/grade.py` (`grade-v1`); a stored `details.grade` is used only while it was built from the judgment the record holds now (`legs.current_grade`): a `source_only` grade stored while Jev was unavailable is ignored once the article is judged at decision time, as is a Jev grade whose `judged_by` names a different judgment. The insider, congress and price thresholds match `pipeline/divergence.py` on the open `achen/scraper-divergence` branch.
 
 **The local NLP reader** (`nlp.py`, optional). A second reader next to Jev, after the "FinBERT funnel" in [flash131307/multi-agent-investment](https://github.com/flash131307/multi-agent-investment): a relevance filter, a finance-tuned sentence classifier, then a deterministic weighted aggregate.
 

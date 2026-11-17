@@ -251,3 +251,77 @@ def test_chat_matches_held_word_like_tickers_only_in_capitals():
     assert v1.chat_symbols("Don't sugarcoat it: what are the risks?",held)==['T','F','AAPL']
     assert v1.chat_symbols('What about F and T?',held)==['F','T']
     assert v1.chat_symbols('tell me about nvda and aapl',held)==['AAPL','NVDA']
+
+
+def test_an_expired_robinhood_grant_ends_the_connection_and_its_cached_holdings(monkeypatch):
+    monkeypatch.setenv('BROKER_ENCRYPTION_KEY',base64.b64encode(b'a'*32).decode())
+    broker._mark_connected('alice',{'access_token':'t','refresh_token':None,'expires_at':0,'client_id':'c'})
+    storage.write('alice','portfolio','current',{'positions':[{'symbol':'NVDA','shares':2,'price':100}],'value':200})
+    client=TestClient(app)
+    assert broker.connection_state('alice')=='connected'
+    assert client.get('/v1/broker-connections',headers=headers()).json()['data'][0]['state']=='connected'
+
+    with pytest.raises(broker.BrokerUnavailable): broker._access_token('alice')
+
+    data=client.get('/v1/portfolio',headers=headers()).json()['data']
+    assert broker.connection_state('alice')=='disconnected'
+    assert (data['connected'],data['connection_state'],data['positions'])==(False,'disconnected',[])
+    assert client.get('/v1/broker-connections',headers=headers()).json()['data']==[]
+
+def test_holdings_left_from_an_earlier_connection_are_not_shown():
+    storage.write('alice','portfolio','current',{'positions':[{'symbol':'NVDA','shares':2,'price':100}],'value':200})
+    data=TestClient(app).get('/v1/portfolio',headers=headers()).json()['data']
+    assert (data['connection_state'],data['positions'])==('disconnected',[])
+
+
+def test_outbox_entries_only_move_along_allowed_states():
+    from research_api.notifications import publish_research_change
+    key=publish_research_change('alice','NVDA',{'label':'buy'},'hold',{'emailAlerts':True})
+    client=TestClient(app)
+    move=lambda state: client.post(f'/v1/email-outbox/{key}/{state}',headers=headers())
+    assert move('sending').status_code==200
+    assert client.get('/v1/email-outbox',headers=headers()).json()['data']==[]  # claimed: not queued twice
+    assert move('cancelled').status_code==409  # a send in progress cannot be cancelled
+    assert move('pending').status_code==200   # failed send: back in the queue
+    assert move('sending').status_code==200 and move('delivered').status_code==200
+    assert move('pending').status_code==409   # delivered is final
+    assert client.post('/v1/email-outbox/missing/sending',headers=headers()).status_code==404
+    assert move('shipped').status_code==422
+
+def test_turning_email_alerts_off_cancels_queued_email():
+    from research_api.notifications import publish_research_change
+    publish_research_change('alice','NVDA',{'label':'buy'},'hold',{'emailAlerts':True})
+    publish_research_change('alice','AAPL',{'label':'sell'},'hold',{'emailAlerts':True})
+    client=TestClient(app)
+    assert client.patch('/v1/me/preferences',headers=headers(),json={'emailAlerts':False}).status_code==200
+    assert client.get('/v1/email-outbox',headers=headers()).json()['data']==[]
+    assert {r['value']['status'] for r in storage.read('alice','email_outbox')}=={'cancelled'}
+    publish_research_change('alice','MSFT',{'label':'buy'},'hold',{'emailAlerts':True})
+    assert client.post('/v1/email-outbox/cancel-pending',headers=headers()).json()['cancelled']==1
+
+def test_notification_preferences_read_and_write_the_one_alert_setting():
+    client=TestClient(app)
+    client.patch('/v1/me/preferences',headers=headers(),json={'risk':'growth','emailAlerts':True,'inAppAlerts':True})
+    assert client.patch('/v1/notification-preferences',headers=headers(),json={'inAppAlerts':False}).status_code==200
+    stored=storage.read('alice','preferences')[0]['value']
+    assert stored=={'risk':'growth','emailAlerts':True,'inAppAlerts':False}
+    assert client.get('/v1/notification-preferences',headers=headers()).json()['data'][0]['value']=={'emailAlerts':True,'inAppAlerts':False}
+
+
+def test_a_claim_left_by_a_job_that_died_goes_back_to_the_queue():
+    from datetime import timedelta
+    from research_api.notifications import CLAIM_TIMEOUT, move_outbox, publish_research_change, queued_email
+    key=publish_research_change('alice','NVDA',{'label':'buy'},'hold',{'emailAlerts':True})
+    move_outbox('alice',key,'sending')
+    assert queued_email('alice')==[]  # a fresh claim is not handed out twice
+    later=datetime.now(timezone.utc)+CLAIM_TIMEOUT+timedelta(seconds=1)
+    assert [r['key'] for r in queued_email('alice',now=later)]==[key]
+    assert storage.read('alice','email_outbox')[0]['value']['status']=='pending'
+
+
+def test_an_abandoned_authorization_is_over_once_its_window_passes(monkeypatch):
+    storage.write('alice','broker_oauth_pending','state-hash',{'grant':'opaque'})
+    assert broker.connection_state('alice')=='authorizing'
+    later=time.time()+broker.AUTHORIZATION_SECONDS+5
+    monkeypatch.setattr(broker.time,'time',lambda: later)
+    assert broker.connection_state('alice')=='disconnected'

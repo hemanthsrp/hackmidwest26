@@ -75,6 +75,25 @@ Gate 0 must still accept or revise the route and fields; supported symbols; data
 
 **Follow-up:** an evaluation on more than the quiz set before enabling it by default, and a run with Jev on, which the live store run could not include (no TypeSafe key locally).
 
+## Recorded decision — explicit stages for six flows (2026-11-17)
+
+**Decision:** Six flows whose stages were tracked by loose flags now have one named stage each and one place that changes it.
+
+- **Article judgment and grading:** a grade records the judgment it was built from (`judged_by`). The decision maker ignores a grade from an earlier stage, so an article judged off-topic at decision time no longer counts in the news leg because of a `source_only` grade stored while Jev was unavailable.
+- **Account:** pending verification → active (`frontend/src/lib/account.ts`). The sign-up password travels on the verify link (`action_tokens.password_hash`, migration `0001`) and is applied only when that link is opened, and a reset link also activates the account.
+- **Robinhood connection:** disconnected → authorizing → connected (`broker.connection_state`). Connecting and disconnecting are one transaction, and leaving `connected` clears the cached portfolio.
+- **Email outbox:** pending → sending → delivered, sending → pending, and pending → cancelled (`notifications.OUTBOX_TRANSITIONS`). Turning email alerts off cancels queued email, and a claim older than 15 minutes returns to the queue. `/v1/notification-preferences` now reads and writes the same alert keys as `/v1/me/preferences` (issue #48).
+- **Evidence lifecycle:** fresh → stale → archived, worked out when a record is read and only ever moving forward (`scraper_analysis/pipeline/lifecycle.py`, ported in `decision_maker.models.current_lifecycle`). A re-ingest can no longer un-archive a row.
+- **Scheduler:** each symbol reports one `outcome`. This is additive; `ok`, `partial` and `error` are unchanged.
+
+**Owner / participants:** approved by Hemanth on 2026-11-17 under his project-wide override of lane approvals (decision-maker and research-api are Jet's lane, scraper-analysis is Cai's).
+
+**Why / evidence:** Each change has a test that shows the combination that used to be possible. Against a throwaway Postgres database, the original sign-up flow left a verified account with the first registrant's password (`attacker_password_works=true`). The original upsert turned an archived row back to `fresh` with `archived_at` cleared.
+
+**Not changed:** `/v1`'s own freshness cutoffs (24 hours for news, 3 days for a market close) and the decision maker's `stale_after_seconds` still decide what is used; `lifecycle_status` is now accurate but those readers do not consult it. On a weekend a signal can be labelled `stale` while `/v1` still treats the close as current.
+
+**Follow-up:** run migration `0001` before deploying the frontend; decide whether `/v1` and the decision maker should read `lifecycle_status` instead of their own cutoffs.
+
 ## Decision log template
 
 Add entries only after agreement; don't rewrite prior choices silently.

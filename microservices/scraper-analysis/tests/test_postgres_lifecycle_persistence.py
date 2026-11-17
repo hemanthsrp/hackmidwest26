@@ -51,3 +51,17 @@ def test_postgres_evidence_insert_binds_every_lifecycle_column(monkeypatch):
 
     assert cursor.statement.count("%s") == 29
     assert len(cursor.parameters) == 29
+
+
+def test_postgres_upsert_keeps_the_furthest_lifecycle_stage(monkeypatch):
+    cursor = _Cursor()
+    monkeypatch.setattr(db, "connect", lambda settings: _Connection(cursor))
+    monkeypatch.setattr(store, "get_embedding", lambda text: None)
+    item = Evidence(symbol="AAPL", title="t", source_name="test", source_type="general_news",
+                    retrieved_at=datetime(2026, 10, 11, tzinfo=timezone.utc))
+    store.PostgresEvidenceStore(Settings(database_url="postgresql://localhost/test")).save_evidence([item])
+
+    assert "lifecycle_status = EXCLUDED.lifecycle_status" not in cursor.statement
+    assert "archived_at = COALESCE(evidence.archived_at, EXCLUDED.archived_at)" in cursor.statement
+    # The policy timestamps are bound for a record whose source set none.
+    assert datetime(2026, 10, 18, tzinfo=timezone.utc) in cursor.parameters

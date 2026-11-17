@@ -34,6 +34,22 @@ def write(user_id, kind, key, value):
     with engine().begin() as conn:
         conn.execute(insert(records).values(**row).on_conflict_do_update(index_elements=['user_id','kind','key'],set_={'value':value,'updated_at':row['updated_at']}))
 
+def apply(user_id, writes=(), removes=()):
+    """Several writes ``(kind, key, value)`` and removals ``(kind, key or None)`` in one
+    transaction, so a state change that spans kinds either happens whole or not at all."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    insert = sqlite_insert if engine().dialect.name == 'sqlite' else pg_insert
+    now = datetime.now(timezone.utc)
+    with engine().begin() as conn:
+        for kind, key in removes:
+            query = delete(records).where(records.c.user_id == user_id, records.c.kind == kind)
+            if key is not None: query = query.where(records.c.key == key)
+            conn.execute(query)
+        for kind, key, value in writes:
+            row = {'user_id':user_id,'kind':kind,'key':key,'value':value,'updated_at':now}
+            conn.execute(insert(records).values(**row).on_conflict_do_update(index_elements=['user_id','kind','key'],set_={'value':value,'updated_at':now}))
+
 def remove(user_id, kind=None, key=None):
     query = delete(records).where(records.c.user_id == user_id)
     if kind is not None: query = query.where(records.c.kind == kind)

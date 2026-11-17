@@ -205,3 +205,10 @@ def test_briefing_review_skips_filing_points_and_warns_only_below_the_floor():
     assert review["points"][1] == {"index": 1, "status": "not_checked", "reason": "cites no news or social records"}
     assert review["warnings"] == []  # 0.35 is above the 0.3 floor
     assert [text for text, _ in checker.calls] == ["A news point.", "h u"]
+
+
+def test_a_grade_records_which_judgment_it_was_built_from():
+    judged = grade.grade_record(make("a", judgment(request_id="req-1")), 0.3)
+    unjudged = grade.grade_record(make("b"), 0.3)
+    assert (judged["basis"], judged["judged_by"]) == ("jev", "req-1")
+    assert (unjudged["basis"], unjudged["judged_by"]) == ("source_only", None)

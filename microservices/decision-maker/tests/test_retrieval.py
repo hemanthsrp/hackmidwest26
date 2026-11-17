@@ -160,3 +160,13 @@ def test_fixture_quant_and_search_work_offline() -> None:
     assert source.quant("NVDA").vol_surface.data_mode == "sample"
     assert source.search("NVDA", "What happened with the regulator inquiry?", 3)[0] == "sample-news-004"
     assert source.search("NVDA", "zzzzzz", 3) == []
+
+
+def test_load_reports_the_lifecycle_stage_the_timestamps_have_reached() -> None:
+    long_ago = NOW - timedelta(days=30)
+    stale_row = (*EVIDENCE_ROW[:22], "fresh", long_ago, long_ago, None, None, None)
+    cursor = FakeCursor([[stale_row, EVIDENCE_ROW], [SIGNAL_ROW]])
+
+    evidence, _ = source_with(cursor).load("AAPL")
+
+    assert [e.lifecycle_status for e in evidence] == ["stale", "fresh"]

@@ -113,6 +113,9 @@ def grade_record(evidence: Evidence, relevance_gate: float, known_ids=None) -> d
         return {
             "version": GRADE_VERSION,
             "basis": "source_only",
+            # Which judgment this grade was built from: none. A reader that later holds
+            # a judgment for this record must regrade rather than trust this one.
+            "judged_by": None,
             "jev_status": jev_status(evidence),
             "strength": round(credibility, 4),
             "gated": False,
@@ -141,6 +144,7 @@ def grade_record(evidence: Evidence, relevance_gate: float, known_ids=None) -> d
     return {
         "version": GRADE_VERSION,
         "basis": "jev",
+        "judged_by": judgment.get("request_id"),
         "jev_status": "ok",
         "strength": round(min(1.0, strength), 4),
         "gated": bool(reasons),

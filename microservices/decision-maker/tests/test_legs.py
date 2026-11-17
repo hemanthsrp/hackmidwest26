@@ -133,3 +133,23 @@ def test_price_leg_uses_the_newest_signal() -> None:
 
     assert (leg.reading, leg.record_ids) == ("up", ["new"])
     assert price_leg([]).direction is None
+
+
+def test_a_grade_from_an_earlier_stage_does_not_override_the_current_judgment() -> None:
+    # Jev was down at ingest: source-only grade, never gated. Judged off-topic at decision time.
+    off = news("off", "negative", relevant=0.05)
+    off.details["grade"] = {"basis": "source_only", "judged_by": None, "strength": 0.8, "gated": False}
+    leg = news_leg([off, news("a"), news("b")], NOW)
+
+    assert is_gated(off)
+    assert "off" not in leg.record_ids and leg.direction is None  # only 2 on-topic stories remain
+
+
+def test_a_jev_grade_for_a_different_judgment_is_ignored() -> None:
+    record = news("r", relevant=0.9, request_id="new")
+    record.details["grade"] = {"basis": "jev", "judged_by": "old", "strength": 0.01, "gated": True}
+    matching = news("m", relevant=0.9, request_id="same")
+    matching.details["grade"] = {"basis": "jev", "judged_by": "same", "strength": 0.123, "gated": True}
+
+    assert not is_gated(record) and strength(record) > 0.01
+    assert is_gated(matching) and strength(matching) == 0.123

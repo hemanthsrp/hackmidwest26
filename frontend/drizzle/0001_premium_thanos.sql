@@ -1,0 +1,1 @@
+ALTER TABLE "action_tokens" ADD COLUMN "password_hash" text;

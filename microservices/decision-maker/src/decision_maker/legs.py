@@ -96,9 +96,30 @@ def in_window(evidence: list[EvidenceRecord], as_of: datetime) -> tuple[list[Evi
     return kept, excluded
 
 
+def current_grade(record: EvidenceRecord) -> dict | None:
+    """The stored grade, only while it was built from the judgment the record holds now.
+
+    A record moves unjudged -> judged, and the scraper grades it at one of those stages.
+    A grade from an earlier stage is stale: a ``source_only`` grade (Jev was unavailable
+    at ingest) once the record has been judged at decision time, or a Jev grade whose
+    ``judged_by`` names a different judgment. Then None, and readers regrade from the
+    judgment. Grades stored before ``judged_by`` existed are taken as matching."""
+    grade = record.grade
+    if not grade:
+        return None
+    judgment = record.jev
+    if grade.get("basis") == "jev":
+        if not judgment:
+            return None
+        if "judged_by" in grade and grade["judged_by"] != judgment.get("request_id"):
+            return None
+        return grade
+    return None if judgment else grade
+
+
 def is_gated(record: EvidenceRecord) -> bool:
     """Off-topic for the symbol, or not real content. Unjudged records are never gated."""
-    grade = record.grade
+    grade = current_grade(record)
     if grade and "gated" in grade:
         return bool(grade["gated"])
     judgment = record.jev
@@ -131,7 +152,7 @@ def strength(record: EvidenceRecord) -> float | None:
     grade when the scraper computed one, otherwise the same formula applied to
     the judgment. A record Jev has not judged is weighed by its usable NLP
     reading, if any; otherwise None."""
-    grade = record.grade
+    grade = current_grade(record)
     if grade and grade.get("basis") == "jev" and grade.get("strength") is not None:
         return float(grade["strength"])
     judgment = record.jev
