@@ -5,6 +5,8 @@ import { failure, service, rateLimit } from "@/lib/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 import { eq } from "drizzle-orm";
+// The whole streamed answer, research lookups included, must finish within this.
+const CHAT_STREAM_TIMEOUT_MS = 120000;
 export async function POST(r: Request) {
   if (!sameOrigin(r)) return failure("Invalid origin.", 403);
   const p = z
@@ -46,10 +48,15 @@ export async function POST(r: Request) {
     .from(users)
     .where(eq(users.id, s.user.id));
   try {
-    const res = await service(s.user.id, "chat/stream", {
-      method: "POST",
-      body: JSON.stringify({ ...p.data, preferences: user?.preferences || {} }),
-    });
+    const res = await service(
+      s.user.id,
+      "chat/stream",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...p.data, preferences: user?.preferences || {} }),
+      },
+      CHAT_STREAM_TIMEOUT_MS,
+    );
     return new Response(res.body, {
       status: res.status,
       headers: {

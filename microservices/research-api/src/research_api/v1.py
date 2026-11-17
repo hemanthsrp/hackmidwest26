@@ -357,7 +357,9 @@ def sse_event(value):
 def chat_symbols(message,holdings):
     held=[position['symbol'] for position in holdings if isinstance(position,dict) and isinstance(position.get('symbol'),str) and re.fullmatch('[A-Z]{1,5}',position['symbol'])]
     candidates=sorted(set(UNIVERSE)|set(held))
-    mentioned=[symbol for symbol in candidates if re.search(r'\b'+symbol+r'\b',message,re.I)]
+    # Curated tickers match in any case ("nvda"); a held ticker only in capitals, since
+    # holdings such as T, F or IT are also ordinary words ("don't" contains \bt\b).
+    mentioned=[symbol for symbol in candidates if re.search(r'\b'+symbol+r'\b',message,re.I if symbol in UNIVERSE else 0)]
     return mentioned or held
 
 @router.post('/chat/stream')
