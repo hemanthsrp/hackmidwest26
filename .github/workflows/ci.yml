@@ -22,8 +22,8 @@ jobs:
     name: Frontend build and security audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -43,13 +43,13 @@ jobs:
     name: Python lock and audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: requirements/python.lock matches the pyproject.toml files
         run: |
           ./scripts/lock-python.sh
           git diff --exit-code requirements/python.lock || {
             echo "::error::requirements/python.lock is out of date; run scripts/lock-python.sh and commit it"; exit 1; }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: No known vulnerabilities in locked packages
@@ -73,8 +73,8 @@ jobs:
           - yahoo-finance-mcp
           - volatility-surface-builder
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -110,9 +110,9 @@ jobs:
           - { image: scraper-analysis, context: ., dockerfile: microservices/scraper-analysis/Dockerfile, target: "" }
           - { image: volatility-surface-builder, context: ., dockerfile: microservices/volatility-surface-builder/Dockerfile, target: "" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -125,7 +125,7 @@ jobs:
     name: Deploy stack config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate compose.deploy.yml with placeholder values
         env:
           IMAGE_TAG: ci
