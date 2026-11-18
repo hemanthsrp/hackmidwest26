@@ -13,9 +13,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import json
+import logging
 import os
 from typing import Any
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 SURFACE_PATH = "/v0/volatility-surfaces"
 # A live surface means fetching option chains and inverting each quote to an
@@ -87,7 +90,9 @@ def persist_snapshot(snapshot: Mapping[str, Any], database_url: str | None = Non
                 (snapshot_id, snapshot["symbol"], snapshot["source"], snapshot["data_mode"], as_of,
                  snapshot["retrieved_at"], json.dumps(snapshot["statistics"]), snapshot["retrieved_at"]),
             )
-    except Exception:
+    except Exception as exc:
+        # Only the type: the exception text can carry the connection string.
+        logger.warning("volatility snapshot was not stored: %s", type(exc).__name__)
         return None
     return {"id": snapshot_id, "kind": "options_surface", "value_origin": "options_surface",
             "impact_category": "options_risk", "source": snapshot["source"],

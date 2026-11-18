@@ -52,3 +52,15 @@ def test_reversed_time_range_is_rejected_before_fetching() -> None:
             "retryable": False,
         }
     }
+
+
+def test_a_live_failure_logs_its_type_but_never_its_text(monkeypatch, caplog) -> None:
+    def unavailable(_: str, start_date: str | None, end_date: str | None, interval: str):
+        raise RuntimeError("https://query.example/?crumb=secret-token")
+
+    monkeypatch.setattr("yahoo_finance_mcp.market_data._fetch_live_history", unavailable)
+
+    with caplog.at_level("WARNING"):
+        get_market_signal("AAPL", mode="live")
+
+    assert "RuntimeError" in caplog.text and "secret-token" not in caplog.text

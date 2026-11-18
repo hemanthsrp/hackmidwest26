@@ -152,3 +152,17 @@ def test_a_provider_registered_by_hand_is_not_replaced_by_the_environment(monkey
     assessment.configure_quant({"VOL_SURFACE_URL": "http://127.0.0.1:8002"})
 
     assert assessment._quant_provider is by_hand
+
+
+def test_a_snapshot_that_cannot_be_stored_logs_its_type_but_never_its_text(monkeypatch, caplog) -> None:
+    import psycopg
+
+    def refuse(*args, **kwargs):
+        raise psycopg.OperationalError("connection to postgresql://user:secret-pass@db failed")
+
+    monkeypatch.setattr(psycopg, "connect", refuse)
+
+    with caplog.at_level("WARNING"):
+        assert persist_snapshot(surface_response(), database_url="postgresql://localhost/test") is None
+
+    assert "OperationalError" in caplog.text and "secret-pass" not in caplog.text

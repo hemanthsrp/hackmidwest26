@@ -123,3 +123,14 @@ def test_invalid_request_values_return_safe_non_retryable_envelopes() -> None:
         "message": "domains must be a list of non-empty strings",
         "retryable": False,
     }
+
+
+def test_a_failed_search_logs_its_type_but_never_its_text(caplog) -> None:
+    def transport(payload):
+        raise RuntimeError("https://api.exa.ai/search?key=secret-key")
+
+    with caplog.at_level("WARNING"):
+        response = ExaSearch(api_key="test-key", transport=transport).search(symbol="AAPL", query="guidance", mode="live")
+
+    assert response.error is not None and response.error["code"] == "provider_unavailable"
+    assert "RuntimeError" in caplog.text and "secret-key" not in caplog.text
