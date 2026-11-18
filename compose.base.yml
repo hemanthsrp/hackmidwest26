@@ -1,0 +1,114 @@
+# What the local stack (compose.frontend.yml) and the hosted stack
+# (compose.deploy.yml) share: commands, health checks, start order and the
+# settings that are the same in both. Each stack file extends these services and
+# adds only its own differences (build or published image, database password,
+# ports, restart policy, secrets). Not run on its own.
+
+services:
+  database:
+    image: pgvector/pgvector:0.8.7-pg17-trixie@sha256:89947206f52eac3a9df9b663df7e76987cbdc623be6576b3a524953d568700d7
+    environment:
+      POSTGRES_USER: folio
+      POSTGRES_DB: folio
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U folio"]
+      interval: 5s
+      retries: 10
+
+  frontend-migrations:
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: "no"
+
+  scraper-schema:
+    environment:
+      # The stack's own Postgres has no TLS certificate and is reachable only
+      # inside the Compose network; the scraper refuses it without this.
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"
+    command: ["python", "-m", "scraper_analysis.storage.bootstrap"]
+    depends_on:
+      database:
+        condition: service_healthy
+      frontend-migrations:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # Internal-only API; port 8001 is never published.
+  scraper-analysis:
+    environment:
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"
+      ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-false}
+      # Must match research-api's coverage.json (tests/test_coverage.py checks it).
+      SCHEDULER_SYMBOLS: ${SCHEDULER_SYMBOLS:-NVDA,AAPL,MSFT,JPM,TSLA,XOM,CMG,DUOL,UNH,GLD}
+      SCHEDULER_INTERVAL_MINUTES: ${SCHEDULER_INTERVAL_MINUTES:-30}
+      SCHEDULER_OFFHOURS_FACTOR: ${SCHEDULER_OFFHOURS_FACTOR:-2}
+      ENABLE_REDDIT_SCRAPER: "false"
+      ENABLE_X_SCRAPER: "false"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      database:
+        condition: service_healthy
+      scraper-schema:
+        condition: service_completed_successfully
+
+  # Internal-only options-volatility math for live assessments; no published port.
+  volatility:
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  research-api:
+    environment:
+      # Same reason as the scraper: the evidence store refuses a TLS-less host otherwise.
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"
+      BROKER_ENCRYPTION_KEY: ${BROKER_ENCRYPTION_KEY:-}
+      ROBINHOOD_MCP_ENABLED: ${ROBINHOOD_MCP_ENABLED:-false}
+      SCRAPER_API_URL: http://scraper-analysis:8001
+      VOL_SURFACE_URL: http://volatility:8002
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CHAT_MODEL: ${CHAT_MODEL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+    command: ["sh", "-c", "python -m research_api.storage && uvicorn research_api.app:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      database:
+        condition: service_healthy
+      frontend-migrations:
+        condition: service_completed_successfully
+      scraper-analysis:
+        condition: service_healthy
+      volatility:
+        condition: service_healthy
+
+  frontend:
+    environment:
+      AUTH_TRUST_HOST: "true"
+      SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET}
+      RESEARCH_API_URL: http://research-api:8000
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      PUBLIC_LIVE_RESEARCH: ${PUBLIC_LIVE_RESEARCH:-true}
+    # Bound to the host's loopback only; a hosted deploy puts an HTTPS proxy in front.
+    ports:
+      - "127.0.0.1:${HOST_PORT:-3100}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      frontend-migrations:
+        condition: service_completed_successfully
+      research-api:
+        condition: service_healthy
