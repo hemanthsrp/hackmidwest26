@@ -82,6 +82,9 @@ services:
     environment:
       RESEARCH_DATABASE_URL: postgresql+psycopg://folio:${POSTGRES_PASSWORD}@database:5432/folio
       DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD}@database:5432/folio
+      # The stack's own Postgres has no TLS certificate and is reachable only inside
+      # the Compose network; without this the evidence store refuses it (as locally).
+      ALLOW_INSECURE_LOCAL_DATABASE: "true"
       SERVICE_ASSERTION_SECRET: ${SERVICE_ASSERTION_SECRET:?Set SERVICE_ASSERTION_SECRET in .env}
       BROKER_ENCRYPTION_KEY: ${BROKER_ENCRYPTION_KEY:-}
       ROBINHOOD_MCP_ENABLED: ${ROBINHOOD_MCP_ENABLED:-false}
