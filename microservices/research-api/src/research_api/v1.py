@@ -74,21 +74,25 @@ def source_records(symbol):
     except (httpx.HTTPError, ValueError): raise HTTPException(503, 'Research source unavailable')
 
 def assess(symbol):
+    """One stock's stored research for feeds, lists and chat. The label, explanation and
+    uncertainty come from the decision maker (assessment.decide_stored), the same engine
+    as the stock page; this adds the fresh evidence and signals the feed displays."""
     raw_evidence, raw_signals = source_records(symbol)
     evidence = [x for x in raw_evidence if fresh(x)]
     signals = [x for x in raw_signals if fresh(x)]
-    # No unvalidated price prediction: a bounded text-evidence heuristic.
-    directions = []
-    for item in evidence:
-        sentiment = item.get('sentiment') or {}
-        direction = str(sentiment.get('direction','')).lower()
-        if direction in {'positive','bullish'}: directions.append(1)
-        elif direction in {'negative','bearish'}: directions.append(-1)
-        elif direction in {'neutral','mixed'}: directions.append(0)
-    mean = sum(directions) / len(directions) if directions else 0
-    label = 'insufficient_data' if not evidence or not signals or not directions else 'buy' if mean > .5 else 'sell' if mean < -.5 else 'hold'
     mode = 'cached' if any(x.get('data_mode') == 'cached' for x in evidence + signals) else 'live'
-    return {'symbol':symbol,'data_mode':mode,'snapshot':{'as_of':max([x.get('as_of') or x.get('observed_at') or x.get('retrieved_at') for x in evidence + signals],default=datetime.now(timezone.utc).isoformat())},'evidence':evidence,'signals':signals,'assessment':{'label':label,'explanation':'Not enough fresh, attributable evidence and signals are available.' if label=='insufficient_data' else f'The current evidence has a {"positive" if mean>.5 else "negative" if mean<-.5 else "mixed"} direction. Review the cited sources and market indicators together.','uncertainty':'A current evidence heuristic, not a probability of price movement or an evaluated forecast.','reason_codes':[x['id'] for x in evidence],'horizon':'current','data_mode':mode,'decision_engine':{'name':'evidence_direction_v1','status':'used' if directions else 'not_run'}},'warnings':[{'code':'excluded_stale_or_sample','message':'Stale, undated, and sample records are excluded from live research.','retryable':False}] if len(evidence)!=len(raw_evidence) or len(signals)!=len(raw_signals) else []}
+    from decision_maker import DecisionError
+    from . import assessment as engine
+    try:
+        decision = engine.decide_stored(symbol)
+    except DecisionError as error:
+        if error.code == 'invalid_symbol': raise HTTPException(400, 'Invalid symbol')
+        if error.code != 'stale_data': raise HTTPException(503, 'Research source unavailable')
+        verdict = {'label':'insufficient_data','explanation':error.message,'uncertainty':'No assessment was made from stale evidence.','reason_codes':[],'horizon':'30d','data_mode':mode,'decision_engine':{'name':'decision_maker','status':'not_run'}}
+    else:
+        if decision is None: raise HTTPException(503, 'Live research sources are not configured')
+        verdict = decision.assessment.model_dump(mode='json')
+    return {'symbol':symbol,'data_mode':mode,'snapshot':{'as_of':max([x.get('as_of') or x.get('observed_at') or x.get('retrieved_at') for x in evidence + signals],default=datetime.now(timezone.utc).isoformat())},'evidence':evidence,'signals':signals,'assessment':verdict,'warnings':[{'code':'excluded_stale_or_sample','message':'Stale, undated, and sample records are excluded from live research.','retryable':False}] if len(evidence)!=len(raw_evidence) or len(signals)!=len(raw_signals) else []}
 
 _assess_cache = {}
 _assess_locks = {}
@@ -100,6 +104,10 @@ def assess_cache_seconds():
 
 def clear_assess_cache():
     with _assess_guard: _assess_cache.clear(); _assess_locks.clear()
+
+def forget_assessment(symbol):
+    """Drop one symbol's cached snapshot after a live assessment refreshed its evidence."""
+    with _assess_guard: _assess_cache.pop(symbol, None)
 
 def assess_cached(symbol):
     """assess() behind a short TTL cache. Concurrent misses for one symbol share a single fetch;
@@ -385,7 +393,7 @@ def chat_stream(body: ChatInput,uid=Depends(user_id)):
     symbols=chat_symbols(body.message,holdings)
     evidence=[]
     for symbol in symbols[:8]:
-        try: evidence.append(assess(symbol))
+        try: evidence.append(assess_cached(symbol))
         except HTTPException: pass
     if not evidence:
         return StreamingResponse(iter([sse_event({'type':'delta','content':'There is not enough live research available for this question yet. Open a supported stock or connect your portfolio when account linking becomes available.'}),sse_event({'type':'done','citations':[]})]),media_type='text/event-stream')
@@ -429,7 +437,7 @@ def chat(body: ChatInput,uid=Depends(user_id)):
     symbols=chat_symbols(body.message,holdings)
     evidence=[]
     for symbol in symbols[:8]:
-        try: evidence.append(assess(symbol))
+        try: evidence.append(assess_cached(symbol))
         except HTTPException: pass
     if not evidence:
         return {'reply':'There is not enough live research available for this question yet. Open a supported stock or connect your portfolio when account linking becomes available.','citations':[]}

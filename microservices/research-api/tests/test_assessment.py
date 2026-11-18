@@ -126,13 +126,15 @@ def test_a_store_alone_is_enough_and_missing_inference_only_removes_the_model() 
     assert (maker._use_agent_tools, maker._stale_after_seconds) == (False, 86400)
 
 
-def test_scoring_only_maker_never_attaches_the_per_article_jev_judge(monkeypatch) -> None:
+def test_scoring_only_maker_keeps_the_jev_article_judge_but_not_the_explanation_check(monkeypatch) -> None:
+    # Jev's article judgments decide which news counts, so they move the label; leaving
+    # them out made lists and the stock page disagree. Only the explanation check goes.
     monkeypatch.setattr(assessment, "_jev_tool", lambda: object())
 
     maker = assessment.build_decision_maker({"DATABASE_URL": LOCAL_DATABASE}, scoring_only=True)
 
     assert isinstance(maker, DecisionMaker)
-    assert maker._article_judge is None
+    assert maker._article_judge is not None
     assert maker._explanation_checker is None
 
 

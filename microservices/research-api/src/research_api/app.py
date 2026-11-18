@@ -164,6 +164,10 @@ def _decide(request: ResearchAssessmentRequest, symbol: str) -> JSONResponse:
             },
         )
     body = response.model_dump(mode="json")
+    if not sample:
+        from .v1 import forget_assessment
+
+        forget_assessment(symbol)  # feeds re-read the evidence this request just refreshed
     if not sample and cache_seconds:
         _LIVE_ASSESSMENT_CACHE[cache_key] = (monotonic() + cache_seconds, deepcopy(body))
     return JSONResponse(content=body)

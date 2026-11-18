@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -48,6 +50,9 @@ _decision_maker: Any = None
 _built = False
 _scoring_maker: Any = None
 _scoring_built = False
+# (symbol, horizon, risk_profile) -> (expires_at, DecisionResponse) for decide_stored().
+_stored_cache: dict[tuple[str, str, str], tuple[float, Any]] = {}
+_stored_lock = threading.Lock()
 
 
 def trigger_ingestion(symbol: str, environ: Mapping[str, str] = os.environ) -> None:
@@ -166,7 +171,8 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_onl
 
     ``scoring_only`` leaves out the model-written explanation, semantic search and the
     Jev review of that text. The label and score do not depend on them, so a scoring
-    maker agrees with the full one but is cheap enough to run for a whole industry."""
+    maker agrees with the full one but is cheap enough to run for a whole industry.
+    Jev's article judgments stay: they decide which news counts, so they move the label."""
     database_url = environ.get("DATABASE_URL", "").strip()
     if not database_url:
         return None
@@ -204,7 +210,7 @@ def build_decision_maker(environ: Mapping[str, str] = os.environ, *, scoring_onl
         agent_factory=agent_factory,
         agent_model=chat_model,
         use_agent_tools=environ.get("DECISION_AGENT_TOOLS", "false").strip().lower() == "true",
-        article_judge=JevDecisionAdapter(jev) if jev and not scoring_only else None,
+        article_judge=JevDecisionAdapter(jev) if jev else None,
         explanation_checker=JevExplanationAdapter(jev) if jev and not scoring_only else None,
         text_classifier=_text_classifier(environ),
         companies=COMPANY_NAMES,
@@ -217,6 +223,8 @@ def get_scoring_maker() -> Any:
     global _scoring_maker, _scoring_built
     if not _scoring_built:
         _scoring_maker = build_decision_maker(scoring_only=True)
+        if _scoring_maker is not None:
+            configure_quant()  # the options math can raise the bar for a label
         _scoring_built = True
     return _scoring_maker
 
@@ -245,6 +253,7 @@ def reset() -> None:
     global _decision_maker, _built, _quant_provider, _scoring_maker, _scoring_built
     _decision_maker, _built, _quant_provider = None, False, None
     _scoring_maker, _scoring_built = None, False
+    _stored_cache.clear()
 
 
 def sample_decision_maker() -> Any:
@@ -256,13 +265,17 @@ def sample_decision_maker() -> Any:
     return DecisionMaker()
 
 
-def assess(maker: Any, *, symbol: str, query: str | None, preferences: Mapping[str, str], sample: bool) -> Any:
-    """Run one assessment. Raises ``decision_maker.DecisionError`` subclasses."""
+def assess(
+    maker: Any, *, symbol: str, query: str | None, preferences: Mapping[str, str], sample: bool, ingest: bool = True
+) -> Any:
+    """Run one assessment. A live one first asks the scraper to refresh the symbol
+    unless ``ingest`` is False. Raises ``decision_maker.DecisionError`` subclasses."""
     from decision_maker import DecisionRequest, Preferences
     from decision_maker.models import ResponseWarning
 
-    if not sample:
+    if not sample and ingest:
         trigger_ingestion(symbol)
+        forget_stored(symbol)  # stored evidence just changed
     request = DecisionRequest(
         symbol=symbol, query=query, preferences=Preferences(**preferences), mode="sample" if sample else "live"
     )
@@ -283,3 +296,40 @@ def assess(maker: Any, *, symbol: str, query: str | None, preferences: Mapping[s
             )
         )
     return response
+
+
+def stored_cache_seconds(environ: Mapping[str, str] = os.environ) -> int:
+    try:
+        return max(0, min(int(environ.get("ASSESSMENT_CACHE_SECONDS", "300")), 900))
+    except ValueError:
+        return 300
+
+
+def decide_stored(symbol: str, horizon: str = "30d", risk_profile: str = "balanced") -> Any:
+    """The assessment of the evidence already stored for a symbol: the same decision
+    maker, options math and Jev judgments as a live assessment, without the
+    model-written explanation and without asking the scraper to refresh first.
+
+    Feeds, lists and chat use this, so a stock reads the same everywhere and a page
+    view never triggers ingestion. Returns None when no decision maker can be built;
+    raises ``decision_maker.DecisionError`` subclasses like ``assess``."""
+    maker = get_scoring_maker()
+    if maker is None:
+        return None
+    key = (symbol, horizon, risk_profile)
+    seconds = stored_cache_seconds()
+    hit = _stored_cache.get(key)
+    if seconds and hit and hit[0] > time.monotonic():
+        return hit[1]
+    response = assess(maker, symbol=symbol, query=None, preferences={"horizon": horizon, "risk_profile": risk_profile}, sample=False, ingest=False)
+    if seconds:
+        with _stored_lock:
+            _stored_cache[key] = (time.monotonic() + seconds, response)
+    return response
+
+
+def forget_stored(symbol: str) -> None:
+    """Drop cached stored-data assessments for a symbol after its evidence changed."""
+    with _stored_lock:
+        for key in [k for k in _stored_cache if k[0] == symbol]:
+            _stored_cache.pop(key, None)
