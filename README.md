@@ -87,3 +87,9 @@ CI runs all of these, every Python service's tests and a build of every Docker
 image on each push and pull request. Merges to `main` publish the images to
 GitHub Container Registry; deploying them to a host is off until configured.
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+Python services need Python 3.12. CI and the Docker images install the exact
+third-party versions in `requirements/python.lock`. After changing a dependency
+in any `pyproject.toml`, run `./scripts/lock-python.sh` (it needs Docker) and
+commit the updated lock; CI fails when the lock is out of date or a locked
+package has a known vulnerability. Dependabot opens weekly update PRs.

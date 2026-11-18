@@ -2,7 +2,7 @@
 name = "scraper-analysis"
 version = "0.1.0"
 description = "Multi-source financial evidence/signal scraping and analysis microservice"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

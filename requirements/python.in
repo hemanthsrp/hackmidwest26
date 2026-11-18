@@ -1,0 +1,11 @@
+# Every Python service with the extras CI tests and the Docker images install.
+# decision-maker[nlp] (PyTorch) is opt-in and deliberately not locked here.
+# Regenerate requirements/python.lock with scripts/lock-python.sh after editing
+# any pyproject.toml dependency.
+./microservices/agentic-search[dev]
+./microservices/decision-maker[pg,agent,dev]
+./microservices/jev-tool[dev]
+./microservices/research-api[dev]
+./microservices/scraper-analysis[dev]
+./microservices/volatility-surface-builder[live,dev]
+./microservices/yahoo-finance-mcp[dev]
