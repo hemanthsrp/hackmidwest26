@@ -101,7 +101,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          sparse-checkout: compose.deploy.yml
+          sparse-checkout: |
+            compose.deploy.yml
+            compose.base.yml
           sparse-checkout-cone-mode: false
       - name: Check deploy settings
         env:
@@ -133,7 +135,8 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
         run: |
           ssh_opts="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-          scp $ssh_opts compose.deploy.yml "$USER@$HOST:$DEPLOY_PATH/compose.deploy.yml"
+          # compose.deploy.yml extends compose.base.yml, so both go to the host.
+          scp $ssh_opts compose.deploy.yml compose.base.yml "$USER@$HOST:$DEPLOY_PATH/"
           # The run's short-lived token pulls the images and is logged out right after,
           # so no registry credential stays on the host.
           printf '%s' "$REGISTRY_TOKEN" | ssh $ssh_opts "$USER@$HOST" \

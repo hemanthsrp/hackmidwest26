@@ -36,6 +36,11 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+      # Every public page must render in a real browser without an uncaught error.
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
       - run: npm audit --omit=dev
         working-directory: frontend
 
@@ -173,7 +178,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Validate compose.deploy.yml with placeholder values
+      - name: Validate compose.deploy.yml (and the compose.base.yml it extends) with placeholder values
         env:
           IMAGE_TAG: ci
           POSTGRES_PASSWORD: placeholder

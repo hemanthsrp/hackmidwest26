@@ -77,7 +77,8 @@ and does not provide complete news coverage or a validated assessment.
 
 ## Checks
 
-Frontend: `cd frontend && npm run typecheck && npm test && npm run build`.
+Frontend: `cd frontend && npm run typecheck && npm test && npm run build`, then
+`npm run test:e2e` for the browser smoke test (once: `npx playwright install chromium`).
 Research API: install its `dev` extra and run `python -m pytest` from its
 directory. The local Compose setup additionally has frontend and API health
 checks; remote deployment and external-provider behavior require separate

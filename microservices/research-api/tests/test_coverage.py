@@ -30,7 +30,7 @@ def test_the_list_is_well_formed_and_is_what_v1_serves() -> None:
     assert list(v1.UNIVERSE) == SYMBOLS
 
 
-@pytest.mark.parametrize("relative", ["compose.frontend.yml", "compose.deploy.yml"])
+@pytest.mark.parametrize("relative", ["compose.base.yml"])  # shared by both stacks
 def test_scheduler_default_matches_the_list(relative: str) -> None:
     default = re.search(r"SCHEDULER_SYMBOLS: \$\{SCHEDULER_SYMBOLS:-([A-Z,]+)\}", repo_file(relative))
     assert default and default.group(1) == ",".join(SYMBOLS), f"update SCHEDULER_SYMBOLS in {relative}"

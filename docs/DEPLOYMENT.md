@@ -26,7 +26,7 @@ The docs in [AKAMAI_FEASIBILITY.md](AKAMAI_FEASIBILITY.md) require approval of a
    HOST_PORT=3100                  # loopback port the reverse proxy forwards to
    ```
 
-   Optional: `BROKER_ENCRYPTION_KEY`, `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `CHAT_MODEL` / `EMBEDDING_MODEL`, `RESEND_API_KEY` / `EMAIL_FROM` / `DIGEST_JOB_SECRET`, `ALLOW_REGISTRATION`, `DECISION_NLP_MODEL`, `ENABLE_SCHEDULER` (with `SCHEDULER_SYMBOLS`, `SCHEDULER_INTERVAL_MINUTES`, `SCHEDULER_OFFHOURS_FACTOR`; it also needs a real `SEC_EDGAR_USER_AGENT` contact in `scraper-analysis.env`). Scraper keys go in `scraper-analysis.env` in the same folder. Every name is listed in [`compose.deploy.yml`](../compose.deploy.yml); secrets never live in the repository.
+   Optional: `BROKER_ENCRYPTION_KEY`, `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `CHAT_MODEL` / `EMBEDDING_MODEL`, `RESEND_API_KEY` / `EMAIL_FROM` / `DIGEST_JOB_SECRET`, `ALLOW_REGISTRATION`, `DECISION_NLP_MODEL`, `ENABLE_SCHEDULER` (with `SCHEDULER_SYMBOLS`, `SCHEDULER_INTERVAL_MINUTES`, `SCHEDULER_OFFHOURS_FACTOR`; it also needs a real `SEC_EDGAR_USER_AGENT` contact in `scraper-analysis.env`). Scraper keys go in `scraper-analysis.env` in the same folder. Every name is listed in [`compose.deploy.yml`](../compose.deploy.yml) and the [`compose.base.yml`](../compose.base.yml) it extends (the deploy copies both to the host); secrets never live in the repository.
 3. Put an HTTPS reverse proxy (Caddy, nginx) in front of `127.0.0.1:$HOST_PORT`. The stack publishes no other port; Postgres and the internal APIs are reachable only inside the Compose network.
 
 **On GitHub** (Settings)
