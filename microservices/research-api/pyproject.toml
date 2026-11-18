@@ -27,3 +27,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 research_api = ["coverage.json"]
+
+[tool.ruff]
+line-length = 120
