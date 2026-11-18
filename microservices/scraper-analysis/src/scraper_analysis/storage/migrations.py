@@ -17,6 +17,13 @@ unless --apply is passed, and it never prints row contents.
     python -m scraper_analysis.storage.migrations --apply   # write
 
 It is idempotent: a second run finds nothing to do.
+
+News re-key (issue #46)
+-----------------------
+general_news IDs used to include the headline, so an edited headline stored
+the same article twice. IDs are now uuid5("general_news::" + url + day). The
+same grouping keeps the best, most recently retrieved copy of each article
+(its latest headline) and deletes the rest. The commands above run both.
 """
 
 import argparse
@@ -44,19 +51,27 @@ def _rank(e: Evidence) -> tuple:
     return (*record_rank(e.data_mode, e.details), e.retrieved_at)
 
 
-def plan_sec_filing_rekey(rows: list[Evidence]) -> RekeyPlan:
+def _plan_rekey(rows: list[Evidence], source_type: str) -> RekeyPlan:
     plan = RekeyPlan()
-    by_filing: dict[str, list[Evidence]] = defaultdict(list)
+    by_record: dict[str, list[Evidence]] = defaultdict(list)
     for row in rows:
-        if row.source_type == "sec_filing" and row.source_url:
-            by_filing[stable_id(row)].append(row)
-    for new_id, group in by_filing.items():
+        if row.source_type == source_type and row.source_url:
+            by_record[stable_id(row)].append(row)
+    for new_id, group in by_record.items():
         plan.groups += 1
         keep = max(group, key=_rank)
         plan.delete_ids += [r.id for r in group if r is not keep]
         if keep.id != new_id:
             plan.renames[keep.id] = new_id
     return plan
+
+
+def plan_sec_filing_rekey(rows: list[Evidence]) -> RekeyPlan:
+    return _plan_rekey(rows, "sec_filing")
+
+
+def plan_news_rekey(rows: list[Evidence]) -> RekeyPlan:
+    return _plan_rekey(rows, "general_news")
 
 
 def migrate_sec_filing_ids(store: EvidenceStore | None = None, apply: bool = False) -> RekeyPlan:
@@ -67,16 +82,25 @@ def migrate_sec_filing_ids(store: EvidenceStore | None = None, apply: bool = Fal
     return plan
 
 
+def migrate_news_ids(store: EvidenceStore | None = None, apply: bool = False) -> RekeyPlan:
+    store = store or get_store()
+    plan = plan_news_rekey(store.query_evidence_by_source_type("general_news"))
+    if apply and not plan.is_noop:
+        store.rekey_evidence(plan.renames, plan.delete_ids)
+    return plan
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--apply", action="store_true", help="write changes (default: dry run)")
     args = parser.parse_args()
-    plan = migrate_sec_filing_ids(apply=args.apply)
     mode = "applied" if args.apply else "dry run"
-    print(
-        f"sec_filing re-key ({mode}): {plan.groups} filing(s), "
-        f"{len(plan.renames)} row(s) re-keyed, {len(plan.delete_ids)} duplicate row(s) deleted"
-    )
+    for label, migrate in (("sec_filing", migrate_sec_filing_ids), ("general_news", migrate_news_ids)):
+        plan = migrate(apply=args.apply)
+        print(
+            f"{label} re-key ({mode}): {plan.groups} record(s), "
+            f"{len(plan.renames)} row(s) re-keyed, {len(plan.delete_ids)} duplicate row(s) deleted"
+        )
 
 
 if __name__ == "__main__":

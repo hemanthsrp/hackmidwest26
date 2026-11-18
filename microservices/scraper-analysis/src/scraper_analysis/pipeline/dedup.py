@@ -18,6 +18,12 @@ def _fingerprint(evidence: Evidence) -> str:
         return f"sec_filing::{evidence.source_url.strip().lower()}"
     title = _normalize_title(evidence.title)
     day = evidence.observed_at.date().isoformat() if evidence.observed_at else ""
+    if evidence.source_type == "general_news" and evidence.source_url:
+        # One article URL per day == one row. Outlets edit headlines (and bump the
+        # published time) after publishing, so the title must not mint a new ID; a
+        # live-updating page is one row holding its latest version (issue #46).
+        # storage/migrations.py re-keys rows stored under the old scheme.
+        return f"general_news::{evidence.source_url.strip().lower()}::{day}"
     if evidence.source_url:
         # URL alone is not enough: one Senate PTR page holds several
         # distinct transactions, so title (type/ticker/amount) and the
