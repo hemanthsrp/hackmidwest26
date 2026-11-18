@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+logger = logging.getLogger(__name__)
 
 _EXA_SEARCH_URL = "https://api.exa.ai/search"
 _FIXTURE_PATH = Path(__file__).resolve().parents[2] / "fixtures" / "exa_news_sample.json"
@@ -80,7 +83,9 @@ class ExaSearch:
             if not isinstance(raw_results, list):
                 raise ValueError("Exa response results is not a list")
             results = [_normalize(normalized_symbol, item, "live") for item in raw_results if isinstance(item, dict)]
-        except Exception:
+        except Exception as exc:
+            # Only the type: the exception text can carry the request URL or key.
+            logger.warning("Exa search failed: %s", type(exc).__name__)
             return _error("provider_unavailable", "Exa search is unavailable; no live search was performed.", True)
         return SearchResponse(results=_filter_results(results, dates, domains, max_results), data_mode="live")
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
@@ -10,6 +11,8 @@ from typing import Any
 
 import pandas as pd
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 _SYMBOL_PATTERN = re.compile(r"[A-Z]{1,5}")
 _DEFAULT_WINDOW_DAYS = 30
@@ -79,7 +82,9 @@ def get_market_signal(
             include_realized_volatility,
             include_corporate_actions,
         )
-    except Exception:
+    except Exception as exc:
+        # Only the type: yfinance errors can carry request URLs and crumbs.
+        logger.warning("Yahoo Finance history failed for %s: %s", normalized_symbol, type(exc).__name__)
         return _error(
             "provider_unavailable",
             "Yahoo Finance data is unavailable; no market signal was generated.",
@@ -113,7 +118,8 @@ def get_company_fundamentals(symbol: str, mode: str = "live") -> dict[str, Any]:
                 if info.get(key) is not None
             },
         }
-    except Exception:
+    except Exception as exc:
+        logger.warning("Yahoo Finance fundamentals failed for %s: %s", normalized_symbol, type(exc).__name__)
         return _error("provider_unavailable", "Yahoo Finance fundamentals are unavailable.", True)
 
 
