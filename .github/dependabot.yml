@@ -6,6 +6,10 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    ignore:
+      # Types for the Node 24 runtime the images use.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       frontend-minor-and-patch:
         update-types: [minor, patch]
@@ -28,6 +32,14 @@ updates:
       - /microservices/volatility-surface-builder
     schedule:
       interval: weekly
+    # The runtimes are deliberate: Python 3.12 (requirements/python.lock is resolved
+    # for it) and Node 24 (@types/node matches it). Take digest and patch updates
+    # only; move a runtime on purpose, with the lock and types, in its own PR.
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: node
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       base-images:
         patterns: ["*"]
