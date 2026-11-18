@@ -1,0 +1,55 @@
+{
+  "_comment": "The stocks Folio covers on its feeds, lists and chat. Edit this file to change coverage; tests/test_coverage.py then names every copy that must match (the scheduler default in both compose files and .env.example, and the frontend industry list).",
+  "stocks": [
+    {
+      "symbol": "NVDA",
+      "name": "NVIDIA",
+      "industry": "ai"
+    },
+    {
+      "symbol": "AAPL",
+      "name": "Apple",
+      "industry": "technology"
+    },
+    {
+      "symbol": "MSFT",
+      "name": "Microsoft",
+      "industry": "technology"
+    },
+    {
+      "symbol": "JPM",
+      "name": "JPMorgan Chase",
+      "industry": "finance"
+    },
+    {
+      "symbol": "TSLA",
+      "name": "Tesla",
+      "industry": "technology"
+    },
+    {
+      "symbol": "XOM",
+      "name": "Exxon Mobil",
+      "industry": "energy"
+    },
+    {
+      "symbol": "CMG",
+      "name": "Chipotle",
+      "industry": "food"
+    },
+    {
+      "symbol": "DUOL",
+      "name": "Duolingo",
+      "industry": "education"
+    },
+    {
+      "symbol": "UNH",
+      "name": "UnitedHealth",
+      "industry": "healthcare"
+    },
+    {
+      "symbol": "GLD",
+      "name": "SPDR Gold Shares",
+      "industry": "commodities"
+    }
+  ]
+}
