@@ -16,8 +16,18 @@ def headers(uid='alice', expires=None):
     signature=base64.urlsafe_b64encode(hmac.new(SECRET.encode(),payload.encode(),hashlib.sha256).digest()).decode().rstrip('=')
     return {'Authorization':f'Bearer {payload}.{signature}'}
 
+class _StoredDecision:
+    """Stands in for assessment.decide_stored: these tests exercise v1's records, cache and
+    routes, not the decision engine (test_assessment.py covers that)."""
+    class assessment:
+        @staticmethod
+        def model_dump(mode=None):
+            return {'label':'insufficient_data','explanation':'stub','uncertainty':'stub','reason_codes':[],'horizon':'30d','data_mode':'live','decision_engine':{'name':'decision_maker','status':'used'}}
+
 @pytest.fixture(autouse=True)
 def database(tmp_path,monkeypatch):
+    from research_api import assessment
+    monkeypatch.setattr(assessment,'decide_stored',lambda symbol,*args: _StoredDecision())
     monkeypatch.setenv('SERVICE_ASSERTION_SECRET',SECRET)
     monkeypatch.setenv('RESEARCH_DATABASE_URL',f'sqlite:///{tmp_path}/test.db')
     storage.engine.cache_clear();storage.migrate()
