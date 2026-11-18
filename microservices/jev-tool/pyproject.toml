@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "jev-tool"
 version = "0.1.0"
 description = "Shared Jev (TypeSafe System One) tool: Python functions and an MCP server for quick typed decisions."
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "typesafe-sdk==0.7.4",
     "mcp>=2.1,<3",

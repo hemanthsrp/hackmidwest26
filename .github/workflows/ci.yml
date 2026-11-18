@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  # Weekly, so a newly published vulnerability in a locked package fails CI
+  # even when nobody has pushed.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
@@ -35,6 +39,24 @@ jobs:
       - run: npm audit --omit=dev
         working-directory: frontend
 
+  python-lock:
+    name: Python lock and audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: requirements/python.lock matches the pyproject.toml files
+        run: |
+          ./scripts/lock-python.sh
+          git diff --exit-code requirements/python.lock || {
+            echo "::error::requirements/python.lock is out of date; run scripts/lock-python.sh and commit it"; exit 1; }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: No known vulnerabilities in locked packages
+        run: |
+          python -m pip install pip-audit==2.9.0
+          pip-audit -r requirements/python.lock --no-deps --disable-pip --progress-spinner off
+
   python:
     # One job per service, so a failure in one suite never hides the others.
     name: Python (${{ matrix.service }})
@@ -58,9 +80,10 @@ jobs:
           cache: pip
       - name: Install service packages and test dependencies
         # The services import each other (research-api -> decision-maker,
-        # scraper-analysis -> jev-tool), so every job installs the full set.
+        # scraper-analysis -> jev-tool), so every job installs the full set,
+        # at the exact versions in requirements/python.lock.
         run: >-
-          python -m pip install
+          python -m pip install -c requirements/python.lock
           -e 'microservices/research-api[dev]'
           -e 'microservices/decision-maker[pg,agent,dev]'
           -e 'microservices/jev-tool[dev]'
