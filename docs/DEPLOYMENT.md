@@ -52,6 +52,18 @@ The deploy logs the host in to the registry with the run's short-lived token and
 
 Deploys run one at a time, in order. The Postgres data lives in the `folio-data` volume and survives redeploys; back it up separately.
 
+## Database schema
+
+One Postgres holds every service's tables. Three owners create them, in this order on every start (Compose waits for each):
+
+| Order | Owner | Creates | How |
+|---|---|---|---|
+| 1 | frontend (`frontend-migrations`) | accounts, sessions, tokens, rate limits | Drizzle migrations in `frontend/drizzle` |
+| 2 | scraper (`scraper-schema`) | `evidence`, `signals`, `volatility_snapshots` | `scraper_analysis.storage.bootstrap` (`schema.sql`) |
+| 3 | research-api (on start) | `research_user_records` | `research_api.storage` |
+
+Every step is safe to repeat, so a redeploy re-runs all three. The owners never touch each other's tables. CI's *Database schema on a fresh database* job applies all three twice to an empty database and stores one record of every kind. A database with evidence stored before the lifecycle columns existed can be backfilled once with `microservices/scraper-analysis/storage/lifecycle_schema.sql`; a new one needs nothing.
+
 ## Rolling back
 
 Actions → CD → Run workflow on `main`, with **image_tag** set to an earlier commit SHA (for example the one in `DEPLOYED_TAG` before the bad deploy). It skips publishing and deploys that tag. Database migrations are not reversed: a rollback across a schema change needs a manual decision.

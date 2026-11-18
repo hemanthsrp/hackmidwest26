@@ -126,6 +126,53 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
+  database-schema:
+    # A fresh database migrated the way a deploy does it: every schema owner in
+    # start order, twice (a redeploy), then one write of every record kind. A
+    # column or table a service writes but no migration creates fails here.
+    name: Database schema on a fresh database
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: pgvector/pgvector:0.8.7-pg17-trixie@sha256:89947206f52eac3a9df9b663df7e76987cbdc623be6576b3a524953d568700d7
+        env:
+          POSTGRES_USER: folio
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: folio
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U folio" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://folio:ci@localhost:5432/folio
+      RESEARCH_DATABASE_URL: postgresql+psycopg://folio:ci@localhost:5432/folio
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: npm ci
+        working-directory: frontend
+      - name: Install the Python schema owners
+        run: >-
+          python -m pip install -c requirements/python.lock
+          ./microservices/agentic-search ./microservices/jev-tool ./microservices/scraper-analysis
+          './microservices/decision-maker[pg]' ./microservices/research-api
+      - name: Apply every schema owner in deploy order, twice
+        run: |
+          for run in 1 2; do
+            (cd frontend && npx drizzle-kit migrate)
+            python -m scraper_analysis.storage.bootstrap
+            python -m research_api.storage
+          done
+      - name: Store one record of every kind
+        run: python scripts/check-database-schema.py
+
   deploy-config:
     name: Deploy stack config
     runs-on: ubuntu-latest
