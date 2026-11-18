@@ -62,6 +62,10 @@ may return zero *new* evidence even though prior records remain stored.
   production deployment needs an authenticated ingestion boundary.
 - Never describe credibility/direction scores or a downstream assessment as a
   validated prediction. No backtest or predictive performance is claimed.
+- Exa news search is off in both Compose stacks. To try it, set
+  `ENABLE_EXA_SEARCH=true`, `EXA_LOOKBACK_DAYS=7`,
+  `EXA_ALLOWED_DOMAINS=reuters.com,apnews.com,sec.gov` and `EXA_API_KEY` in this
+  service's `.env` (the settings the removed `compose.yml` used).
 
 ## Checks
 

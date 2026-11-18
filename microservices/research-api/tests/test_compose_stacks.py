@@ -14,13 +14,19 @@ REPO = Path(__file__).resolve().parents[3]
 TLS_CHECKED = {"research-api", "scraper-analysis", "scraper-schema"}
 
 
-def services(relative: str) -> dict[str, str]:
+def _blocks(relative: str) -> dict[str, str]:
     path = REPO / relative
     if not path.exists():
         pytest.skip(f"{relative} is not in this checkout")
     text = path.read_text().split("\nvolumes:", 1)[0]
     blocks = re.split(r"^  ([a-z][a-z0-9-]*):\n", text, flags=re.M)[1:]
     return dict(zip(blocks[::2], blocks[1::2]))
+
+
+def services(relative: str) -> dict[str, str]:
+    """Each service's settings: the stack file's own plus what it extends from compose.base.yml."""
+    base = _blocks("compose.base.yml")
+    return {name: base.get(name, "") + body for name, body in _blocks(relative).items()}
 
 
 @pytest.mark.parametrize("relative", ["compose.frontend.yml", "compose.deploy.yml"])

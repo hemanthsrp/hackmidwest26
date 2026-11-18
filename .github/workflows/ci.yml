@@ -126,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Validate compose.deploy.yml with placeholder values
+      - name: Validate compose.deploy.yml (and the compose.base.yml it extends) with placeholder values
         env:
           IMAGE_TAG: ci
           POSTGRES_PASSWORD: placeholder
