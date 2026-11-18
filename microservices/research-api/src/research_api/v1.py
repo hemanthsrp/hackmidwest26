@@ -14,6 +14,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from importlib import resources
 from typing import Literal
 
 import httpx
@@ -25,7 +26,8 @@ from .inference import AkamaiInferenceClient, InferenceSettings, InferenceRespon
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/v1')
-UNIVERSE = {'NVDA':('NVIDIA','ai'),'AAPL':('Apple','technology'),'MSFT':('Microsoft','technology'),'JPM':('JPMorgan Chase','finance'),'TSLA':('Tesla','technology'),'XOM':('Exxon Mobil','energy'),'CMG':('Chipotle','food'),'DUOL':('Duolingo','education'),'UNH':('UnitedHealth','healthcare'),'GLD':('SPDR Gold Shares','commodities')}
+# The covered stocks, in feed order: symbol -> (company, industry). Edit coverage.json, not this.
+UNIVERSE = {x['symbol']:(x['name'],x['industry']) for x in json.loads(resources.files(__package__).joinpath('coverage.json').read_text())['stocks']}
 MEMORY_KEYS = frozenset({'research_interests','horizon','risk_preference','presentation_preference'})
 
 def user_id(authorization: str = Header(default='')):
@@ -230,7 +232,7 @@ def warm_holding_research(symbols):
 
 @router.get('/trending')
 def trending(section: str='all', uid=Depends(user_id)):
-    categories={'finance','technology','commodities','ai','education','food','healthcare','energy'}
+    categories={industry for _,industry in UNIVERSE.values()}
     if section not in categories|{'all','buy','sell'}: raise HTTPException(400,'Unknown section')
     return envelope(ranked(section if section in categories else None,section if section in {'buy','sell'} else None))
 
